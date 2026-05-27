@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><link rel="manifest" href="manifest.json">
+
+    <meta name="description" content="وصف موقعك لمحركات البحث يكتب هنا.">
+    <meta name="keywords" content="كلمات, مفتاحية, عن, الموقع">
+    <meta name="author" content="اسم المطور">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#000000">
+    <link rel="canonical" href="https://yourdomain.com/">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://yourdomain.com/">
+    <meta property="og:title" content="نيون شات — NeonChat">
+    <meta property="og:description" content="وصف الموقع الذي يظهر عند مشاركة الرابط.">
+    <meta property="og:image" content="icon.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale" content="ar_AR">
+    <meta property="og:site_name" content="نيون شات — NeonChat">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="نيون شات — NeonChat">
+    <meta name="twitter:description" content="وصف خاص يظهر على منصة تويتر.">
+    <meta name="twitter:image" content="icon.png">
+
+    <link rel="icon" type="image/png" sizes="32x32" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>نيون شات — NeonChat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&amp;family=Orbitron:wght@400;700;900&amp;display=swap" rel="stylesheet">
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+
+    <link rel="stylesheet" href="style.css">
+  </head>
+
+  <body>
+
+    <!-- BACKGROUND CANVAS -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- LOADER -->
+    <div id="loader-screen">
+      <div class="loader-logo">
+        <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+          <path d="M18 4C10.268 4 4 10.268 4 18c0 2.4.597 4.662 1.65 6.647L4 32l7.52-1.63A13.93 13.93 0 0 0 18 32c7.732 0 14-6.268 14-14S25.732 4 18 4z" fill="url(#g1)" opacity=".9"></path>
+          <defs>
+            <linearGradient id="g1" x1="4" y1="4" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#00f0ff"></stop>
+              <stop offset="1" stop-color="#a020f0"></stop>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="loader-ring"></div>
+      <div class="loader-text">جاري التحميل…</div>
+    </div>
+
+    <!-- TOAST -->
+    <div class="toast" id="toast"></div>
+
+    <!-- IMAGE PREVIEW -->
+    <div id="img-preview-overlay" onclick="this.classList.remove('open')">
+      <img id="img-preview-el" src="" alt="">
+    </div>
+
+    <!-- MODAL -->
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal">
+        <div class="modal-title" id="modal-title">تأكيد</div>
+        <div class="modal-text" id="modal-text"></div>
+        <div class="modal-actions">
+          <button class="btn-modal btn-modal-cancel" id="modal-cancel">إلغاء</button>
+          <button class="btn-modal btn-modal-ok" id="modal-ok">تأكيد</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MESSAGE MENU -->
+    <div class="msg-menu-overlay" id="msg-menu-overlay" onclick="closeMsgMenu()">
+      <div class="msg-menu" id="msg-menu" onclick="event.stopPropagation()">
+        <!-- الأزرار ستضاف هنا برمجياً -->
+      </div>
+    </div>
+
+    <!-- FILE INPUTS -->
+    <input type="file" id="file-img-input" accept="image/*">
+    <input type="file" id="file-avatar-input" accept="image/*">
+
+    <!-- APP -->
+    <div id="app">
+
+      <!-- ══════════════════════════════
+       SCREEN: LOGIN
+  ══════════════════════════════ -->
+      <div class="screen" id="screen-login">
+        <div class="login-logo">
+          <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M18 4C10.268 4 4 10.268 4 18c0 2.4.597 4.662 1.65 6.647L4 32l7.52-1.63A13.93 13.93 0 0 0 18 32c7.732 0 14-6.268 14-14S25.732 4 18 4z" fill="url(#lg1)"></path>
+            <circle cx="12" cy="18" r="1.8" fill="white"></circle>
+            <circle cx="18" cy="18" r="1.8" fill="white"></circle>
+            <circle cx="24" cy="18" r="1.8" fill="white"></circle>
+            <defs>
+              <linearGradient id="lg1" x1="4" y1="4" x2="32" y2="32">
+                <stop stop-color="#00f0ff"></stop>
+                <stop offset="1" stop-color="#a020f0"></stop>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="login-title">NeonChat</div>
+        <div class="login-subtitle">تواصل بأسلوب المستقبل<br>مشفر · سريع · أنيق</div>
+        <div class="glass-card">
+          <button class="btn-google" id="btn-google-login">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"></path>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"></path>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"></path>
+            </svg>
+            تسجيل الدخول بـ Google
+          </button>
+          <div class="login-features">
+            <div class="login-feature">
+              <div class="login-feature-icon">🔒</div>
+              <span>تشفير كامل لرسائلك</span>
+            </div>
+            <div class="login-feature">
+              <div class="login-feature-icon">⚡</div>
+              <span>رسائل فورية في الوقت الحقيقي</span>
+            </div>
+            <div class="login-feature">
+              <div class="login-feature-icon">🎙️</div>
+              <span>رسائل صوتية ومرئية</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════
+       SCREEN: HOME
+  ══════════════════════════════ -->
+      <div class="screen" id="screen-home">
+        <header class="app-header home-header">
+          <div id="home-avatar" class="home-avatar-placeholder" onclick="showScreen('profile')">أ</div>
+          <div class="header-title">
+            <div>المحادثات</div>
+            <div class="header-subtitle" id="home-subtitle">مرحباً!</div>
+          </div>
+          <div class="my-id-badge" id="my-id-badge" onclick="copyMyId()">------</div>
+          <button class="btn-icon" onclick="showScreen('add-friend')" title="إضافة صديق">
+            <span class="badge-req" id="home-req-badge" style="display:none;">0</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <line x1="19" y1="8" x2="19" y2="14"></line>
+              <line x1="16" y1="11" x2="22" y2="11"></line>
+            </svg>
+          </button>
+        </header>
+
+        <div class="search-bar">
+          <input type="search" class="search-input" placeholder="ابحث في المحادثات…" id="chats-search" oninput="filterChats(this.value)">
+          <span class="search-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </span>
+        </div>
+
+        <div class="chats-list" id="chats-list">
+          <div class="empty-state" id="chats-empty">
+            <div class="empty-state-icon">💬</div>
+            <div class="empty-state-text">لا توجد محادثات بعد.<br>أضف صديقاً وابدأ المحادثة!</div>
+          </div>
+        </div>
+
+        <button class="fab" onclick="showScreen('add-friend')" title="محادثة جديدة">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- ══════════════════════════════
+       SCREEN: CHAT
+  ══════════════════════════════ -->
+      <div class="screen" id="screen-chat">
+        <header class="app-header chat-header">
+          <button class="btn-icon" onclick="showScreen('home')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <div class="chat-header-avatar" id="chat-header-avatar">أ</div>
+          <div class="chat-header-info">
+            <div class="chat-header-name" id="chat-header-name">…</div>
+            <div class="chat-header-status" id="chat-header-status">● متصل</div>
+          </div>
+          <button class="btn-icon" onclick="startCall()" title="اتصال" style="color:var(--neon-green); border-color:rgba(0,255,136,0.3);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z">
+              </path>
+            </svg>
+          </button>
+        </header>
+
+        <div class="messages-area" id="messages-area">
+        </div>
+
+        <div class="msg-reply-preview" id="msg-reply-preview">
+          <div id="msg-reply-text" style="flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-left:10px;">الرد على...
+          </div>
+          <div class="msg-reply-close" onclick="cancelReply()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg></div>
+        </div>
+
+        <div class="input-bar">
+
+          <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-img-input').click()" title="إرسال صورة">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+          </button>
+
+          <button class="btn-attach" id="btn-cancel-voice" onclick="cancelVoiceRecord()" title="إلغاء التسجيل" style="display:none; color:var(--neon-pink); border-color:var(--neon-pink); background:rgba(255,0,144,0.1);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+
+          <div class="msg-input-wrap" id="msg-input-wrap">
+            <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)"></textarea>
+          </div>
+
+          <div id="recording-indicator" style="display:none; flex:1; text-align:center; color:var(--neon-pink); font-weight:bold; font-size:14px;">
+            جاري التسجيل... <span>0:00</span>
+          </div>
+
+          <button class="btn-voice" id="btn-voice" onclick="toggleRecording()" title="رسالة صوتية">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+          <button class="btn-send" id="btn-send" onclick="sendTextMsg()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════
+       SCREEN: ADD FRIEND
+  ══════════════════════════════ -->
+      <div class="screen" id="screen-add-friend">
+        <header class="app-header">
+          <button class="btn-icon" onclick="showScreen('home')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <div class="header-title">إضافة صديق</div>
+        </header>
+        <div class="add-friend-body">
+          <div>
+            <div class="field-label">أدخل رقم ID الخاص بصديقك (6 أرقام)</div>
+            <input type="tel" class="text-input" id="friend-id-input" placeholder="000000" maxlength="6" oninput="this.value=this.value.replace(/\D/g,'')">
+          </div>
+          <button class="btn-primary" id="btn-search-friend" onclick="searchFriend()">بحث</button>
+          <div id="search-result-area"></div>
+
+          <div class="neon-line" style="margin: 20px 0;"></div>
+          <div class="field-label">طلبات الصداقة الواردة</div>
+          <div id="friend-requests-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════
+       SCREEN: PROFILE
+  ══════════════════════════════ -->
+      <div class="screen" id="screen-profile">
+        <header class="app-header">
+          <button class="btn-icon" onclick="showScreen('home')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+          </button>
+          <div class="header-title">الإعدادات</div>
+        </header>
+        <div class="profile-body">
+          <div class="profile-avatar-wrap" onclick="document.getElementById('file-avatar-input').click()" style="cursor:pointer" title="تغيير الصورة">
+            <div class="profile-avatar" id="profile-avatar">أ</div>
+            <div style="position:absolute; bottom:0; right:0; background:var(--bg-surface); border-radius:50%; padding:6px; border:1px solid var(--neon-cyan); box-shadow: var(--shadow-neon);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            </div>
+          </div>
+
+          <div style="width:100%; display:flex; gap:8px;">
+            <input type="text" class="text-input" id="profile-name-input" placeholder="اسمك" style="letter-spacing:normal; text-align:center; font-family:var(--font-ar); font-size:16px; font-weight:700;">
+            <button class="btn-icon" onclick="saveProfileName()" style="width:52px; background:linear-gradient(135deg, var(--neon-cyan), var(--neon-blue)); color:var(--bg-void); flex-shrink:0;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg></button>
+          </div>
+
+          <div class="profile-id-card">
+            <div class="profile-id-label">رقم التعريف الخاص بك</div>
+            <div class="profile-id-value" id="profile-id-value">------</div>
+            <div class="profile-id-hint">شارك هذا الرقم مع أصدقائك كي يجدوك</div>
+          </div>
+          <button class="btn-primary" onclick="copyMyId()">📋 نسخ رقم الـ ID</button>
+          <button class="btn-danger" onclick="confirmLogout()">تسجيل الخروج</button>
+        </div>
+      </div>
+      <div class="screen" id="screen-call" style="background:var(--bg-void); z-index:500; justify-content:center; align-items:center; text-align:center;">
+
+        <div class="call-pulse" id="call-avatar-view">أ</div>
+        <div id="call-name-view" style="font-size:26px; font-weight:700; margin-bottom:8px;">الاسم</div>
+        <div id="call-status-view" style="font-size:16px; color:var(--neon-cyan); margin-bottom:60px;">جاري الاتصال...
+        </div>
+
+        <div style="display:flex; gap:40px; justify-content:center;" id="call-actions">
+          <button class="call-btn btn-red" onclick="endCall()"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91">
+              </path>
+              <line x1="23" y1="1" x2="1" y2="23"></line>
+            </svg></button>
+          <button class="call-btn btn-green" id="btn-accept-call" onclick="acceptCall()"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z">
+              </path>
+            </svg></button>
+        </div>
+      </div>
+
+    </div><!-- /app -->
+
+
+    <audio id="remote-audio-el" autoplay="" style="display:none;"></audio>
+
+
+    <script src="script.js"></script>
+  
+
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(r=>console.log('SW registered:',r.scope)).catch(e=>console.error('SW registration failed:',e));});}</script></body></html>
