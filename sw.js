@@ -5,14 +5,15 @@ const ASSETS = [
   './index.html',
   './style.css',
   './script.js',
-  './icon-192.png',
-  './icon-512.png',
+  './icon.png',
   './manifest.json'
 ];
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(cache => cache.addAll(
+      ASSETS.filter(url => !url.includes('icon.png'))
+    ))
   );
   self.skipWaiting();
 });
