@@ -291,7 +291,10 @@ auth.onAuthStateChanged(async user => {
 
     // 🔥 توليد توكن الإشعارات وحفظه تلقائياً 🔥
     try {
-      const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+      // إخبار فايربيز بمكان ملف السيرفر ووركر الصحيح
+      const swReg = await navigator.serviceWorker.register('./sw.js');
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+      
       if (token) {
         await db.ref('users/' + user.uid + '/fcmToken').set(token);
       }
@@ -2039,19 +2042,26 @@ function clearChatHistory(chatId) {
   });
 }
 
-function removeChatFromList(chatId, friendUid, friendName, friendPhoto = '') {
-  openModal('حذف من الشاشة', 'سيتم إخفاء المحادثة، ولكن سيبقى الشخص في قائمة الأصدقاء.').then(ok => {
-    if (ok) {
-      db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
-      // حفظ البيانات متضمنة الصورة في قائمة الأصدقاء
-      db.ref('friendsList/' + currentUser.uid + '/' + friendUid).set({
-        name: friendName,
-        photo: friendPhoto,
+async function removeChatFromList(chatId, friendUid, friendName, friendPhoto = '') {
+  const ok = await openModal('إخفاء المحادثة', 'سيتم إخفاء المحادثة من الشاشة الرئيسية، ولكن سيبقى الشخص في قائمة الأصدقاء ولن تُحذف رسائلكما.');
+  if (ok) {
+    showToast('جاري التحديث...');
+    try {
+      // 1. تثبيت الصديق في القائمة وتحديث بياناته لضمان عدم ضياعه نهائياً
+      await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).update({
+        name: friendName || 'مستخدم',
+        photo: friendPhoto || '',
         timestamp: Date.now()
       });
-      showToast('تم الحذف من الشاشة', 'success');
+
+      // 2. بعد ضمان وجوده في القائمة، نحذفه من الشاشة الرئيسية
+      await db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
+
+      showToast('تم إخفاء المحادثة بنجاح ✔️', 'success');
+    } catch (err) {
+      showToast('حدث خطأ أثناء الإخفاء', 'error');
     }
-  });
+  }
 }
 
 function blockUser(friendUid) {
