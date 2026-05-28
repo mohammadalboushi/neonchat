@@ -1353,7 +1353,8 @@ async function pushMessage(msg) {
     const friendSnap = await db.ref('users/' + friendUid).once('value');
     if (friendSnap.exists()) {
       const fData = friendSnap.val();
-      if (fData.fcmToken && fData.status !== 'online') {
+      // تم إزالة شرط الأونلاين من هنا لضمان وصول الإشعار دائماً
+      if (fData.fcmToken) {
         fetch(`${VERCEL_URL}/api/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2042,27 +2043,32 @@ function clearChatHistory(chatId) {
   });
 }
 
-async function removeChatFromList(chatId, friendUid, friendName, friendPhoto = '') {
-  const ok = await openModal('إخفاء المحادثة', 'سيتم إخفاء المحادثة من الشاشة الرئيسية، ولكن سيبقى الشخص في قائمة الأصدقاء ولن تُحذف رسائلكما.');
+async function removeChatFromList(chatId, friendUid, friendName, friendPhoto) {
+  const ok = await openModal('إخفاء المحادثة', 'سيتم إخفاء المحادثة، ولكن سيبقى الشخص في قائمة الأصدقاء.');
   if (ok) {
     showToast('جاري التحديث...');
     try {
-      // 1. تثبيت الصديق في القائمة وتحديث بياناته لضمان عدم ضياعه نهائياً
-      await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).update({
-        name: friendName || 'مستخدم',
-        photo: friendPhoto || '',
+      // تنظيف البيانات من أي قيمة undefined
+      const fName = (friendName && friendName !== 'undefined') ? friendName : 'مستخدم';
+      const fPhoto = (friendPhoto && friendPhoto !== 'undefined') ? friendPhoto : '';
+      
+      // التثبيت في القائمة باستخدام set
+      await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).set({
+        name: fName,
+        photo: fPhoto,
         timestamp: Date.now()
       });
-
-      // 2. بعد ضمان وجوده في القائمة، نحذفه من الشاشة الرئيسية
+      
+      // الحذف من الشاشة الرئيسية
       await db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
-
       showToast('تم إخفاء المحادثة بنجاح ✔️', 'success');
     } catch (err) {
+      console.error(err);
       showToast('حدث خطأ أثناء الإخفاء', 'error');
     }
   }
 }
+
 
 function blockUser(friendUid) {
   openModal('حظر', 'هل تريد حظر هذا الشخص؟').then(ok => {
@@ -2129,3 +2135,13 @@ function initFriendsListListener(uid) {
     container.innerHTML = htmlStr;
   });
 }
+window.addEventListener('resize', () => {
+  if (document.activeElement && document.activeElement.id === 'msg-input') {
+    setTimeout(() => {
+      window.scrollTo(0, 0);
+      document.body.scrollTop = 0;
+      const area = document.getElementById('messages-area');
+      if (area) area.scrollTop = area.scrollHeight;
+    }, 100);
+  }
+});
