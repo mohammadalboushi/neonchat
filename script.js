@@ -16,6 +16,11 @@ const db = firebase.database();
 const storage = firebase.storage();
 const provider = new firebase.auth.GoogleAuthProvider();
 
+// تفعيل الإشعارات وتحديد الروابط
+const messaging = firebase.messaging();
+const VERCEL_URL = 'https://neonchat-five.vercel.app';
+const VAPID_KEY = 'BLyGo78MotBcNontRvYa14hdbwWLxjJBJ4AWFIj35Ek125D-SO2445PpX1tNuSgBv5MPQSZhgPyzNynvVitg68I'; // ضع المفتاح الذي ستجلبه من إعدادات فايربيز هنا
+
 /* ═══════════════════════════════════
    GLOBAL STATE
 ═══════════════════════════════════ */
@@ -274,9 +279,24 @@ auth.onAuthStateChanged(async user => {
   if (user) {
     currentUser = user;
     await ensureUserProfile(user);
+
+    // طلب صلاحية الإشعارات
+    if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+
     document.getElementById('loader-screen').classList.add('hidden');
     // Setup presence FIRST then navigate
     setupPresence(user.uid);
+
+    // 🔥 توليد توكن الإشعارات وحفظه تلقائياً 🔥
+    try {
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+      if (token) {
+        await db.ref('users/' + user.uid + '/fcmToken').set(token);
+      }
+    } catch (err) { console.log('تعذر جلب توكن الإشعارات:', err); }
+
     initCallListener(user.uid);
     initFriendRequestsListener(user.uid);
     initFriendsListListener(user.uid); // مراقبة قائمة الأصدقاء المخفيين
@@ -1324,6 +1344,27 @@ async function pushMessage(msg) {
     [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
   });
   db.ref(`userChats/${friendUid}/${chatId}/unread`).transaction(v => (v || 0) + 1);
+
+  // 🔥 أمر إرسال الإشعار الخفي لسيرفر فيرسيل 🔥
+  try {
+    const friendSnap = await db.ref('users/' + friendUid).once('value');
+    if (friendSnap.exists()) {
+      const fData = friendSnap.val();
+      if (fData.fcmToken && fData.status !== 'online') {
+        fetch(`${VERCEL_URL}/api/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: fData.fcmToken,
+            title: myProfile.name || 'نيون شات',
+            body: lastMsg,
+            icon: 'https://mohammadalboushi.github.io/neonchat/icon.png',
+            url: 'https://mohammadalboushi.github.io/neonchat/'
+          })
+        });
+      }
+    }
+  } catch (err) { console.error('فشل إرسال الإشعار:', err); }
 }
 
 /* ═══════════════════════════════════
