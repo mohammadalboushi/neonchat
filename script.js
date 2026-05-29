@@ -19,11 +19,12 @@ const provider = new firebase.auth.GoogleAuthProvider();
 // تفعيل الإشعارات وتحديد الروابط
 const messaging = firebase.messaging();
 const VERCEL_URL = 'https://neonchat-five.vercel.app';
-const VAPID_KEY = 'BLyGo78MotBcNontRvYa14hdbwWLxjJBJ4AWFIj35Ek125D-SO2445PpX1tNuSgBv5MPQSZhgPyzNynvVitg68I'; // ضع المفتاح الذي ستجلبه من إعدادات فايربيز هنا
+const VAPID_KEY = 'BLyGo78MotBcNontRvYa14hdbwWLxjJBJ4AWFIj35Ek125D-SO2445PpX1tNuSgBv5MPQSZhgPyzNynvVitg68I'; 
 
 /* ═══════════════════════════════════
    GLOBAL STATE
 ═══════════════════════════════════ */
+let internalMicId = null; // إضافة هذا السطر لحفظ معرف المايك الداخلي
 let currentUser = null;
 let myProfile = null;
 let currentChat = null;
@@ -38,7 +39,7 @@ let typingRef = null;
 let typingListener = null;
 let friendRequestsListener = null;
 let myCallListener = null;
-let friendsListListener = null; // أضفنا هذا السطر لمنع الرفة
+let friendsListListener = null;
 
 // call
 let localStream = null;
@@ -106,7 +107,7 @@ const rtcConfig = {
       a: Math.random() * .6 + .2
     };
   }
-  for (let i = 0; i < 60; i++) particles.push(mkP());
+  for (let i = 0; i < 200; i++) particles.push(mkP()); // تم زيادة العدد إلى 200
 
   function draw() {
     ctx.clearRect(0, 0, W, H);
@@ -142,10 +143,7 @@ const rtcConfig = {
 /* ═══════════════════════════════════
    NAVIGATION & BACK BUTTON (STRICT)
 ═══════════════════════════════════ */
-// تفعيل الحماية من البداية
-history.pushState({
-  screen: 'home'
-}, '', '');
+history.pushState({ screen: 'home' }, '', '');
 
 window.addEventListener('popstate', e => {
   const imgOverlay = document.getElementById('img-preview-overlay');
@@ -154,7 +152,6 @@ window.addEventListener('popstate', e => {
 
   let isPopupOpen = false;
 
-  // 1. إغلاق زوم الصورة
   if (imgOverlay && imgOverlay.classList.contains('open')) {
     const img = document.getElementById('img-preview-el');
     if (currentScale > 1) {
@@ -169,19 +166,16 @@ window.addEventListener('popstate', e => {
     isPopupOpen = true;
   }
 
-  // 2. إغلاق القوائم المنبثقة (مثل الضغطة المطولة)
   if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) {
     closeMsgMenu();
     isPopupOpen = true;
   }
 
-  // 3. إغلاق نوافذ التأكيد
   if (modalOverlay && modalOverlay.classList.contains('open')) {
     modalOverlay.classList.remove('open');
     isPopupOpen = true;
   }
 
-  // التحديد الدقيق للشاشة الفعالة حالياً لمنع التعليق
   let currentActiveScreen = 'home';
   document.querySelectorAll('.screen').forEach(s => {
     if (s.classList.contains('active')) {
@@ -190,34 +184,23 @@ window.addEventListener('popstate', e => {
   });
 
   if (isPopupOpen) {
-    // إذا سكرنا نافذة منبثقة، بنبقى بنفس الشاشة الفعالة بدون إعادة تحميلها
-    history.pushState({
-      screen: currentActiveScreen
-    }, '', '');
+    history.pushState({ screen: currentActiveScreen }, '', '');
     return;
   }
 
   const targetScreen = e.state && e.state.screen ? e.state.screen : 'home';
 
-  // 🔥 الحماية القصوى: إذا كنا في الرئيسية وضغطنا رجوع، نمنعه من الخروج نهائياً ونثبته بالرئيسية 🔥
   if (currentActiveScreen === 'home') {
-    history.pushState({
-      screen: 'home'
-    }, '', '');
+    history.pushState({ screen: 'home' }, '', '');
     return;
   }
 
-  // التنقل الطبيعي بين الشاشات
   renderScreenUI(targetScreen);
-  history.pushState({
-    screen: targetScreen
-  }, '', '');
+  history.pushState({ screen: targetScreen }, '', '');
 });
 
 function showScreen(name) {
-  history.pushState({
-    screen: name
-  }, '', '');
+  history.pushState({ screen: name }, '', '');
   renderScreenUI(name);
 }
 
@@ -272,7 +255,6 @@ function openModal(title, text) {
 /* ═══════════════════════════════════
    AUTH (HYBRID SYSTEM)
 ═══════════════════════════════════ */
-// دالة ذكية لتنسيق الإيميل (إذا كان يوزرنيم نحوله لإيميل وهمي خاص بالتطبيق)
 function formatEmail(input) {
   input = input.trim().toLowerCase();
   if (!input) return '';
@@ -289,7 +271,6 @@ const btnLogin = document.getElementById('btn-custom-login');
 const btnSignup = document.getElementById('btn-custom-signup');
 const btnForgot = document.getElementById('btn-forgot-pass');
 
-// 1️⃣ زر الدخول
 if(btnLogin) {
   btnLogin.addEventListener('click', async () => {
     const rawEmail = emailInput.value;
@@ -306,7 +287,6 @@ if(btnLogin) {
     
     try {
       await auth.signInWithEmailAndPassword(email, pass);
-      // بمجرد النجاح، دالة onAuthStateChanged ستتولى الباقي وتنقلنا للرئيسية
     } catch (e) {
       if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
         showToast('الحساب غير موجود، من فضلك اضغط على إنشاء حساب أولاً', 'error');
@@ -322,7 +302,6 @@ if(btnLogin) {
   });
 }
 
-// 2️⃣ زر إنشاء حساب
 if(btnSignup) {
   btnSignup.addEventListener('click', async () => {
     const rawEmail = emailInput.value;
@@ -348,14 +327,12 @@ if(btnSignup) {
     
     try {
       const userCred = await auth.createUserWithEmailAndPassword(email, pass);
-      // إذا أدخل يوزرنيم، نحفظه كاسمه الافتراضي
       if (!rawEmail.includes('@')) {
         await userCred.user.updateProfile({ displayName: rawEmail });
       }
       showToast('تم إنشاء الحساب بنجاح!', 'success');
     } catch (e) {
       if (e.code === 'auth/email-already-in-use') {
-        // الخدعة الذكية: إذا كان ذكي وضغط إنشاء حساب وهو يملك حساب مسبقاً، ندخله فوراً
         try {
           await auth.signInWithEmailAndPassword(email, pass);
           showToast('هذا الحساب موجود مسبقاً، تم تسجيل دخولك بنجاح!', 'success');
@@ -372,7 +349,6 @@ if(btnSignup) {
   });
 }
 
-// 3️⃣ زر استعادة كلمة المرور
 if(btnForgot) {
   btnForgot.addEventListener('click', async (e) => {
     e.preventDefault();
@@ -400,26 +376,39 @@ if(btnForgot) {
   });
 }
 
+async function initMicrophone() {
+  try {
+    let temp = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    temp.getTracks().forEach(t => t.stop());
+    const audioInputs = devices.filter(d => d.kind === 'audioinput');
+    for (let dev of audioInputs) {
+      const label = dev.label.toLowerCase();
+      if (!label.includes('bluetooth') && !label.includes('bt') && !label.includes('headset')) {
+        if (label.includes('built-in') || label.includes('internal') || label.includes('phone') || label.includes('مدمج')) {
+          internalMicId = dev.deviceId;
+          break;
+        }
+      }
+    }
+  } catch (e) { console.log('تعذر تجهيز المايك مسبقاً'); }
+}
+
 auth.onAuthStateChanged(async user => {
   if (user) {
     currentUser = user;
     await ensureUserProfile(user);
 
-    // طلب صلاحية الإشعارات
     if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
       Notification.requestPermission();
     }
 
     document.getElementById('loader-screen').classList.add('hidden');
-    // Setup presence FIRST then navigate
     setupPresence(user.uid);
 
-    // 🔥 توليد توكن الإشعارات وحفظه تلقائياً 🔥
     try {
-      // إخبار فايربيز بمكان ملف السيرفر ووركر الصحيح
       const swReg = await navigator.serviceWorker.register('./sw.js');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-      
       if (token) {
         await db.ref('users/' + user.uid + '/fcmToken').set(token);
       }
@@ -427,7 +416,8 @@ auth.onAuthStateChanged(async user => {
 
     initCallListener(user.uid);
     initFriendRequestsListener(user.uid);
-    initFriendsListListener(user.uid); // مراقبة قائمة الأصدقاء المخفيين
+    initFriendsListListener(user.uid); 
+    initMicrophone(); // تجهيز المايك الداخلي فوراً عند الدخول
     showScreen('home');
   } else {
     currentUser = null;
@@ -438,7 +428,7 @@ auth.onAuthStateChanged(async user => {
 });
 
 /* ═══════════════════════════════════
-   PRESENCE — متصل الآن / آخر ظهور
+   PRESENCE
 ═══════════════════════════════════ */
 function setupPresence(uid) {
   const myStatusRef = db.ref('users/' + uid + '/status');
@@ -483,15 +473,13 @@ async function generateUniqueId() {
   }
 }
 
-// دالة جديدة لتنظيف كل الأشباح والذاكرة عند الخروج
 function cleanupListeners() {
   if (currentUser) {
     if (chatsListener) db.ref('userChats/' + currentUser.uid).off('value', chatsListener);
     if (friendRequestsListener) db.ref('friendRequests/' + currentUser.uid).off('value', friendRequestsListener);
-    if (friendsListListener) db.ref('friendsList/' + currentUser.uid).off('value', friendsListListener);
+    if (friendsListListener) db.ref('friendsList/' + currentUser.uid).off();
     if (myCallListener) db.ref('calls/' + currentUser.uid).off('value', myCallListener);
     
-    // إيقاف مراقبة حالة الأصدقاء
     Object.keys(presenceListeners).forEach(fUid => {
       db.ref('users/' + fUid + '/status').off('value', presenceListeners[fUid]);
     });
@@ -504,14 +492,11 @@ function confirmLogout() {
   openModal('تسجيل الخروج', 'هل أنت متأكد أنك تريد تسجيل الخروج؟').then(ok => {
     if (ok) {
       if (currentUser) db.ref('users/' + currentUser.uid + '/status').set(Date.now());
-      cleanupListeners(); // تشغيل مكنسة التنظيف هنا!
+      cleanupListeners();
       auth.signOut().then(() => {
         localStorage.removeItem('myProfile');
-        
-        // تصفير الصورة الشخصية لتجنب ظهور صورة الحساب القديم
         const avatarEl = document.getElementById('profile-avatar');
         if(avatarEl) avatarEl.outerHTML = `<div class="profile-avatar" id="profile-avatar">أ</div>`;
-        
         renderScreenUI('login');
       });
     }
@@ -576,9 +561,7 @@ async function saveProfileName() {
   if (!newName || !myProfile) return;
   showToast('جاري الحفظ...');
   try {
-    await db.ref('users/' + myProfile.uid).update({
-      name: newName
-    });
+    await db.ref('users/' + myProfile.uid).update({ name: newName });
     myProfile.name = newName;
     localStorage.setItem('myProfile', JSON.stringify(myProfile));
     updateHomeHeader();
@@ -604,9 +587,7 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
     });
     const data = await res.json();
     if (data.secure_url) {
-      await db.ref('users/' + myProfile.uid).update({
-        photo: data.secure_url
-      });
+      await db.ref('users/' + myProfile.uid).update({ photo: data.secure_url });
       myProfile.photo = data.secure_url;
       localStorage.setItem('myProfile', JSON.stringify(myProfile));
       updateHomeHeader();
@@ -640,7 +621,6 @@ function loadChats() {
         if (!isFirstChatsLoad && d.unread > (lastUnreads[c.key] || 0)) hasNew = true;
         lastUnreads[c.key] = d.unread;
 
-        // 🔥 مزامنة تلقائية: إذا كان الشخص في المحادثات، تأكد أنه موجود في قائمة الأصدقاء (لإصلاح المشكلة القديمة)
         db.ref('friendsList/' + currentUser.uid + '/' + d.friendUid).once('value', fSnap => {
           if (!fSnap.exists()) {
             db.ref('friendsList/' + currentUser.uid + '/' + d.friendUid).set({
@@ -710,18 +690,13 @@ function renderChatsList(filter = '') {
 
     div.addEventListener('click', () => openChat(chatId, data.friendUid));
 
-    // ضغطة مطولة لفتح قائمة المحادثة
     let pressTimer;
     div.addEventListener('touchstart', () => {
       pressTimer = setTimeout(() => {
         openHomeChatMenu(chatId, data.friendUid, data.friendName);
       }, 600);
-    }, {
-      passive: true
-    });
-    div.addEventListener('touchmove', () => clearTimeout(pressTimer), {
-      passive: true
-    });
+    }, { passive: true });
+    div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
     div.addEventListener('touchend', () => clearTimeout(pressTimer));
     div.addEventListener('contextmenu', e => {
       e.preventDefault();
@@ -826,8 +801,7 @@ function initFriendRequestsListener(uid) {
       if (list) list.innerHTML = '<div style="font-size:13px; color:var(--text-muted); text-align:center; padding:10px;">لا توجد طلبات واردة</div>';
       return;
     }
-    let count = 0,
-      htmlStr = '';
+    let count = 0, htmlStr = '';
     snap.forEach(reqSnap => {
       count++;
       const req = reqSnap.val();
@@ -882,7 +856,6 @@ async function startChat(friendUid) {
     createdAt: Date.now()
   });
 
-  // 1. إضافة للشاشة الرئيسية (المحادثات)
   await db.ref('userChats/' + currentUser.uid + '/' + chatId).update({
     friendUid,
     friendName: friend.name,
@@ -900,7 +873,6 @@ async function startChat(friendUid) {
     unread: 0
   });
 
-  // 2. 🔥 إضافة لقائمة الأصدقاء فوراً للطرفين 🔥
   await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).update({
     name: friend.name,
     photo: friend.photo || '',
@@ -946,11 +918,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const snap = await db.ref('users/' + friendUid).once('value');
     friendProfile = snap.val();
   }
-  currentChat = {
-    chatId,
-    friendUid,
-    friendProfile
-  };
+  currentChat = { chatId, friendUid, friendProfile };
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
@@ -962,14 +930,10 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
 
-  // 1. نفصل الرسايل القديمة أول شي
   detachMessages();
-
-  // 2. نرسم الواجهة ونربط الرسايل بدون ما نفصل المراقبة
   renderScreenUI('chat');
   attachMessages(chatId);
 
-  // 3. نركب مراقبة حالة الاتصال ومؤشر الكتابة
   const statusEl = document.getElementById('chat-header-status');
   statusEl.textContent = 'جاري التحقق...';
   statusEl.style.color = 'var(--text-muted)';
@@ -990,8 +954,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
         const yes = new Date(now);
         yes.setDate(now.getDate() - 1);
         prefix = d.toDateString() === yes.toDateString() ? 'أمس' : d.toLocaleDateString('ar-EG', {
-          day: '2-digit',
-          month: 'short'
+          day: '2-digit', month: 'short'
         });
       }
       baseStatusText = '🔴 آخر ظهور: ' + prefix + ' ' + formatTime(val);
@@ -1039,10 +1002,7 @@ function attachMessages(chatId) {
   messagesRef = db.ref('chats/' + chatId + '/messages');
 
   messagesListener = messagesRef.orderByChild('timestamp').on('child_added', snap => {
-    const msg = {
-      ...snap.val(),
-      key: snap.key
-    };
+    const msg = { ...snap.val(), key: snap.key };
     const dateStr = formatDate(msg.timestamp);
     if (dateStr !== lastMsgDate) {
       const sep = document.createElement('div');
@@ -1054,18 +1014,13 @@ function attachMessages(chatId) {
     area.appendChild(buildMsgEl(msg));
     area.scrollTop = area.scrollHeight;
     if (msg.senderUid !== currentUser.uid) {
-      if (!msg.read) snap.ref.update({
-        read: true
-      });
+      if (!msg.read) snap.ref.update({ read: true });
       db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
     }
   });
 
   msgChangedListener = messagesRef.on('child_changed', snap => {
-    const msg = {
-      ...snap.val(),
-      key: snap.key
-    };
+    const msg = { ...snap.val(), key: snap.key };
     const ticksEl = document.getElementById('ticks-' + msg.key);
     if (ticksEl && msg.read) {
       ticksEl.setAttribute('stroke', 'var(--neon-cyan)');
@@ -1106,7 +1061,6 @@ function buildMsgEl(msg) {
   const isOut = msg.senderUid === currentUser.uid;
   row.className = 'msg-row ' + (isOut ? 'out' : 'in');
 
-  // Friend avatar (for received messages)
   if (!isOut) {
     const fProfile = currentChat.friendProfile || {};
     let avatarNode;
@@ -1126,18 +1080,13 @@ function buildMsgEl(msg) {
   bubble.className = 'msg-bubble';
   bubble.id = 'msg-' + msg.key;
 
-  // Gesture handling (Swipe & Double Tap Fix)
-  let lastTap = 0,
-    pressTimer, touchStartX = 0,
-    touchStartY = 0,
-    isSwiping = false,
-    isVertical = false;
+  let lastTap = 0, pressTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) {
       toggleReaction(msg.key);
-      lastTap = 0; // تصفير العداد لمنع تكرار العملية فوراً
+      lastTap = 0;
       if (e.cancelable) e.preventDefault();
       return;
     }
@@ -1146,20 +1095,16 @@ function buildMsgEl(msg) {
     touchStartY = e.touches[0].clientY;
     isSwiping = false;
     isVertical = false;
-    bubble.style.transition = 'none'; // بنشيل الانتقال لحتى تلحق الرسالة الإصبع فوراً
+    bubble.style.transition = 'none';
     pressTimer = setTimeout(() => {
       if (!isSwiping && !isVertical) openMsgMenu(msg, isOut);
     }, 500);
-  }, {
-    passive: false
-  });
+  }, { passive: false });
 
   bubble.addEventListener('touchmove', e => {
     if (!touchStartX || !touchStartY) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
-
-    // منع السحب يمين/يسار إذا كان المستخدم عم ينزل بالمحادثة لتحت أو لفوق
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
       isVertical = true;
       clearTimeout(pressTimer);
@@ -1167,20 +1112,17 @@ function buildMsgEl(msg) {
       bubble.style.transform = 'translateX(0)';
       return;
     }
-    // تفعيل سحب الرسالة للرد
     if (Math.abs(dx) > 15 && !isVertical) {
       isSwiping = true;
       clearTimeout(pressTimer);
       let limit = Math.min(Math.abs(dx), 65) * Math.sign(dx);
       bubble.style.transform = `translateX(${limit}px)`;
     }
-  }, {
-    passive: true
-  });
+  }, { passive: true });
 
   bubble.addEventListener('touchend', e => {
     clearTimeout(pressTimer);
-    bubble.style.transition = 'transform 0.2s ease-out'; // ترجيع سلس للرسالة لمكانها
+    bubble.style.transition = 'transform 0.2s ease-out';
     bubble.style.transform = 'translateX(0)';
 
     if (isSwiping) {
@@ -1194,14 +1136,11 @@ function buildMsgEl(msg) {
     touchStartY = 0;
   });
 
-  // شلنا الـ dblclick لأنه بيعمل تعارض مع اللمس عالموبايل
   bubble.addEventListener('contextmenu', e => {
     e.preventDefault();
     openMsgMenu(msg, isOut);
   });
 
-
-  // Ticks for outgoing
   let ticks = '';
   if (isOut) {
     const color = msg.read ? 'var(--neon-cyan)' : 'var(--text-muted)';
@@ -1214,10 +1153,10 @@ function buildMsgEl(msg) {
   const timeEl = `<div class="msg-time">${msg.isEdited ? '<span style="font-size:10px;opacity:0.7;">(معدلة)</span>' : ''}${ticks}${formatTime(msg.timestamp)}</div>`;
   const reactHtml = `<div id="react-${msg.key}" class="msg-reaction" style="display:${msg.reaction?'flex':'none'}">${msg.reaction||''}</div>`;
 
-  // Reply quote
   let replyHtml = '';
   if (msg.replyTo) {
-    replyHtml = `<div class="reply-badge">↩ رد على رسالة</div><div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;margin-bottom:6px;border-right:2px solid var(--neon-cyan);font-size:12px;opacity:0.8;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escHtml(msg.replyTo.text)}</div>`;
+    // أضفنا زر الضغط (onclick) والمؤشر (cursor:pointer) ليصبح المربع قابلاً للضغط
+    replyHtml = `<div onclick="scrollToMessage('${msg.replyTo.key}')" style="cursor:pointer;"><div class="reply-badge">↩ رد على رسالة</div><div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;margin-bottom:6px;border-right:2px solid var(--neon-cyan);font-size:12px;opacity:0.8;overflow:hidden;white-space:nowrap;text-overflow:ellipsis; transition: background 0.2s;" onactive="this.style.background='rgba(0,240,255,0.1)'">${escHtml(msg.replyTo.text)}</div></div>`;
   }
 
   if (msg.type === 'text') {
@@ -1225,9 +1164,7 @@ function buildMsgEl(msg) {
   } else if (msg.type === 'image') {
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" onload="document.getElementById('messages-area').scrollTop = document.getElementById('messages-area').scrollHeight" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
-    const bars = Array.from({
-      length: 20
-    }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
+    const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     bubble.innerHTML = `${replyHtml}
       <div class="voice-msg">
         <button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}')">
@@ -1253,16 +1190,13 @@ function toggleReaction(msgKey) {
   const ref = db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey);
   ref.once('value', snap => {
     const m = snap.val();
-    if (m) ref.update({
-      reaction: m.reaction === '❤️' ? null : '❤️'
-    });
+    if (m) ref.update({ reaction: m.reaction === '❤️' ? null : '❤️' });
   });
 }
 
 /* ═══════════════════════════════════
    MSG CONTEXT MENU & UPDATES
 ═══════════════════════════════════ */
-// تحديث الشاشة الرئيسية عند الحذف والتعديل
 function updateLastMsgAfterChange() {
   if (!currentChat) return;
   db.ref('chats/' + currentChat.chatId + '/messages').orderByChild('timestamp').limitToLast(1).once('value', snap => {
@@ -1283,7 +1217,6 @@ function openMsgMenu(msg, isOut) {
   const menu = document.getElementById('msg-menu');
   menu.innerHTML = '';
 
-  // شريط الإيموجي المصغر
   const emojis = ['😂', '😅', '🤣', '😍', '🥰', '🙂', '🙄', '😱', '🥺', '😴', '🔥', '💯', '🙏🏻', '👍🏻', '👏🏻', '👊🏻', '🎧', '🎶', '💙'];
   let emojiHtml = `<div style="display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:rgba(0,240,255,0.05); border-radius:12px; margin-bottom:8px; justify-content:center;">`;
   emojis.forEach(em => {
@@ -1334,14 +1267,11 @@ function openMsgMenu(msg, isOut) {
   }
 
   document.getElementById('msg-menu-overlay').classList.add('open');
-  // تم إزالة الاهتزاز
 }
 
 function addReaction(msgKey, emoji) {
   if (!currentChat) return;
-  db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({
-    reaction: emoji
-  });
+  db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: emoji });
 }
 
 function closeMsgMenu() {
@@ -1400,7 +1330,6 @@ function handleMsgKey(e) {
     sendTextMsg();
     return;
   }
-  // FIX: Typing indicator - set and clear properly
   if (currentChat && !isRecording) {
     db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).set('typing');
     clearTimeout(typingTimeout);
@@ -1410,7 +1339,6 @@ function handleMsgKey(e) {
   }
 }
 
-// Also trigger on regular input (not just keydown)
 document.getElementById('msg-input').addEventListener('input', () => {
   if (!currentChat || isRecording) return;
   db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).set('typing');
@@ -1421,6 +1349,12 @@ document.getElementById('msg-input').addEventListener('input', () => {
 });
 
 async function sendTextMsg() {
+  // 🚀 إضافة: إذا ضغطت زر الإرسال أثناء التسجيل، يتم إيقاف وإرسال الصوت فوراً
+  if (isRecording) {
+    stopRecording();
+    return;
+  }
+
   if (currentChat) {
     db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
     clearTimeout(typingTimeout);
@@ -1430,14 +1364,14 @@ async function sendTextMsg() {
   if (!text || !currentChat) return;
   inp.value = '';
   autoResize(inp);
-  inp.focus(); // إبقاء الكيبورد مفتوح
+  inp.focus(); 
 
   if (editingMsgKey) {
     await db.ref('chats/' + currentChat.chatId + '/messages/' + editingMsgKey).update({
       text,
       isEdited: true
     });
-    updateLastMsgAfterChange(); // تحديث الشاشة الرئيسية فوراً
+    updateLastMsgAfterChange();
     editingMsgKey = null;
     showToast('تم تعديل الرسالة', 'success');
     return;
@@ -1461,6 +1395,7 @@ async function sendTextMsg() {
   });
 }
 
+
 async function sendImageMsg(url) {
   await pushMessage({
     type: 'image',
@@ -1481,10 +1416,7 @@ async function sendVoiceMsg(url, duration) {
 }
 
 async function pushMessage(msg) {
-  const {
-    chatId,
-    friendUid
-  } = currentChat;
+  const { chatId, friendUid } = currentChat;
   const ref = db.ref('chats/' + chatId + '/messages').push();
   await ref.set(msg);
   const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : '🎙️ رسالة صوتية';
@@ -1496,12 +1428,10 @@ async function pushMessage(msg) {
   });
   db.ref(`userChats/${friendUid}/${chatId}/unread`).transaction(v => (v || 0) + 1);
 
-  // 🔥 أمر إرسال الإشعار الخفي لسيرفر فيرسيل 🔥
   try {
     const friendSnap = await db.ref('users/' + friendUid).once('value');
     if (friendSnap.exists()) {
       const fData = friendSnap.val();
-      // تم إزالة شرط الأونلاين من هنا لضمان وصول الإشعار دائماً
       if (fData.fcmToken) {
         fetch(`${VERCEL_URL}/api/send`, {
           method: 'POST',
@@ -1558,32 +1488,48 @@ async function toggleRecording() {
     return;
   }
   try {
-    // إجبار المتصفح على سحب الصوت الخام لمنع مشاكل جودة البلوتوث
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      }
-    });
+    let audioConstraints = {
+      echoCancellation: false,
+      noiseSuppression: true,
+      autoGainControl: false
+    };
+
+    if (internalMicId) {
+      audioConstraints.deviceId = { exact: internalMicId };
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     audioChunks = [];
     isRecordingCanceled = false;
-    mediaRecorder = new MediaRecorder(stream, {
-      audioBitsPerSecond: 128000
-    });
+    mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
+    
     mediaRecorder.ondataavailable = e => {
       if (e.data.size > 0) audioChunks.push(e.data);
     };
+    
     mediaRecorder.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
       if (isRecordingCanceled) {
         showToast('تم رمي التسجيل 🗑️');
         return;
       }
-      const blob = new Blob(audioChunks, {
-        type: 'audio/webm'
-      });
-      showToast('جاري الرفع…');
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      
+      // 🚀 رمي فقاعة وهمية فوراً بالشاشة لتعطي إحساس بالسرعة
+      const tempId = 'temp-audio-' + Date.now();
+      const area = document.getElementById('messages-area');
+      if (area) {
+        const tempDiv = document.createElement('div');
+        tempDiv.className = 'msg-row out';
+        tempDiv.id = tempId;
+        tempDiv.innerHTML = `<div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
+          <div style="width:16px; height:16px; border:2px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>
+          <span style="font-size:13px;">جاري إرسال المقطع...</span>
+        </div>`;
+        area.appendChild(tempDiv);
+        area.scrollTop = area.scrollHeight;
+      }
+
       try {
         const fd = new FormData();
         fd.append('file', blob);
@@ -1593,14 +1539,21 @@ async function toggleRecording() {
           body: fd
         });
         const data = await res.json();
+        
+        // إزالة الفقاعة الوهمية بمجرد انتهاء الرفع وظهور الحقيقية
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+
         if (data.secure_url) {
           await sendVoiceMsg(data.secure_url, recordDurationStr);
-          showToast('طارت الرسالة! 🚀', 'success');
         } else throw new Error('فشل الرفع');
       } catch (e) {
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
         showToast('فشل: ' + e.message, 'error');
       }
     };
+    
     mediaRecorder.start(200);
     isRecording = true;
     recordStart = Date.now();
@@ -1616,12 +1569,12 @@ async function toggleRecording() {
   }
 }
 
+
 function startRecordTimer() {
   const span = document.getElementById('rec-timer-text');
   recordTimerInt = setInterval(() => {
     const sec = Math.floor((Date.now() - recordStart) / 1000);
-    const m = Math.floor(sec / 60),
-      s = sec % 60;
+    const m = Math.floor(sec / 60), s = sec % 60;
     recordDurationStr = m + ':' + (s < 10 ? '0' : '') + s;
     if (span) span.textContent = recordDurationStr;
   }, 1000);
@@ -1645,7 +1598,7 @@ function cancelVoiceRecord() {
 }
 
 /* ═══════════════════════════════════
-   VOICE PLAYBACK
+   VOICE PLAYBACK (OPTIMIZED)
 ═══════════════════════════════════ */
 let currentAudio = null;
 let currentAudioUrl = null;
@@ -1675,19 +1628,24 @@ function playVoice(btn, url, msgKey) {
 
   currentAudioUrl = url;
   currentAudio = new Audio(url);
+  currentAudio.preload = 'auto'; // إجبار المتصفح على التحميل الفوري
+  
   btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-  currentAudio.play();
+  
+  // تشغيل آمن لتفادي أخطاء المتصفح
+  let playPromise = currentAudio.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(e => console.log("Audio playback waiting..."));
+  }
+  
   startAudioProgress(msgKey);
 
   currentAudio.onended = () => {
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
     const fill = document.getElementById('progress-' + msgKey);
     if (fill) fill.style.width = '0%';
-
-    // إرجاع الوقت لشكله الطبيعي بعد الانتهاء
     const durEl = document.getElementById('dur-' + msgKey);
     if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
-
     currentAudio = null;
     currentAudioUrl = null;
     clearInterval(audioUpdateInterval);
@@ -1696,45 +1654,77 @@ function playVoice(btn, url, msgKey) {
 
 function startAudioProgress(msgKey) {
   clearInterval(audioUpdateInterval);
-  audioUpdateInterval = setInterval(() => {
-    if (currentAudio && !currentAudio.paused && currentAudio.duration) {
-      let perc = (currentAudio.currentTime / currentAudio.duration) * 100;
-      let fill = document.getElementById('progress-' + msgKey);
-      if (fill) fill.style.width = perc + '%';
+  
+  // الخدعة الذكية: قراءة المدة من النص المخزن في الشاشة فوراً
+  const durEl = document.getElementById('dur-' + msgKey);
+  const origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0;
+  if (origStr) {
+    const parts = origStr.split(':');
+    if (parts.length === 2) {
+      fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    }
+  }
 
-      // تحديث عداد الثواني
-      const durEl = document.getElementById('dur-' + msgKey);
-      if (durEl) {
-        const curSec = Math.floor(currentAudio.currentTime);
-        const m = Math.floor(curSec / 60);
-        const s = curSec % 60;
-        const orig = durEl.getAttribute('data-orig');
-        durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${orig}`;
+  // تسريع حركة الشريط ليصبح سلس جداً (تحديث كل 30 ملي ثانية)
+  audioUpdateInterval = setInterval(() => {
+    if (currentAudio && !currentAudio.paused) {
+      // إذا كان المتصفح يتغابى ويعطينا Infinity نستخدم الرقم الذي حسبناه
+      let totalDuration = currentAudio.duration;
+      if (!totalDuration || totalDuration === Infinity) {
+        totalDuration = fallbackDuration;
+      }
+
+      if (totalDuration > 0) {
+        let perc = (currentAudio.currentTime / totalDuration) * 100;
+        if (perc > 100) perc = 100;
+        let fill = document.getElementById('progress-' + msgKey);
+        if (fill) fill.style.width = perc + '%';
+        
+        if (durEl) {
+          const curSec = Math.floor(currentAudio.currentTime);
+          const m = Math.floor(curSec / 60);
+          const s = curSec % 60;
+          durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
+        }
       }
     }
-  }, 100);
+  }, 30); 
 }
 
 function seekVoice(event, url, msgKey) {
-  if (!currentAudio || currentAudioUrl !== url || !currentAudio.duration) return;
+  if (!currentAudio || currentAudioUrl !== url) return;
+  
+  const durEl = document.getElementById('dur-' + msgKey);
+  const origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0;
+  if (origStr) {
+    const parts = origStr.split(':');
+    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  }
+  
+  let totalDuration = currentAudio.duration;
+  if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration;
+  if (!totalDuration) return;
+
   const rect = event.currentTarget.getBoundingClientRect();
-  const clickX = rect.right - event.clientX;
+  const clickX = rect.right - event.clientX; 
   let perc = clickX / rect.width;
   if (perc < 0) perc = 0;
   if (perc > 1) perc = 1;
-  currentAudio.currentTime = currentAudio.duration * perc;
+  
+  currentAudio.currentTime = totalDuration * perc;
   const fill = document.getElementById('progress-' + msgKey);
   if (fill) fill.style.width = (perc * 100) + '%';
 }
+
 
 /* ═══════════════════════════════════
    IMAGE PREVIEW, ZOOM & PAN
 ═══════════════════════════════════ */
 let currentScale = 1;
-let imgTx = 0,
-  imgTy = 0;
-let imgStartX = 0,
-  imgStartY = 0;
+let imgTx = 0, imgTy = 0;
+let imgStartX = 0, imgStartY = 0;
 
 function previewImg(url) {
   const img = document.getElementById('img-preview-el');
@@ -1744,9 +1734,7 @@ function previewImg(url) {
   imgTy = 0;
   img.style.transform = `translate(0px, 0px) scale(1)`;
   document.getElementById('img-preview-overlay').classList.add('open');
-  history.pushState({
-    overlay: 'image'
-  }, '', '');
+  history.pushState({ overlay: 'image' }, '', '');
 }
 
 function closeImgPreview() {
@@ -1764,7 +1752,7 @@ let imgLastTap = 0;
 imgEl.addEventListener('touchstart', (e) => {
   const now = Date.now();
   if (now - imgLastTap < 300 && now - imgLastTap > 0) {
-    currentScale = currentScale === 1 ? 4 : 1; // زوم كبير جداً
+    currentScale = currentScale === 1 ? 4 : 1;
     imgTx = 0;
     imgTy = 0;
     imgEl.style.transition = 'transform 0.2s ease';
@@ -1789,7 +1777,6 @@ imgEl.addEventListener('touchmove', (e) => {
 
 /* ═══════════════════════════════════
    CALL SYSTEM — WebRTC
-   FIX: Complete signaling flow + audio
 ═══════════════════════════════════ */
 function initCallListener(uid) {
   if (myCallListener) db.ref('calls/' + uid).off('value', myCallListener);
@@ -1814,12 +1801,10 @@ function initCallListener(uid) {
     } else if (data.status === 'answered') {
       document.getElementById('btn-accept-call').style.display = 'none';
       startCallTimer();
-      // Only the caller sets up the peer (callee sets up on acceptCall)
       if (data.role === 'caller' && !peerConnection) {
         callIsCaller = true;
         await setupWebRTCPeer(true);
       }
-
     } else if (data.status === 'ended') {
       endCall();
     }
@@ -1837,10 +1822,7 @@ async function startCall() {
   renderScreenUI('call');
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: false
-    });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     callIsCaller = true;
 
     await db.ref('calls/' + currentUser.uid).set({
@@ -1867,21 +1849,12 @@ async function acceptCall() {
   document.getElementById('btn-accept-call').style.display = 'none';
 
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: false
-    });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     callIsCaller = false;
 
-    // Update status for both
-    await db.ref('calls/' + currentUser.uid).update({
-      status: 'answered'
-    });
-    await db.ref('calls/' + currentCallPeer).update({
-      status: 'answered'
-    });
+    await db.ref('calls/' + currentUser.uid).update({ status: 'answered' });
+    await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
 
-    // Callee sets up WebRTC
     await setupWebRTCPeer(false);
   } catch (e) {
     showToast('لا يمكن الرد بدون صلاحية المايكروفون', 'error');
@@ -1920,9 +1893,6 @@ function closeCallUI() {
   }
 }
 
-/* ═══════════════════════════════════
-   WebRTC Setup
-═══════════════════════════════════ */
 async function setupWebRTCPeer(isCaller) {
   if (!currentCallPeer) return;
   const chatId = [currentUser.uid, currentCallPeer].sort().join('_');
@@ -1971,14 +1941,9 @@ async function setupWebRTCPeer(isCaller) {
   };
 
   if (isCaller) {
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: true
-    });
+    const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
     await peerConnection.setLocalDescription(offer);
-    await signalRef.child('offer').set({
-      sdp: offer.sdp,
-      type: offer.type
-    });
+    await signalRef.child('offer').set({ sdp: offer.sdp, type: offer.type });
 
     signalRef.child('answer').on('value', async snap => {
       const answer = snap.val();
@@ -1994,12 +1959,9 @@ async function setupWebRTCPeer(isCaller) {
     signalRef.child('calleeCandidates').on('child_added', async snap => {
       const cand = snap.val();
       if (cand && peerConnection) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-        } catch (e) {}
+        try { await peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
       }
     });
-
   } else {
     signalRef.child('offer').once('value', async snap => {
       const offer = snap.val();
@@ -2008,10 +1970,7 @@ async function setupWebRTCPeer(isCaller) {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
-        await signalRef.child('answer').set({
-          sdp: answer.sdp,
-          type: answer.type
-        });
+        await signalRef.child('answer').set({ sdp: answer.sdp, type: answer.type });
       } catch (e) {
         console.warn('callee setup:', e);
       }
@@ -2020,9 +1979,7 @@ async function setupWebRTCPeer(isCaller) {
     signalRef.child('callerCandidates').on('child_added', async snap => {
       const cand = snap.val();
       if (cand && peerConnection) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(cand));
-        } catch (e) {}
+        try { await peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
       }
     });
   }
@@ -2034,8 +1991,7 @@ function startCallTimer() {
   document.getElementById('call-status-view').style.color = 'var(--neon-green)';
   callDurationInt = setInterval(() => {
     const sec = Math.floor((Date.now() - startTime) / 1000);
-    const m = Math.floor(sec / 60),
-      s = sec % 60;
+    const m = Math.floor(sec / 60), s = sec % 60;
     document.getElementById('call-status-view').textContent = `في مكالمة: ${m}:${s<10?'0':''}${s}`;
   }, 1000);
 }
@@ -2054,24 +2010,17 @@ function escHtml(str) {
 
 function formatTime(ts) {
   if (!ts) return '';
-  return new Date(ts).toLocaleTimeString('ar-EG', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDate(ts) {
   if (!ts) return '';
-  const d = new Date(ts),
-    now = new Date();
+  const d = new Date(ts), now = new Date();
   if (d.toDateString() === now.toDateString()) return 'اليوم';
   const yes = new Date(now);
   yes.setDate(now.getDate() - 1);
   if (d.toDateString() === yes.toDateString()) return 'أمس';
-  return d.toLocaleDateString('ar-EG', {
-    day: '2-digit',
-    month: 'short'
-  });
+  return d.toLocaleDateString('ar-EG', { day: '2-digit', month: 'short' });
 }
 
 /* ═══════════════════════════════════
@@ -2080,9 +2029,7 @@ function formatDate(ts) {
 (function() {
   const cached = localStorage.getItem('myProfile');
   if (cached) {
-    try {
-      myProfile = JSON.parse(cached);
-    } catch (e) {}
+    try { myProfile = JSON.parse(cached); } catch (e) {}
   }
 })();
 
@@ -2127,7 +2074,7 @@ function searchInChat(query) {
   });
 
   if (chatSearchResults.length > 0) {
-    currentSearchIndex = chatSearchResults.length - 1; // يبدأ من أحدث رسالة
+    currentSearchIndex = chatSearchResults.length - 1;
     highlightCurrentSearchResult();
   }
 }
@@ -2151,10 +2098,7 @@ function highlightCurrentSearchResult() {
     if (idx === currentSearchIndex) {
       b.style.boxShadow = '0 0 20px var(--neon-cyan)';
       b.style.transform = 'scale(1.03)';
-      b.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center'
-      });
+      b.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
       b.style.boxShadow = 'none';
       b.style.transform = 'scale(1)';
@@ -2171,10 +2115,8 @@ function openHomeChatMenu(chatId, friendUid, friendName) {
 
   menu.innerHTML += `<button class="msg-menu-btn" onclick="clearChatHistory('${chatId}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg> مسح المحادثة الداخلية</button>`;
 
-  // سحب الصورة الخاصة بالصديق من البيانات الموجودة حتى نحفظها بقائمة الأصدقاء
-  const friendPhoto = (chatsData && chatsData[chatId] && chatsData[chatId].friendPhoto) ? chatsData[chatId].friendPhoto : '';
-
-  menu.innerHTML += `<button class="msg-menu-btn danger" onclick="removeChatFromList('${chatId}', '${friendUid}', '${escHtml(friendName)}', '${friendPhoto}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5c-1.1 0-2 .9-2 2v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg> حذف من الشاشة الرئيسية</button>`;
+  // تمرير الـ chatId فقط لزر الحذف للاستنتاج الذكي ومنع الأخطاء
+  menu.innerHTML += `<button class="msg-menu-btn danger" onclick="removeChatFromList('${chatId}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5c-1.1 0-2 .9-2 2v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg> حذف من الشاشة الرئيسية</button>`;
 
   menu.innerHTML += `<button class="msg-menu-btn danger" onclick="blockUser('${friendUid}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> حظر الشخص</button>`;
 
@@ -2191,32 +2133,35 @@ function clearChatHistory(chatId) {
   });
 }
 
-async function removeChatFromList(chatId, friendUid, friendName, friendPhoto) {
+async function removeChatFromList(chatId) {
   const ok = await openModal('إخفاء المحادثة', 'سيتم إخفاء المحادثة، ولكن سيبقى الشخص في قائمة الأصدقاء.');
   if (ok) {
     showToast('جاري الإخفاء...');
     try {
-      const fName = (friendName && friendName !== 'undefined') ? friendName : 'مستخدم';
-      const fPhoto = (friendPhoto && friendPhoto !== 'undefined') ? friendPhoto : '';
+      // الاستنتاج الذكي من اسم المحادثة لتفادي إرسال بيانات خاطئة من الأزرار
+      const uids = chatId.split('_');
+      const friendUid = uids[0] === currentUser.uid ? uids[1] : uids[0];
+
+      if (friendUid) {
+        const fSnap = await db.ref('users/' + friendUid).once('value');
+        if (fSnap.exists()) {
+          const fData = fSnap.val();
+          await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).update({
+            name: fData.name || 'مستخدم',
+            photo: fData.photo || '',
+            timestamp: Date.now()
+          });
+        }
+      }
       
-      // نستخدم update بدلاً من set لتفادي أخطاء الصلاحيات
-      await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).update({
-        name: fName,
-        photo: fPhoto,
-        timestamp: Date.now()
-      });
-      
-      // حذف المحادثة من الشاشة الرئيسية
       await db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
-      
       showToast('تم إخفاء المحادثة بنجاح ✔️', 'success');
     } catch (err) {
       console.error(err);
-      showToast('حدث خطأ أثناء الإخفاء، حاول مجدداً', 'error');
+      showToast('حدث خطأ أثناء الإخفاء', 'error');
     }
   }
 }
-
 
 function blockUser(friendUid) {
   openModal('حظر', 'هل تريد حظر هذا الشخص؟').then(ok => {
@@ -2228,23 +2173,22 @@ function blockUser(friendUid) {
 }
 
 function initFriendsListListener(uid) {
-  // إيقاف الاستماع القديم قبل تشغيل الجديد لمنع الرفة نهائياً
-  if (friendsListListener) db.ref('friendsList/' + uid).off('value', friendsListListener);
-  
-  friendsListListener = db.ref('friendsList/' + uid).on('value', async snap => {
-    const container = document.getElementById('my-friends-container');
-    if (!container) return;
+  const container = document.getElementById('my-friends-container');
+  if (!container) return;
 
-    // 🔥 الحل الجذري: المزامنة الفورية في حال كانت قائمة الأصدقاء فارغة
+  // تنظيف المستمعات القديمة لمنع التكرار
+  db.ref('friendsList/' + uid).off();
+  container.innerHTML = '';
+
+  // فحص القائمة الفارغة ونقل المحادثات القديمة
+  db.ref('friendsList/' + uid).once('value', async snap => {
     if (!snap.exists()) {
       const chatsSnap = await db.ref('userChats/' + uid).once('value');
       let hasOldFriends = false;
-
       if (chatsSnap.exists()) {
         chatsSnap.forEach(c => {
           const d = c.val();
           if (d.friendUid) {
-            // سحب الصديق من المحادثات القديمة وإضافته للقائمة
             db.ref('friendsList/' + uid + '/' + d.friendUid).set({
               name: d.friendName || 'مستخدم',
               photo: d.friendPhoto || '',
@@ -2254,49 +2198,107 @@ function initFriendsListListener(uid) {
           }
         });
       }
-
-      // إذا وجدنا أصدقاء قدامى وقمنا بنسخهم، نوقف الدالة هنا 
-      // لأن الإضافة لقاعدة البيانات ستجعل الدالة تعمل من جديد تلقائياً وترسم الأصدقاء
-      if (hasOldFriends) return;
-
-      container.innerHTML = `<div style="text-align:center; padding:40px 20px; color:var(--text-muted);">لا يوجد أصدقاء في القائمة بعد.</div>`;
-      return;
+      if (!hasOldFriends) {
+        container.innerHTML = `<div id="friends-empty-msg" style="text-align:center; padding:40px 20px; color:var(--text-muted);">لا يوجد أصدقاء في القائمة بعد.</div>`;
+      }
     }
+  });
 
-    // رسم الأصدقاء في حال كانوا موجودين
-    let htmlStr = '';
-    snap.forEach(friendSnap => {
-      const friendUid = friendSnap.key;
-      const fData = friendSnap.val();
-      const initials = (fData.name || '?').charAt(0);
-
-      const avatarHtml = fData.photo ?
-        `<img src="${fData.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"/>` :
-        initials;
-
-      htmlStr += `
-      <div class="search-result-card" style="padding:12px 16px; margin-bottom:8px;">
-        <div class="search-result-avatar" style="width:40px;height:40px;font-size:15px; overflow:hidden;">${avatarHtml}</div>
-        <div class="search-result-info">
-          <div class="search-result-name" style="font-size:16px;margin-bottom:0;">${escHtml(fData.name)}</div>
-        </div>
-        <button class="btn-primary" style="width:auto;padding:8px 16px;font-size:13px;" onclick="startChat('${friendUid}')">مراسلة</button>
-      </div>`;
-    });
+  // 🚀 الحل الذكي لمشكلة الرفة: الاستماع للإضافة والتغيير بشكل فردي 🚀
+  db.ref('friendsList/' + uid).on('child_added', snap => {
+    const friendUid = snap.key;
+    const fData = snap.val();
     
-    // خدعة برمجية: لا تقم بتحديث الشاشة إلا إذا كان هناك تغيير حقيقي (يمنع الرفة نهائياً)
-    if (container.innerHTML !== htmlStr) {
-      container.innerHTML = htmlStr;
+    const emptyMsg = document.getElementById('friends-empty-msg');
+    if (emptyMsg) emptyMsg.remove();
+
+    if (document.getElementById('friend-card-' + friendUid)) return;
+
+    const initials = (fData.name || '?').charAt(0);
+    const avatarHtml = fData.photo ?
+      `<img src="${fData.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"/>` :
+      initials;
+
+    const card = document.createElement('div');
+    card.className = 'search-result-card';
+    card.id = 'friend-card-' + friendUid;
+    card.style.cssText = 'padding:12px 16px; margin-bottom:8px; display:flex; align-items:center;';
+    card.innerHTML = `
+      <div class="search-result-avatar" style="width:40px;height:40px;font-size:15px; overflow:hidden; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--bg-surface); border-radius:50%; border:1px solid var(--border-subtle);">${avatarHtml}</div>
+      <div class="search-result-info" style="flex:1; margin-right:12px; text-align:right;">
+        <div class="search-result-name" id="friend-name-text-${friendUid}" style="font-size:16px;margin-bottom:0;">${escHtml(fData.name)}</div>
+      </div>
+      <button class="btn-primary" style="width:auto;padding:8px 16px;font-size:13px;flex-shrink:0;" onclick="startChat('${friendUid}')">مراسلة</button>
+    `;
+    container.appendChild(card);
+  });
+
+  db.ref('friendsList/' + uid).on('child_changed', snap => {
+    const friendUid = snap.key;
+    const fData = snap.val();
+    const nameEl = document.getElementById('friend-name-text-' + friendUid);
+    if (nameEl) nameEl.textContent = fData.name;
+  });
+
+  db.ref('friendsList/' + uid).on('child_removed', snap => {
+    const card = document.getElementById('friend-card-' + snap.key);
+    if (card) card.remove();
+  });
+}
+
+// الحل الجذري لمشكلة الكيبورد والـ Header باستخدام visualViewport
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    // تعديل طول التطبيق ليتناسب مع المساحة المتبقية فوق الكيبورد فقط
+    document.getElementById('app').style.height = window.visualViewport.height + 'px';
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+    const area = document.getElementById('messages-area');
+    if (area) area.scrollTop = area.scrollHeight;
+  });
+} else {
+  // كود احتياطي في حال كان المتصفح قديماً جداً
+  window.addEventListener('resize', () => {
+    if (document.activeElement && document.activeElement.id === 'msg-input') {
+      setTimeout(() => {
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        const area = document.getElementById('messages-area');
+        if (area) area.scrollTop = area.scrollHeight;
+      }, 100);
     }
   });
 }
-window.addEventListener('resize', () => {
-  if (document.activeElement && document.activeElement.id === 'msg-input') {
+
+// منع المتصفح من عمل Scroll عند الضغط على مربع النص
+const msgInputEl = document.getElementById('msg-input');
+if(msgInputEl) {
+  msgInputEl.addEventListener('focus', () => {
     setTimeout(() => {
       window.scrollTo(0, 0);
       document.body.scrollTop = 0;
-      const area = document.getElementById('messages-area');
-      if (area) area.scrollTop = area.scrollHeight;
-    }, 100);
+    }, 300);
+  });
+}
+
+/* ═══════════════════════════════════
+   SCROLL TO REPLY
+═══════════════════════════════════ */
+function scrollToMessage(msgKey) {
+  const targetEl = document.getElementById('msg-' + msgKey);
+  if (targetEl) {
+    // التمرير السلس للرسالة وتوسيطها في الشاشة
+    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    
+    // عمل وميض لوني وحركة تكبير خفيفة للفت الانتباه
+    targetEl.style.transition = 'all 0.3s ease';
+    targetEl.style.boxShadow = '0 0 20px var(--neon-cyan)';
+    targetEl.style.transform = 'scale(1.05)';
+    
+    // إزالة الوميض بعد ثانية ونصف لتعود الرسالة لشكلها الطبيعي
+    setTimeout(() => {
+      targetEl.style.boxShadow = 'none';
+      targetEl.style.transform = 'scale(1)';
+    }, 1500);
   }
-});
+}
