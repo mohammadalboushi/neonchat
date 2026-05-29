@@ -38,6 +38,7 @@ let typingRef = null;
 let typingListener = null;
 let friendRequestsListener = null;
 let myCallListener = null;
+let friendsListListener = null; // أضفنا هذا السطر لمنع الرفة
 
 // call
 let localStream = null;
@@ -482,12 +483,35 @@ async function generateUniqueId() {
   }
 }
 
+// دالة جديدة لتنظيف كل الأشباح والذاكرة عند الخروج
+function cleanupListeners() {
+  if (currentUser) {
+    if (chatsListener) db.ref('userChats/' + currentUser.uid).off('value', chatsListener);
+    if (friendRequestsListener) db.ref('friendRequests/' + currentUser.uid).off('value', friendRequestsListener);
+    if (friendsListListener) db.ref('friendsList/' + currentUser.uid).off('value', friendsListListener);
+    if (myCallListener) db.ref('calls/' + currentUser.uid).off('value', myCallListener);
+    
+    // إيقاف مراقبة حالة الأصدقاء
+    Object.keys(presenceListeners).forEach(fUid => {
+      db.ref('users/' + fUid + '/status').off('value', presenceListeners[fUid]);
+    });
+    presenceListeners = {};
+  }
+  detachMessages();
+}
+
 function confirmLogout() {
   openModal('تسجيل الخروج', 'هل أنت متأكد أنك تريد تسجيل الخروج؟').then(ok => {
     if (ok) {
       if (currentUser) db.ref('users/' + currentUser.uid + '/status').set(Date.now());
+      cleanupListeners(); // تشغيل مكنسة التنظيف هنا!
       auth.signOut().then(() => {
         localStorage.removeItem('myProfile');
+        
+        // تصفير الصورة الشخصية لتجنب ظهور صورة الحساب القديم
+        const avatarEl = document.getElementById('profile-avatar');
+        if(avatarEl) avatarEl.outerHTML = `<div class="profile-avatar" id="profile-avatar">أ</div>`;
+        
         renderScreenUI('login');
       });
     }
@@ -1486,7 +1510,7 @@ async function pushMessage(msg) {
             token: fData.fcmToken,
             title: myProfile.name || 'نيون شات',
             body: lastMsg,
-            icon: 'https://mohammadalboushi.github.io/neonchat/icon.png',
+            icon: 'https://mohammadalboushi.github.io/neonchat/icon-192.png',
             url: 'https://mohammadalboushi.github.io/neonchat/'
           })
         });
@@ -2204,7 +2228,10 @@ function blockUser(friendUid) {
 }
 
 function initFriendsListListener(uid) {
-  db.ref('friendsList/' + uid).on('value', async snap => {
+  // إيقاف الاستماع القديم قبل تشغيل الجديد لمنع الرفة نهائياً
+  if (friendsListListener) db.ref('friendsList/' + uid).off('value', friendsListListener);
+  
+  friendsListListener = db.ref('friendsList/' + uid).on('value', async snap => {
     const container = document.getElementById('my-friends-container');
     if (!container) return;
 

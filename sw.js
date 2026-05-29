@@ -32,7 +32,7 @@ self.addEventListener('notificationclick', event => {
   );
 });
 
-const CACHE_NAME = 'app-cache-v5';
+const CACHE_NAME = 'app-cache-v7';
 const ASSETS = [
   './',
   './index.html',
