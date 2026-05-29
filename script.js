@@ -269,11 +269,135 @@ function openModal(title, text) {
 }
 
 /* ═══════════════════════════════════
-   AUTH
+   AUTH (HYBRID SYSTEM)
 ═══════════════════════════════════ */
-document.getElementById('btn-google-login').addEventListener('click', () => {
-  auth.signInWithPopup(provider).catch(e => showToast('فشل تسجيل الدخول: ' + e.message, 'error'));
-});
+// دالة ذكية لتنسيق الإيميل (إذا كان يوزرنيم نحوله لإيميل وهمي خاص بالتطبيق)
+function formatEmail(input) {
+  input = input.trim().toLowerCase();
+  if (!input) return '';
+  if (!input.includes('@')) {
+    return input + '@neonchat.app';
+  }
+  return input;
+}
+
+const emailInput = document.getElementById('login-email');
+const passInput = document.getElementById('login-pass');
+const passConfirmInput = document.getElementById('login-pass-confirm');
+const btnLogin = document.getElementById('btn-custom-login');
+const btnSignup = document.getElementById('btn-custom-signup');
+const btnForgot = document.getElementById('btn-forgot-pass');
+
+// 1️⃣ زر الدخول
+if(btnLogin) {
+  btnLogin.addEventListener('click', async () => {
+    const rawEmail = emailInput.value;
+    const pass = passInput.value;
+    
+    if (!rawEmail || !pass) {
+      showToast('الرجاء إدخال اسم المستخدم وكلمة المرور', 'error');
+      return;
+    }
+    
+    const email = formatEmail(rawEmail);
+    btnLogin.disabled = true;
+    btnLogin.textContent = 'جاري الدخول...';
+    
+    try {
+      await auth.signInWithEmailAndPassword(email, pass);
+      // بمجرد النجاح، دالة onAuthStateChanged ستتولى الباقي وتنقلنا للرئيسية
+    } catch (e) {
+      if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+        showToast('الحساب غير موجود، من فضلك اضغط على إنشاء حساب أولاً', 'error');
+      } else if (e.code === 'auth/wrong-password') {
+        showToast('كلمة المرور غير صحيحة!', 'error');
+      } else {
+        showToast('خطأ: ' + e.message, 'error');
+      }
+    } finally {
+      btnLogin.disabled = false;
+      btnLogin.textContent = 'دخول';
+    }
+  });
+}
+
+// 2️⃣ زر إنشاء حساب
+if(btnSignup) {
+  btnSignup.addEventListener('click', async () => {
+    const rawEmail = emailInput.value;
+    const pass = passInput.value;
+    const passConf = passConfirmInput.value;
+    
+    if (!rawEmail || !pass || !passConf) {
+      showToast('الرجاء تعبئة جميع الحقول لإنشاء الحساب', 'error');
+      return;
+    }
+    if (pass !== passConf) {
+      showToast('كلمتي المرور غير متطابقتين! تأكد منهما', 'error');
+      return;
+    }
+    if (pass.length < 6) {
+      showToast('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل', 'error');
+      return;
+    }
+    
+    const email = formatEmail(rawEmail);
+    btnSignup.disabled = true;
+    btnSignup.textContent = 'جاري الإنشاء...';
+    
+    try {
+      const userCred = await auth.createUserWithEmailAndPassword(email, pass);
+      // إذا أدخل يوزرنيم، نحفظه كاسمه الافتراضي
+      if (!rawEmail.includes('@')) {
+        await userCred.user.updateProfile({ displayName: rawEmail });
+      }
+      showToast('تم إنشاء الحساب بنجاح!', 'success');
+    } catch (e) {
+      if (e.code === 'auth/email-already-in-use') {
+        // الخدعة الذكية: إذا كان ذكي وضغط إنشاء حساب وهو يملك حساب مسبقاً، ندخله فوراً
+        try {
+          await auth.signInWithEmailAndPassword(email, pass);
+          showToast('هذا الحساب موجود مسبقاً، تم تسجيل دخولك بنجاح!', 'success');
+        } catch (signInErr) {
+          showToast('الحساب موجود مسبقاً، ولإنشاء حساب جديد يجب اختيار اسم آخر', 'error');
+        }
+      } else {
+        showToast('فشل الإنشاء: ' + e.message, 'error');
+      }
+    } finally {
+      btnSignup.disabled = false;
+      btnSignup.textContent = 'إنشاء حساب';
+    }
+  });
+}
+
+// 3️⃣ زر استعادة كلمة المرور
+if(btnForgot) {
+  btnForgot.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const rawEmail = emailInput.value.trim();
+    
+    if (!rawEmail) {
+      showToast('الرجاء كتابة إيميلك في المربع أولاً لإرسال رابط الاستعادة', 'error');
+      return;
+    }
+    if (!rawEmail.includes('@')) {
+      showToast('الاستعادة تعمل فقط إذا كنت مسجلاً بإيميل حقيقي وليس يوزرنيم', 'error');
+      return;
+    }
+    
+    try {
+      await auth.sendPasswordResetEmail(rawEmail);
+      showToast('تم إرسال رابط الاستعادة لبريدك الوارد، تفقده الآن ✔️', 'success');
+    } catch (err) {
+       if (err.code === 'auth/user-not-found') {
+          showToast('لا يوجد حساب مسجل بهذا الإيميل', 'error');
+       } else {
+          showToast('فشل الإرسال: ' + err.message, 'error');
+       }
+    }
+  });
+}
 
 auth.onAuthStateChanged(async user => {
   if (user) {
