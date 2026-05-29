@@ -2194,25 +2194,25 @@ function clearChatHistory(chatId) {
 async function removeChatFromList(chatId, friendUid, friendName, friendPhoto) {
   const ok = await openModal('إخفاء المحادثة', 'سيتم إخفاء المحادثة، ولكن سيبقى الشخص في قائمة الأصدقاء.');
   if (ok) {
-    showToast('جاري التحديث...');
+    showToast('جاري الإخفاء...');
     try {
-      // تنظيف البيانات من أي قيمة undefined
       const fName = (friendName && friendName !== 'undefined') ? friendName : 'مستخدم';
       const fPhoto = (friendPhoto && friendPhoto !== 'undefined') ? friendPhoto : '';
       
-      // التثبيت في القائمة باستخدام set
-      await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).set({
+      // نستخدم update بدلاً من set لتفادي أخطاء الصلاحيات
+      await db.ref('friendsList/' + currentUser.uid + '/' + friendUid).update({
         name: fName,
         photo: fPhoto,
         timestamp: Date.now()
       });
       
-      // الحذف من الشاشة الرئيسية
+      // حذف المحادثة من الشاشة الرئيسية
       await db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
+      
       showToast('تم إخفاء المحادثة بنجاح ✔️', 'success');
     } catch (err) {
       console.error(err);
-      showToast('حدث خطأ أثناء الإخفاء', 'error');
+      showToast('حدث خطأ أثناء الإخفاء، حاول مجدداً', 'error');
     }
   }
 }
@@ -2283,7 +2283,11 @@ function initFriendsListListener(uid) {
         <button class="btn-primary" style="width:auto;padding:8px 16px;font-size:13px;" onclick="startChat('${friendUid}')">مراسلة</button>
       </div>`;
     });
-    container.innerHTML = htmlStr;
+    
+    // خدعة برمجية: لا تقم بتحديث الشاشة إلا إذا كان هناك تغيير حقيقي (يمنع الرفة نهائياً)
+    if (container.innerHTML !== htmlStr) {
+      container.innerHTML = htmlStr;
+    }
   });
 }
 window.addEventListener('resize', () => {
