@@ -987,12 +987,22 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 }
 
 /* ═══════════════════════════════════
-   ATTACH MESSAGES
+   ATTACH MESSAGES (PERFECT PAGINATION)
 ═══════════════════════════════════ */
+let oldestMsgTimestamp = null;
+let isLoadingHistory = false;
+let hasMoreHistory = true;
+
 function attachMessages(chatId) {
   const area = document.getElementById('messages-area');
   area.innerHTML = '';
   lastMsgDate = '';
+  oldestMsgTimestamp = null;
+  isLoadingHistory = false;
+  hasMoreHistory = true;
+  
+  // منع تدخل المتصفح العشوائي
+  area.style.overflowAnchor = 'none';
 
   db.ref('userChats/' + currentChat.friendUid + '/' + chatId).update({
     friendName: myProfile.name,
@@ -1000,9 +1010,17 @@ function attachMessages(chatId) {
   });
 
   messagesRef = db.ref('chats/' + chatId + '/messages');
+  
+  let query = messagesRef.orderByChild('timestamp').limitToLast(100);
+  let scrollTimeout;
 
-  messagesListener = messagesRef.orderByChild('timestamp').on('child_added', snap => {
+  messagesListener = query.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
+    
+    if (!oldestMsgTimestamp || msg.timestamp < oldestMsgTimestamp) {
+      oldestMsgTimestamp = msg.timestamp;
+    }
+
     const dateStr = formatDate(msg.timestamp);
     if (dateStr !== lastMsgDate) {
       const sep = document.createElement('div');
@@ -1011,11 +1029,81 @@ function attachMessages(chatId) {
       area.appendChild(sep);
       lastMsgDate = dateStr;
     }
-    area.appendChild(buildMsgEl(msg));
-    area.scrollTop = area.scrollHeight;
+    area.appendChild(buildMsgEl(msg, false)); 
+    
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      area.scrollTop = area.scrollHeight;
+    }, 50);
+
     if (msg.senderUid !== currentUser.uid) {
       if (!msg.read) snap.ref.update({ read: true });
       db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
+    }
+  });
+
+  area.addEventListener('scroll', async () => {
+    if (area.scrollTop === 0 && !isLoadingHistory && hasMoreHistory && oldestMsgTimestamp) {
+      isLoadingHistory = true;
+      
+      // 🚀 1. الخدعة الذهبية: إيقاف قوة التمرير (Momentum) الناتجة عن سحبة إصبعك فوراً
+      area.style.overflowY = 'hidden';
+      
+      const loader = document.createElement('div');
+      loader.id = 'history-loader';
+      loader.innerHTML = '<div style="text-align:center; padding:10px; font-size:12px; color:var(--neon-cyan);">جاري التحميل...</div>';
+      area.insertBefore(loader, area.firstChild);
+
+      // هنا يسحب 20 رسالة (يمكنك تعديل الرقم 20 إلى ما تشاء)
+      const snap = await messagesRef.orderByChild('timestamp').endAt(oldestMsgTimestamp - 1).limitToLast(2000).once('value');
+      
+      loader.remove(); 
+
+      if (snap.exists()) {
+        const msgs = [];
+        snap.forEach(child => { msgs.push({ ...child.val(), key: child.key }); });
+        
+        if (msgs.length > 0) {
+          oldestMsgTimestamp = msgs[0].timestamp;
+          
+          // 🚀 2. حفظ الطول قبل إضافة أي رسالة جديدة
+          const oldScrollHeight = area.scrollHeight;
+          
+          const fragment = document.createDocumentFragment();
+          let tempLastDate = '';
+          msgs.forEach(m => {
+            const dStr = formatDate(m.timestamp);
+            if (dStr !== tempLastDate) {
+              const sep = document.createElement('div');
+              sep.className = 'date-sep';
+              sep.innerHTML = `<span>${dStr}</span>`;
+              fragment.appendChild(sep);
+              tempLastDate = dStr;
+            }
+            fragment.appendChild(buildMsgEl(m, true)); 
+          });
+          
+          area.insertBefore(fragment, area.firstChild);
+          
+          const allSeps = area.querySelectorAll('.date-sep');
+          let lastTxt = '';
+          allSeps.forEach(sep => {
+             if(sep.innerText === lastTxt) sep.remove();
+             else lastTxt = sep.innerText;
+          });
+
+          // 🚀 3. وضعك تماماً في مكانك عن طريق تعويض الارتفاع الجديد
+          area.scrollTop = area.scrollHeight - oldScrollHeight;
+        } else {
+          hasMoreHistory = false;
+        }
+      } else {
+        hasMoreHistory = false;
+      }
+      
+      // 🚀 4. إعادة التمرير للعمل بعد أن تم تثبيتك بنجاح
+      area.style.overflowY = 'auto';
+      isLoadingHistory = false;
     }
   });
 
@@ -1046,13 +1134,17 @@ function attachMessages(chatId) {
   });
 }
 
+
+
+
 /* ═══════════════════════════════════
    BUILD MESSAGE ELEMENT
 ═══════════════════════════════════ */
-function buildMsgEl(msg) {
+function buildMsgEl(msg, isBackground = false) {
   if (msg.isDeleted) {
     const row = document.createElement('div');
     row.className = 'msg-row ' + (msg.senderUid === currentUser.uid ? 'out' : 'in');
+    if (isBackground) row.style.animation = 'none'; // تعطيل الأنيميشن للرسائل القديمة
     row.innerHTML = `<div class="msg-bubble" id="msg-${msg.key}" style="background:transparent;border:1px solid var(--border-subtle);color:var(--text-muted);font-style:italic;font-size:12px;">🚫 تم حذف هذه الرسالة</div>`;
     return row;
   }
@@ -1060,6 +1152,7 @@ function buildMsgEl(msg) {
   const row = document.createElement('div');
   const isOut = msg.senderUid === currentUser.uid;
   row.className = 'msg-row ' + (isOut ? 'out' : 'in');
+  if (isBackground) row.style.animation = 'none'; // 🚀 تعطيل الأنيميشن لمنع اختفاء الشاشة والرفة
 
   if (!isOut) {
     const fProfile = currentChat.friendProfile || {};
@@ -1155,14 +1248,15 @@ function buildMsgEl(msg) {
 
   let replyHtml = '';
   if (msg.replyTo) {
-    // أضفنا زر الضغط (onclick) والمؤشر (cursor:pointer) ليصبح المربع قابلاً للضغط
     replyHtml = `<div onclick="scrollToMessage('${msg.replyTo.key}')" style="cursor:pointer;"><div class="reply-badge">↩ رد على رسالة</div><div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;margin-bottom:6px;border-right:2px solid var(--neon-cyan);font-size:12px;opacity:0.8;overflow:hidden;white-space:nowrap;text-overflow:ellipsis; transition: background 0.2s;" onactive="this.style.background='rgba(0,240,255,0.1)'">${escHtml(msg.replyTo.text)}</div></div>`;
   }
 
   if (msg.type === 'text') {
     bubble.innerHTML = `${replyHtml}<div>${escHtml(msg.text)}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
-    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" onload="document.getElementById('messages-area').scrollTop = document.getElementById('messages-area').scrollHeight" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
+    // 🚀 تعطيل القفز للأسفل إذا كانت الصورة تتحمل بالخلفية
+    const onloadAttr = isBackground ? '' : `onload="if(!window.preventAutoScroll) document.getElementById('messages-area').scrollTop = document.getElementById('messages-area').scrollHeight"`;
+    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" ${onloadAttr} onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     bubble.innerHTML = `${replyHtml}
@@ -1181,6 +1275,7 @@ function buildMsgEl(msg) {
   row.appendChild(bubble);
   return row;
 }
+
 
 /* ═══════════════════════════════════
    REACTION
@@ -1397,21 +1492,41 @@ async function sendTextMsg() {
 
 
 async function sendImageMsg(url) {
+  let replyData = null;
+  if (replyingToMsg) {
+    replyData = {
+      key: replyingToMsg.key,
+      text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت'
+    };
+    cancelReply(); // إغلاق مربع الرد بعد الإرسال
+  }
+
   await pushMessage({
     type: 'image',
     url,
     senderUid: currentUser.uid,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    replyTo: replyData // 🚀 إرفاق بيانات الرد مع الصورة
   });
 }
 
 async function sendVoiceMsg(url, duration) {
+  let replyData = null;
+  if (replyingToMsg) {
+    replyData = {
+      key: replyingToMsg.key,
+      text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت'
+    };
+    cancelReply(); // إغلاق مربع الرد بعد الإرسال
+  }
+
   await pushMessage({
     type: 'voice',
     url,
     duration,
     senderUid: currentUser.uid,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    replyTo: replyData // 🚀 إرفاق بيانات الرد مع المقطع الصوتي
   });
 }
 
@@ -2246,38 +2361,37 @@ function initFriendsListListener(uid) {
   });
 }
 
-// الحل الجذري لمشكلة الكيبورد والـ Header باستخدام visualViewport
+// الحل الجذري والنهائي لمنع الشاشة من التمرير الوهمي (Scroll) عند ظهور الكيبورد
+document.body.style.overscrollBehavior = 'none';
+document.documentElement.style.overscrollBehavior = 'none';
+
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', () => {
-    // تعديل طول التطبيق ليتناسب مع المساحة المتبقية فوق الكيبورد فقط
-    document.getElementById('app').style.height = window.visualViewport.height + 'px';
+    const appEl = document.getElementById('app');
+    appEl.style.height = window.visualViewport.height + 'px';
+    appEl.style.position = 'fixed';
+    appEl.style.top = '0';
+    appEl.style.width = '100%';
     window.scrollTo(0, 0);
-    document.body.scrollTop = 0;
     const area = document.getElementById('messages-area');
     if (area) area.scrollTop = area.scrollHeight;
   });
-} else {
-  // كود احتياطي في حال كان المتصفح قديماً جداً
-  window.addEventListener('resize', () => {
-    if (document.activeElement && document.activeElement.id === 'msg-input') {
-      setTimeout(() => {
-        window.scrollTo(0, 0);
-        document.body.scrollTop = 0;
-        const area = document.getElementById('messages-area');
-        if (area) area.scrollTop = area.scrollHeight;
-      }, 100);
-    }
-  });
 }
 
-// منع المتصفح من عمل Scroll عند الضغط على مربع النص
+// قفل صارم يمنع المتصفح من سحب الصفحة للأسفل (Pull-to-refresh أو Overscroll)
+document.body.addEventListener('touchmove', (e) => {
+  const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body');
+  if (!isScrollable) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
 const msgInputEl = document.getElementById('msg-input');
 if(msgInputEl) {
   msgInputEl.addEventListener('focus', () => {
     setTimeout(() => {
       window.scrollTo(0, 0);
-      document.body.scrollTop = 0;
-    }, 300);
+    }, 50);
   });
 }
 
