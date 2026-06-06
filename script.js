@@ -1011,7 +1011,7 @@ function attachMessages(chatId) {
 
   messagesRef = db.ref('chats/' + chatId + '/messages');
   
-  let query = messagesRef.orderByChild('timestamp').limitToLast(100);
+  let query = messagesRef.orderByChild('timestamp').limitToLast(20);
   let scrollTimeout;
 
   messagesListener = query.on('child_added', snap => {
@@ -1110,9 +1110,17 @@ function attachMessages(chatId) {
   msgChangedListener = messagesRef.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
     const ticksEl = document.getElementById('ticks-' + msg.key);
-    if (ticksEl && msg.read) {
-      ticksEl.setAttribute('stroke', 'var(--neon-cyan)');
-      ticksEl.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline><polyline points="24 6 13 17 8 12"></polyline>';
+    if (ticksEl) {
+      if (msg.type === 'voice' && msg.listened) {
+        // 🚀 إجبار المتصفح على قراءة اللون الأخضر ككود صريح وتطبيقه بالقوة
+        ticksEl.setAttribute('stroke', '#00ff88');
+        ticksEl.style.stroke = '#00ff88';
+        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+      } else if (msg.read) {
+        ticksEl.setAttribute('stroke', '#00f0ff');
+        ticksEl.style.stroke = '#00f0ff';
+        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+      }
     }
     const reactEl = document.getElementById('react-' + msg.key);
     if (reactEl) {
@@ -1236,8 +1244,11 @@ function buildMsgEl(msg, isBackground = false) {
 
   let ticks = '';
   if (isOut) {
-    const color = msg.read ? 'var(--neon-cyan)' : 'var(--text-muted)';
-    const content = msg.read ?
+    // 🚀 تحديث لتجنب مشاكل الريندر: استخدام أكواد الـ Hex الصريحة
+    let color = msg.read ? '#00f0ff' : 'var(--text-muted)';
+    if (msg.type === 'voice' && msg.listened) color = '#00ff88'; 
+    
+    const content = (msg.read || msg.listened) ?
       '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>' :
       '<polyline points="20 6 9 17 4 12"></polyline>';
     ticks = `<svg id="ticks-${msg.key}" width="14" height="14" viewBox="0 0 28 18" fill="none" stroke="${color}" stroke-width="2" style="margin-left:4px;margin-bottom:-2px;">${content}</svg>`;
@@ -1254,14 +1265,19 @@ function buildMsgEl(msg, isBackground = false) {
   if (msg.type === 'text') {
     bubble.innerHTML = `${replyHtml}<div>${escHtml(msg.text)}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
-    // 🚀 تعطيل القفز للأسفل إذا كانت الصورة تتحمل بالخلفية
     const onloadAttr = isBackground ? '' : `onload="if(!window.preventAutoScroll) document.getElementById('messages-area').scrollTop = document.getElementById('messages-area').scrollHeight"`;
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" ${onloadAttr} onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
+    fetch(msg.url, { cache: 'force-cache' }).catch(()=>{});
+
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
+    
+    const unplayedDot = (!isOut && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : `<div id="unplayed-${msg.key}" style="width:10px;height:10px;margin-left:8px;flex-shrink:0;background:transparent;"></div>`;
+
     bubble.innerHTML = `${replyHtml}
       <div class="voice-msg">
-        <button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}')">
+        ${unplayedDot}
+        <button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})">
           <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </button>
         <div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">
@@ -1719,7 +1735,17 @@ let currentAudio = null;
 let currentAudioUrl = null;
 let audioUpdateInterval = null;
 
-function playVoice(btn, url, msgKey) {
+function playVoice(btn, url, msgKey, isOut) {
+  // 🚀 تحديث حالة الاستماع في قاعدة البيانات لو الرسالة واصلتني (مش أنا اللي باعتها)
+  if (isOut === false && currentChat) {
+    db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
+    const dot = document.getElementById('unplayed-' + msgKey);
+    if (dot) {
+      dot.style.background = 'transparent';
+      dot.style.boxShadow = 'none';
+    }
+  }
+
   if (currentAudio && currentAudioUrl === url) {
     if (!currentAudio.paused) {
       currentAudio.pause();
@@ -1761,9 +1787,30 @@ function playVoice(btn, url, msgKey) {
     if (fill) fill.style.width = '0%';
     const durEl = document.getElementById('dur-' + msgKey);
     if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
+    
+    // 🚀 الخدعة الجديدة: فحص الرسالة التالية مباشرة وعدم القفز إذا وجد رسالة نصية أو صورة
+    let currentRow = btn.closest('.msg-row');
+    let nextRow = currentRow ? currentRow.nextElementSibling : null;
+    
+    // تجاوز فواصل التاريخ فقط (إن وجدت بين المقطعين)
+    while (nextRow && nextRow.classList.contains('date-sep')) {
+      nextRow = nextRow.nextElementSibling;
+    }
+
+    let nextBtn = null;
+    if (nextRow && nextRow.classList.contains('msg-row')) {
+      // سيبحث عن زر التشغيل بالرسالة التالية، وإذا لم يجده (لأنها رسالة نصية مثلاً) ستكون النتيجة null ولن يشغل شيئاً
+      nextBtn = nextRow.querySelector('.voice-play-btn');
+    }
+
     currentAudio = null;
     currentAudioUrl = null;
     clearInterval(audioUpdateInterval);
+
+    // تشغيل المقطع التالي فوراً إذا كان موجوداً وكان هو الرسالة التالية مباشرة
+    if (nextBtn) {
+      nextBtn.click();
+    }
   };
 }
 
