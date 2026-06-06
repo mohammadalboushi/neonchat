@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "io.github.mohammadalboushi.twa",
+        "sha256_cert_fingerprints": ["2E:69:F4:DE:FD:95:7C:87:F5:EA:B9:35:19:E7:2A:90:AF:47:32:E1:05:2F:FF:AD:C0:B1:38:FA:D1:0D:C1:41"]
+      }
+    }]
