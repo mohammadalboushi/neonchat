@@ -447,6 +447,13 @@ async function ensureUserProfile(user) {
   const snap = await ref.once('value');
   if (snap.exists()) {
     myProfile = snap.val();
+    // 🚀 تأكيد تثبيت الـ ID: إعادة ربط الـ ID بحساب المستخدم بقوة حتى لو مسح بيانات المتصفح
+    if (!myProfile.uniqueId) {
+      myProfile.uniqueId = await generateUniqueId();
+      await ref.update({ uniqueId: myProfile.uniqueId });
+    } else {
+      await db.ref('userIds/' + myProfile.uniqueId).set(user.uid);
+    }
   } else {
     const uniqueId = await generateUniqueId();
     myProfile = {
@@ -1109,10 +1116,19 @@ function attachMessages(chatId) {
 
   msgChangedListener = messagesRef.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
+    
+    // 🚀 إخفاء النقطة الخضراء فوراً من شاشتك بمجرد استماع الطرف الآخر للمقطع
+    if (msg.type === 'voice' && msg.listened) {
+      const dot = document.getElementById('unplayed-' + msg.key);
+      if (dot) {
+        dot.style.background = 'transparent';
+        dot.style.boxShadow = 'none';
+      }
+    }
+
     const ticksEl = document.getElementById('ticks-' + msg.key);
     if (ticksEl) {
       if (msg.type === 'voice' && msg.listened) {
-        // 🚀 إجبار المتصفح على قراءة اللون الأخضر ككود صريح وتطبيقه بالقوة
         ticksEl.setAttribute('stroke', '#00ff88');
         ticksEl.style.stroke = '#00ff88';
         ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
@@ -1244,7 +1260,6 @@ function buildMsgEl(msg, isBackground = false) {
 
   let ticks = '';
   if (isOut) {
-    // 🚀 تحديث لتجنب مشاكل الريندر: استخدام أكواد الـ Hex الصريحة
     let color = msg.read ? '#00f0ff' : 'var(--text-muted)';
     if (msg.type === 'voice' && msg.listened) color = '#00ff88'; 
     
@@ -1268,11 +1283,22 @@ function buildMsgEl(msg, isBackground = false) {
     const onloadAttr = isBackground ? '' : `onload="if(!window.preventAutoScroll) document.getElementById('messages-area').scrollTop = document.getElementById('messages-area').scrollHeight"`;
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" ${onloadAttr} onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
-    fetch(msg.url, { cache: 'force-cache' }).catch(()=>{});
+    // تحميل المقطع الصوتي وحفظه بالكاش مباشرة ليشتغل أوفلاين بكل سلاسة
+if ('caches' in window) {
+  caches.open('media-cache').then(cache => {
+    cache.match(msg.url).then(cached => {
+      if (!cached) fetch(msg.url).then(res => cache.put(msg.url, res)).catch(()=>{});
+    });
+  });
+}
 
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     
-    const unplayedDot = (!isOut && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : `<div id="unplayed-${msg.key}" style="width:10px;height:10px;margin-left:8px;flex-shrink:0;background:transparent;"></div>`;
+    // 🚀 التعديل هنا: منع ظهور النقطة الخضراء تماماً للرسائل الصادرة (من طرفك)، والسماح بها فقط للواردة
+    let unplayedDot = '';
+    if (!isOut) {
+      unplayedDot = (!msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;transition:all 0.3s ease;"></div>` : `<div id="unplayed-${msg.key}" style="width:10px;height:10px;margin-left:8px;flex-shrink:0;background:transparent;transition:all 0.3s ease;"></div>`;
+    }
 
     bubble.innerHTML = `${replyHtml}
       <div class="voice-msg">
@@ -1291,6 +1317,7 @@ function buildMsgEl(msg, isBackground = false) {
   row.appendChild(bubble);
   return row;
 }
+
 
 
 /* ═══════════════════════════════════

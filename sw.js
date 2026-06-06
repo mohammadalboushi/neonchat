@@ -32,14 +32,21 @@ self.addEventListener('notificationclick', event => {
   );
 });
 
-const CACHE_NAME = 'app-cache-13';
+// رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
+const CACHE_NAME = 'app-cache-16'; 
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './script.js',
   './icon.png',
-  './manifest.json'
+  './manifest.json',
+  // ضفنا مكاتب فايربيز لهون مشان يفتح التطبيق ويفوت عالمحادثات بدون نت
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js',
+  'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js'
 ];
 
 self.addEventListener('install', event => {
@@ -54,22 +61,40 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE_NAME && k !== 'media-cache').map(k => caches.delete(k)))
     )
   );
   self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
-  // استثناء اتصالات فايربيز وسيرفر فيرسيل من الكاش
-  if (event.request.url.includes('firebase') || event.request.url.includes('vercel.app')) {
+  // 1. استثناء اتصالات سيرفر فيرسيل بس
+  if (event.request.url.includes('vercel.app')) {
     return;
   }
+
+  // 2. تكييش الصوتيات والصور من كلاوديناري مباشرة للعمل بدون نت
+  if (event.request.url.includes('cloudinary.com')) {
+    event.respondWith(
+      caches.match(event.request).then(cached => {
+        if (cached) return cached;
+        return fetch(event.request).then(response => {
+          const clone = response.clone();
+          caches.open('media-cache').then(cache => cache.put(event.request, clone));
+          return response;
+        }).catch(() => {});
+      })
+    );
+    return;
+  }
+
+  // 3. باقي الملفات (بما فيها فايربيز)
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
-        if (!response || response.status !== 200 || response.type !== 'basic') return response;
+        // شلنا شرط type !== basic لحتى يقبل مكاتب فايربيز الخارجية
+        if (!response || response.status !== 200) return response;
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         return response;
