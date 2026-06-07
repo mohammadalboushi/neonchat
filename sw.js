@@ -14,26 +14,11 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: payload.notification.icon || './icon.png',
-    badge: './icon.png',
-    data: { url: payload.data?.url || './index.html' }
-  };
-  self.registration.showNotification(notificationTitle, notificationOptions);
-});
-
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  event.waitUntil(
-    clients.openWindow(event.notification.data.url)
-  );
-});
+// تم إزالة توليد الإشعارات اليدوي من هنا 
+// لأن فايربيز يقوم بعرض الإشعارات تلقائياً بناءً على البيانات المرسلة من ملف send.js
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-16'; 
+const CACHE_NAME = 'app-cache-17'; 
 const ASSETS = [
   './',
   './index.html',

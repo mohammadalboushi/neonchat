@@ -395,15 +395,23 @@ async function initMicrophone() {
 }
 
 auth.onAuthStateChanged(async user => {
+  // إخفاء شاشة التحميل فوراً بالبداية لتجنب التعليق إذا تأخر الفايربيز
+  document.getElementById('loader-screen').classList.add('hidden');
+  
   if (user) {
     currentUser = user;
-    await ensureUserProfile(user);
+    
+    // حطيناها بـ try/catch عشان لو علق جلب البيانات ما يوقف باقي التطبيق
+    try {
+      await ensureUserProfile(user);
+    } catch(e) {
+      console.log("Error loading profile", e);
+    }
 
     if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
       Notification.requestPermission();
     }
 
-    document.getElementById('loader-screen').classList.add('hidden');
     setupPresence(user.uid);
 
     try {
@@ -422,10 +430,10 @@ auth.onAuthStateChanged(async user => {
   } else {
     currentUser = null;
     myProfile = null;
-    document.getElementById('loader-screen').classList.add('hidden');
     renderScreenUI('login');
   }
 });
+
 
 /* ═══════════════════════════════════
    PRESENCE
@@ -1116,6 +1124,18 @@ function attachMessages(chatId) {
 
   msgChangedListener = messagesRef.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
+    
+    // تحديث النص الفوري بداخل فقاعة الرسالة في حال تم التعديل
+    if (msg.isEdited && !msg.isDeleted && msg.type === 'text') {
+      const bubbleEl = document.getElementById('msg-' + msg.key);
+      if (bubbleEl) {
+        const tempRow = buildMsgEl(msg, true);
+        const tempBubble = tempRow.querySelector('.msg-bubble');
+        if (tempBubble) {
+          bubbleEl.innerHTML = tempBubble.innerHTML;
+        }
+      }
+    }
     
     // 🚀 إخفاء النقطة الخضراء فوراً من شاشتك بمجرد استماع الطرف الآخر للمقطع
     if (msg.type === 'voice' && msg.listened) {
