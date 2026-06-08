@@ -1255,6 +1255,9 @@ function buildMsgEl(msg, isBackground = false) {
   let lastTap = 0, pressTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
+    // تركنا مساحة للمستخدم يضغط على الروابط بدون ما يتدخل اللمس السريع
+    if (e.target.tagName === 'A') return;
+    
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) {
       toggleReaction(msg.key);
@@ -1274,6 +1277,8 @@ function buildMsgEl(msg, isBackground = false) {
   }, { passive: false });
 
   bubble.addEventListener('touchmove', e => {
+    if (e.target.tagName === 'A') return;
+    
     if (!touchStartX || !touchStartY) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
@@ -1293,6 +1298,8 @@ function buildMsgEl(msg, isBackground = false) {
   }, { passive: true });
 
   bubble.addEventListener('touchend', e => {
+    if (e.target.tagName === 'A') return;
+    
     clearTimeout(pressTimer);
     bubble.style.transition = 'transform 0.2s ease-out';
     bubble.style.transform = 'translateX(0)';
@@ -1309,6 +1316,7 @@ function buildMsgEl(msg, isBackground = false) {
   });
 
   bubble.addEventListener('contextmenu', e => {
+    if (e.target.tagName === 'A') return; // لا تفتح القائمة إذا ضغط عالرابط مطولاً
     e.preventDefault();
     openMsgMenu(msg, isOut);
   });
@@ -1333,23 +1341,28 @@ function buildMsgEl(msg, isBackground = false) {
   }
 
   if (msg.type === 'text') {
-    bubble.innerHTML = `${replyHtml}<div>${escHtml(msg.text)}</div>${timeEl}${reactHtml}`;
+    // 🚀 السحر هون: حماية النص وبعدين تحويل الروابط لعناصر قابلة للضغط
+    let safeText = escHtml(msg.text);
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    safeText = safeText.replace(urlRegex, function(url) {
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">${url}</a>`;
+    });
+    
+    bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
     const onloadAttr = isBackground ? '' : `onload="if(!window.preventAutoScroll) document.getElementById('messages-area').scrollTop = document.getElementById('messages-area').scrollHeight"`;
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" ${onloadAttr} onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
-    // تحميل المقطع الصوتي وحفظه بالكاش مباشرة ليشتغل أوفلاين بكل سلاسة
-if ('caches' in window) {
-  caches.open('media-cache').then(cache => {
-    cache.match(msg.url).then(cached => {
-      if (!cached) fetch(msg.url).then(res => cache.put(msg.url, res)).catch(()=>{});
-    });
-  });
-}
+    if ('caches' in window) {
+      caches.open('media-cache').then(cache => {
+        cache.match(msg.url).then(cached => {
+          if (!cached) fetch(msg.url).then(res => cache.put(msg.url, res)).catch(()=>{});
+        });
+      });
+    }
 
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     
-    // 🚀 التعديل هنا: منع ظهور النقطة الخضراء تماماً للرسائل الصادرة (من طرفك)، والسماح بها فقط للواردة
     let unplayedDot = '';
     if (!isOut) {
       unplayedDot = (!msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;transition:all 0.3s ease;"></div>` : `<div id="unplayed-${msg.key}" style="width:10px;height:10px;margin-left:8px;flex-shrink:0;background:transparent;transition:all 0.3s ease;"></div>`;
