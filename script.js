@@ -102,14 +102,19 @@ const rtcConfig = {
       x: Math.random() * W,
       y: Math.random() * H,
       r: Math.random() * 1.5 + .3,
-      vx: (Math.random() - .5) * .3,
-      vy: (Math.random() - .5) * .3,
+      vx: (Math.random() - .5) * .15,
+      vy: (Math.random() - .5) * .15,
       a: Math.random() * .6 + .2
     };
   }
-  for (let i = 0; i < 200; i++) particles.push(mkP()); // تم زيادة العدد إلى 200
+  // خففنا العدد لـ 40 لتوفير البطارية ومنع التهنيج
+  for (let i = 0; i < 40; i++) particles.push(mkP()); 
 
   function draw() {
+    requestAnimationFrame(draw);
+    // وقف الرسم تماماً إذا الشاشة مخفية أو فاتحين محادثة مشان يضل الجوال سريع وبارد
+    if (document.hidden || (document.getElementById('screen-chat') && document.getElementById('screen-chat').classList.contains('active'))) return;
+    
     ctx.clearRect(0, 0, W, H);
     ctx.strokeStyle = 'rgba(0,240,255,0.03)';
     ctx.lineWidth = 1;
@@ -135,7 +140,6 @@ const rtcConfig = {
       ctx.fillStyle = `rgba(0,240,255,${p.a})`;
       ctx.fill();
     });
-    requestAnimationFrame(draw);
   }
   draw();
 })();
@@ -442,13 +446,44 @@ function setupPresence(uid) {
   const myStatusRef = db.ref('users/' + uid + '/status');
   const connectedRef = db.ref('.info/connected');
 
+  let isConnected = false;
+
+  // مراقبة اتصال الإنترنت/السيرفر
   connectedRef.on('value', snap => {
-    if (snap.val() === false) return;
-    myStatusRef.onDisconnect().set(Date.now()).then(() => {
-      myStatusRef.set('online');
-    });
+    isConnected = snap.val() === true;
+    
+    if (isConnected) {
+      // السيرفر بيسجل آخر ظهور تلقائياً لو انقطع النت فجأة أو تسكر المتصفح بالقوة
+      myStatusRef.onDisconnect().set(Date.now());
+      
+      // بمجرد ما يشبك، إذا الشاشة قدامه بيصير متصل، وإذا بالخلفية بياخد وقت
+      if (document.visibilityState === 'visible') {
+        myStatusRef.set('online');
+      } else {
+        myStatusRef.set(Date.now());
+      }
+    }
+  });
+
+  // مراقبة الشاشة (نظامية بدون ترقيع اللمس)
+  document.addEventListener('visibilitychange', () => {
+    if (isConnected) {
+      if (document.visibilityState === 'visible') {
+        // فاتح الموقع وشايفه
+        myStatusRef.set('online');
+      } else {
+        // نزل الموقع للخلفية أو طفى شاشة الجوال
+        myStatusRef.set(Date.now());
+        
+        // تنظيف جاري الكتابة أو التسجيل فوراً إذا طلع
+        if (currentChat && currentUser) {
+          db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
+        }
+      }
+    }
   });
 }
+
 
 async function ensureUserProfile(user) {
   const ref = db.ref('users/' + user.uid);
@@ -1482,27 +1517,36 @@ function confirmDeleteMsg(msgKey) {
 /* ═══════════════════════════════════
    SEND MESSAGES
 ═══════════════════════════════════ */
+let lastTypingTime = 0; // لضبط الإرسال لفايربيز
+
 function handleMsgKey(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendTextMsg();
     return;
   }
-  if (currentChat && !isRecording) {
-    db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).set('typing');
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      if (currentChat) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
-    }, 2000);
-  }
 }
 
 document.getElementById('msg-input').addEventListener('input', () => {
   if (!currentChat || isRecording) return;
-  db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).set('typing');
+  
+  const now = Date.now();
+  const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
+  
+  if (now - lastTypingTime > 1500) {
+    typingRef.set('typing');
+    // هون السحر: لو فصل النت أو تسكر التطبيق فجأة، السيرفر بيمسح جاري الكتابة لحاله
+    typingRef.onDisconnect().remove(); 
+    lastTypingTime = now;
+  }
+  
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
-    if (currentChat) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
+    if (currentChat) {
+      typingRef.remove();
+      typingRef.onDisconnect().cancel(); // نلغي أمر الحذف التلقائي لأننا حذفناه نظامي
+    }
+    lastTypingTime = 0;
   }, 2000);
 });
 
@@ -1740,7 +1784,11 @@ async function toggleRecording() {
     document.getElementById('btn-attach').style.display = 'none';
     document.getElementById('btn-cancel-voice').style.display = 'flex';
     document.getElementById('recording-indicator').style.display = 'flex';
-    if (currentChat) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).set('recording');
+    if (currentChat) {
+      const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
+      recRef.set('recording');
+      recRef.onDisconnect().remove();
+    }
     startRecordTimer();
   } catch (e) {
     showToast('تعذر الوصول للمايكروفون', 'error');
@@ -1761,7 +1809,11 @@ function startRecordTimer() {
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
   isRecording = false;
-  if (currentChat) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
+  if (currentChat) {
+    const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
+    recRef.remove();
+    recRef.onDisconnect().cancel();
+  }
   document.getElementById('btn-voice').classList.remove('recording');
   document.getElementById('msg-input-wrap').style.display = 'block';
   document.getElementById('btn-attach').style.display = 'flex';
