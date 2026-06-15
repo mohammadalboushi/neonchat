@@ -1748,7 +1748,11 @@ async function toggleRecording() {
         showToast('تم رمي التسجيل 🗑️');
         return;
       }
-      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+
+      // حفظ البيانات محلياً لمنع تداخلها لو بلشت تسجيل ثاني بسرعة
+      const localChunks = [...audioChunks];
+      const blob = new Blob(localChunks, { type: 'audio/webm' });
+      const finalDuration = recordDurationStr;
       
       // 🚀 رمي فقاعة وهمية فوراً بالشاشة لتعطي إحساس بالسرعة
       const tempId = 'temp-audio-' + Date.now();
@@ -1765,14 +1769,25 @@ async function toggleRecording() {
         area.scrollTop = area.scrollHeight;
       }
 
+      // إعطاء المتصفح لحظة ليرسم الفقاعة الوهمية قبل ما ينضغط بطلب الرفع
+      await new Promise(r => setTimeout(r, 50));
+
+      // إضافة مؤقت عشان ما يضل معلق للأبد لو النت فصل
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 ثانية حد أقصى
+
       try {
         const fd = new FormData();
         fd.append('file', blob);
         fd.append('upload_preset', 'malaboushi_preset');
+        
         const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', {
           method: 'POST',
-          body: fd
+          body: fd,
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         const data = await res.json();
         
         // إزالة الفقاعة الوهمية بمجرد انتهاء الرفع وظهور الحقيقية
@@ -1780,12 +1795,18 @@ async function toggleRecording() {
         if (tempEl) tempEl.remove();
 
         if (data.secure_url) {
-          await sendVoiceMsg(data.secure_url, recordDurationStr);
+          await sendVoiceMsg(data.secure_url, finalDuration);
         } else throw new Error('فشل الرفع');
       } catch (e) {
+        clearTimeout(timeoutId);
         const tempEl = document.getElementById(tempId);
         if (tempEl) tempEl.remove();
-        showToast('فشل: ' + e.message, 'error');
+        
+        if (e.name === 'AbortError') {
+          showToast('انتهى وقت الرفع، تأكد من جودة اتصالك', 'error');
+        } else {
+          showToast('فشل: ' + e.message, 'error');
+        }
       }
     };
     
