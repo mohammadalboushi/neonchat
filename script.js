@@ -1040,6 +1040,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
    ATTACH MESSAGES (PERFECT PAGINATION)
 ═══════════════════════════════════ */
 let oldestMsgTimestamp = null;
+let oldestMsgKey = null; // ضفنا هالمتحول هون للسرعة
 let isLoadingHistory = false;
 let hasMoreHistory = true;
 
@@ -1048,6 +1049,7 @@ function attachMessages(chatId) {
   area.innerHTML = '';
   lastMsgDate = '';
   oldestMsgTimestamp = null;
+  oldestMsgKey = null;
   isLoadingHistory = false;
   hasMoreHistory = true;
   
@@ -1061,12 +1063,17 @@ function attachMessages(chatId) {
 
   messagesRef = db.ref('chats/' + chatId + '/messages');
   
-  let query = messagesRef.orderByChild('timestamp').limitToLast(20);
+  // استخدمنا orderByKey بدال orderByChild مشان ما يحمل كل المحادثة ليفرزها
+  let query = messagesRef.orderByKey().limitToLast(100);
   let scrollTimeout;
 
   messagesListener = query.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
+    // حفظ أقدم مفتاح عشان التمرير
+    if (!oldestMsgKey || snap.key < oldestMsgKey) {
+      oldestMsgKey = snap.key;
+    }
     if (!oldestMsgTimestamp || msg.timestamp < oldestMsgTimestamp) {
       oldestMsgTimestamp = msg.timestamp;
     }
@@ -1092,32 +1099,37 @@ function attachMessages(chatId) {
     }
   });
 
-  area.addEventListener('scroll', async () => {
-    if (area.scrollTop === 0 && !isLoadingHistory && hasMoreHistory && oldestMsgTimestamp) {
+    area.addEventListener('scroll', async () => {
+    // خلينا التحميل يشتغل قبل ما توصل للصفر بشوي (5 بكسل) عشان سلاسة التمرير
+    if (area.scrollTop <= 5 && !isLoadingHistory && hasMoreHistory && oldestMsgKey) {
       isLoadingHistory = true;
       
-      // 🚀 1. الخدعة الذهبية: إيقاف قوة التمرير (Momentum) الناتجة عن سحبة إصبعك فوراً
-      area.style.overflowY = 'hidden';
-      
+      // حفظنا مكان السكرول الحالي في حال ما كان 0 تماماً
+      const oldScrollTop = area.scrollTop;
+
       const loader = document.createElement('div');
       loader.id = 'history-loader';
       loader.innerHTML = '<div style="text-align:center; padding:10px; font-size:12px; color:var(--neon-cyan);">جاري التحميل...</div>';
       area.insertBefore(loader, area.firstChild);
 
-      // هنا يسحب 20 رسالة (يمكنك تعديل الرقم 20 إلى ما تشاء)
-      const snap = await messagesRef.orderByChild('timestamp').endAt(oldestMsgTimestamp - 1).limitToLast(2000).once('value');
+      const snap = await messagesRef.orderByKey().endAt(oldestMsgKey).limitToLast(100).once('value');
       
       loader.remove(); 
 
       if (snap.exists()) {
         const msgs = [];
-        snap.forEach(child => { msgs.push({ ...child.val(), key: child.key }); });
+        snap.forEach(child => {
+          if (child.key !== oldestMsgKey) { 
+            msgs.push({ ...child.val(), key: child.key });
+          }
+        });
         
         if (msgs.length > 0) {
+          oldestMsgKey = msgs[0].key;
           oldestMsgTimestamp = msgs[0].timestamp;
           
-          // 🚀 2. حفظ الطول قبل إضافة أي رسالة جديدة
-          const oldScrollHeight = area.scrollHeight;
+          // نحسب الارتفاع الأساسي "بعد" إزالة اللودر وقبل إضافة الرسائل الجديدة
+          const baseScrollHeight = area.scrollHeight;
           
           const fragment = document.createDocumentFragment();
           let tempLastDate = '';
@@ -1142,8 +1154,8 @@ function attachMessages(chatId) {
              else lastTxt = sep.innerText;
           });
 
-          // 🚀 3. وضعك تماماً في مكانك عن طريق تعويض الارتفاع الجديد
-          area.scrollTop = area.scrollHeight - oldScrollHeight;
+          // السحر هون: التعويض الدقيق للمسافة (الارتفاع الجديد - الأساسي + المسافة اللي كنت ساحبها)
+          area.scrollTop = area.scrollHeight - baseScrollHeight + oldScrollTop;
         } else {
           hasMoreHistory = false;
         }
@@ -1151,11 +1163,10 @@ function attachMessages(chatId) {
         hasMoreHistory = false;
       }
       
-      // 🚀 4. إعادة التمرير للعمل بعد أن تم تثبيتك بنجاح
-      area.style.overflowY = 'auto';
       isLoadingHistory = false;
     }
   });
+
 
   msgChangedListener = messagesRef.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
