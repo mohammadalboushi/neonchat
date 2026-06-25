@@ -1724,7 +1724,9 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
 /* ═══════════════════════════════════
    VOICE RECORDING
 ═══════════════════════════════════ */
-async function toggleRecording() {
+let isSingingMode = false; // متغير لمعرفة وضع التسجيل الحالي
+
+async function toggleRecording(isSinging = false) {
   if (isRecording) {
     stopRecording();
     return;
@@ -1734,38 +1736,90 @@ async function toggleRecording() {
     return;
   }
   try {
+    isSingingMode = isSinging; // حفظ نوع التسجيل مضغوط
+
     let audioConstraints = {
       echoCancellation: false,
-      noiseSuppression: true,
-      autoGainControl: false
+      noiseSuppression: false,
+      autoGainControl: false,
+      sampleRate: 48000,
+      channelCount: 2
     };
 
     if (internalMicId) {
       audioConstraints.deviceId = { exact: internalMicId };
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(rawStream);
+    
+    const lowCutFilter = audioCtx.createBiquadFilter();
+    lowCutFilter.type = "highpass";
+    lowCutFilter.frequency.value = 130;
+
+    const highCutFilter = audioCtx.createBiquadFilter();
+    highCutFilter.type = "lowpass";
+    highCutFilter.frequency.value = 10000;
+
+    function generateReverb(ctx) {
+      const length = ctx.sampleRate * 3.5; 
+      const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+      const left = impulse.getChannelData(0);
+      const right = impulse.getChannelData(1);
+      for (let i = 0; i < length; i++) {
+        const decay = Math.pow(1 - i / length, 1.5); 
+        left[i] = (Math.random() * 2 - 1) * decay;
+        right[i] = (Math.random() * 2 - 1) * decay;
+      }
+      return impulse;
+    }
+
+    const convolver = audioCtx.createConvolver();
+    convolver.buffer = generateReverb(audioCtx);
+    
+    const dryGain = audioCtx.createGain();
+    dryGain.gain.value = 1; 
+    
+    const wetGain = audioCtx.createGain();
+    // 🚀 السحر هنا: إذا كان نمط غناء يعطي قوة صدى 15%، وإذا عادي يعطي 5%
+    wetGain.gain.value = isSingingMode ? (15 / 100) * 3 : (5 / 100) * 3; 
+    
+    const dest = audioCtx.createMediaStreamDestination();
+    
+    source.connect(lowCutFilter);
+    lowCutFilter.connect(highCutFilter);
+    
+    highCutFilter.connect(dryGain);
+    dryGain.connect(dest);
+    
+    highCutFilter.connect(convolver);
+    convolver.connect(wetGain);
+    wetGain.connect(dest);
+
     audioChunks = [];
     isRecordingCanceled = false;
-    mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 128000 });
+    
+    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     
     mediaRecorder.ondataavailable = e => {
       if (e.data.size > 0) audioChunks.push(e.data);
     };
     
     mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
+      rawStream.getTracks().forEach(t => t.stop());
+      if(audioCtx.state !== 'closed') audioCtx.close();
+      
       if (isRecordingCanceled) {
         showToast('تم رمي التسجيل 🗑️');
         return;
       }
 
-      // حفظ البيانات محلياً لمنع تداخلها لو بلشت تسجيل ثاني بسرعة
       const localChunks = [...audioChunks];
       const blob = new Blob(localChunks, { type: 'audio/webm' });
       const finalDuration = recordDurationStr;
       
-      // 🚀 رمي فقاعة وهمية فوراً بالشاشة لتعطي إحساس بالسرعة
       const tempId = 'temp-audio-' + Date.now();
       const area = document.getElementById('messages-area');
       if (area) {
@@ -1774,18 +1828,16 @@ async function toggleRecording() {
         tempDiv.id = tempId;
         tempDiv.innerHTML = `<div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); display:flex; align-items:center; gap:8px;">
           <div style="width:16px; height:16px; border:2px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>
-          <span style="font-size:13px;">جاري إرسال المقطع...</span>
+          <span style="font-size:13px;">${isSingingMode ? 'جاري إرسال مقطع الغناء... 🎤' : 'جاري إرسال المقطع...'}</span>
         </div>`;
         area.appendChild(tempDiv);
         area.scrollTop = area.scrollHeight;
       }
 
-      // إعطاء المتصفح لحظة ليرسم الفقاعة الوهمية قبل ما ينضغط بطلب الرفع
       await new Promise(r => setTimeout(r, 50));
 
-      // إضافة مؤقت عشان ما يضل معلق للأبد لو النت فصل
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 ثانية حد أقصى
+      const timeoutId = setTimeout(() => controller.abort(), 30000); 
 
       try {
         const fd = new FormData();
@@ -1801,7 +1853,6 @@ async function toggleRecording() {
         clearTimeout(timeoutId);
         const data = await res.json();
         
-        // إزالة الفقاعة الوهمية بمجرد انتهاء الرفع وظهور الحقيقية
         const tempEl = document.getElementById(tempId);
         if (tempEl) tempEl.remove();
 
@@ -1824,11 +1875,23 @@ async function toggleRecording() {
     mediaRecorder.start(200);
     isRecording = true;
     recordStart = Date.now();
-    document.getElementById('btn-voice').classList.add('recording');
+
+    // تشغيل تأثير النبض الأحمر على الزر النشط وإخفاء الزر الآخر مؤقتاً
+    if (isSingingMode) {
+      const btnMusic = document.getElementById('btn-music-voice');
+      if (btnMusic) btnMusic.classList.add('recording');
+      document.getElementById('btn-voice').style.display = 'none';
+    } else {
+      document.getElementById('btn-voice').classList.add('recording');
+      const btnMusic = document.getElementById('btn-music-voice');
+      if (btnMusic) btnMusic.style.display = 'none';
+    }
+
     document.getElementById('msg-input-wrap').style.display = 'none';
     document.getElementById('btn-attach').style.display = 'none';
     document.getElementById('btn-cancel-voice').style.display = 'flex';
     document.getElementById('recording-indicator').style.display = 'flex';
+    
     if (currentChat) {
       const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
       recRef.set('recording');
@@ -1840,17 +1903,6 @@ async function toggleRecording() {
   }
 }
 
-
-function startRecordTimer() {
-  const span = document.getElementById('rec-timer-text');
-  recordTimerInt = setInterval(() => {
-    const sec = Math.floor((Date.now() - recordStart) / 1000);
-    const m = Math.floor(sec / 60), s = sec % 60;
-    recordDurationStr = m + ':' + (s < 10 ? '0' : '') + s;
-    if (span) span.textContent = recordDurationStr;
-  }, 1000);
-}
-
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
   isRecording = false;
@@ -1859,13 +1911,24 @@ function stopRecording() {
     recRef.remove();
     recRef.onDisconnect().cancel();
   }
+
+  // إعادة تهيئة مظهر كلا الزرين وإظهارهما بالشريط السفلي من جديد
   document.getElementById('btn-voice').classList.remove('recording');
+  document.getElementById('btn-voice').style.display = 'flex';
+  
+  const btnMusic = document.getElementById('btn-music-voice');
+  if (btnMusic) {
+    btnMusic.classList.remove('recording');
+    btnMusic.style.display = 'flex';
+  }
+
   document.getElementById('msg-input-wrap').style.display = 'block';
   document.getElementById('btn-attach').style.display = 'flex';
   document.getElementById('btn-cancel-voice').style.display = 'none';
   document.getElementById('recording-indicator').style.display = 'none';
   clearInterval(recordTimerInt);
 }
+
 
 function cancelVoiceRecord() {
   isRecordingCanceled = true;
@@ -2344,6 +2407,7 @@ function formatDate(ts) {
 ═══════════════════════════════════ */
 let chatSearchResults = [];
 let currentSearchIndex = -1;
+let searchTimeout = null;
 
 function toggleChatSearch() {
   const bar = document.getElementById('chat-search-bar');
@@ -2352,65 +2416,164 @@ function toggleChatSearch() {
     bar.style.display = 'flex';
     input.value = '';
     input.focus();
-    clearChatHighlights();
+    removeSearchOverlay();
   } else {
     bar.style.display = 'none';
-    clearChatHighlights();
+    removeSearchOverlay();
   }
 }
 
-function clearChatHighlights() {
-  document.querySelectorAll('.msg-bubble').forEach(b => {
-    b.style.boxShadow = 'none';
-    b.style.transform = 'scale(1)';
-  });
-  chatSearchResults = [];
-  currentSearchIndex = -1;
+function removeSearchOverlay() {
+  const el = document.getElementById('firebase-search-results');
+  if (el) el.remove();
+  const area = document.getElementById('messages-area');
+  if (area) area.style.display = 'flex';
 }
 
 function searchInChat(query) {
-  clearChatHighlights();
-  if (!query.trim()) return;
-  const bubbles = document.getElementById('messages-area').querySelectorAll('.msg-bubble');
+  removeSearchOverlay();
+  if (!query.trim()) {
+    document.getElementById('messages-area').style.display = 'flex';
+    return;
+  }
 
-  bubbles.forEach(bubble => {
-    if (bubble.innerText.includes(query)) {
-      chatSearchResults.push(bubble);
+  const area = document.getElementById('messages-area');
+  area.style.display = 'none';
+  
+  let overlay = document.createElement('div');
+  overlay.id = 'firebase-search-results';
+  overlay.style.cssText = 'flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; background:var(--bg-void); z-index:10;';
+  overlay.innerHTML = `<div style="text-align:center; color:var(--neon-cyan); margin-top:40px;">
+    <div style="width:30px; height:30px; border:3px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 10px;"></div>
+    جاري البحث في الأرشيف... 🔍
+  </div>`;
+  
+  document.getElementById('screen-chat').insertBefore(overlay, document.getElementById('msg-reply-preview'));
+
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(async () => {
+    if (!currentChat) return;
+    try {
+      const snap = await db.ref('chats/' + currentChat.chatId + '/messages').once('value');
+      let found = [];
+      if (snap.exists()) {
+        snap.forEach(child => {
+          const msg = child.val();
+          if (msg.type === 'text' && msg.text && msg.text.includes(query)) {
+            found.push({ ...msg, key: child.key });
+          }
+        });
+      }
+
+      if (found.length === 0) {
+        overlay.innerHTML = `<div style="text-align:center; color:var(--text-muted); margin-top:40px;">لم يتم العثور على نتائج لكلمة "${escHtml(query)}"</div>
+        <button class="btn-primary" style="margin-top:20px; width:auto; align-self:center;" onclick="toggleChatSearch()">إغلاق البحث</button>`;
+        return;
+      }
+
+      found.sort((a, b) => b.timestamp - a.timestamp);
+
+      let htmlStr = `<div style="color:var(--neon-green); margin-bottom:10px; font-weight:bold; text-align:center;">تم العثور على ${found.length} نتيجة</div>`;
+      
+      found.forEach(msg => {
+        const isMe = msg.senderUid === currentUser.uid;
+        const senderName = isMe ? 'أنت' : currentChat.friendProfile.name;
+        const dateStr = new Date(msg.timestamp).toLocaleString('ar-EG', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+        
+        const regex = new RegExp(`(${query})`, 'gi');
+        const highlightedText = escHtml(msg.text).replace(regex, `<span style="background:var(--neon-cyan); color:var(--bg-void); padding:0 3px; border-radius:3px; font-weight:bold;">$1</span>`);
+
+        htmlStr += `
+          <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:12px; padding:14px; border-right:4px solid ${isMe ? 'var(--neon-cyan)' : 'var(--neon-pink)'}; box-shadow:var(--shadow-neon); cursor:pointer; margin-bottom:8px;" onclick="jumpToMessageContext('${msg.key}')">
+            <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:10px; border-bottom:1px solid var(--border-subtle); padding-bottom:6px;">
+              <span style="font-weight:bold; color:${isMe ? 'var(--neon-cyan)' : 'var(--neon-pink)'}">${senderName}</span>
+              <span>${dateStr}</span>
+            </div>
+            <div style="font-size:15px; line-height:1.6; color:var(--text-primary);">${highlightedText}</div>
+            <div style="text-align:left; margin-top:8px; font-size:11px; color:var(--neon-cyan);">اضغط للانتقال للرسالة ↗️</div>
+          </div>
+        `;
+      });
+      
+      htmlStr += `<button class="btn-primary" style="margin-top:20px; margin-bottom:20px; width:auto; align-self:center;" onclick="toggleChatSearch()">إغلاق البحث</button>`;
+      overlay.innerHTML = htmlStr;
+
+    } catch (e) {
+      overlay.innerHTML = `<div style="text-align:center; color:var(--neon-pink); margin-top:40px;">حدث خطأ أثناء البحث بالبيانات ❌</div>`;
     }
-  });
+  }, 800);
+}
 
-  if (chatSearchResults.length > 0) {
-    currentSearchIndex = chatSearchResults.length - 1;
-    highlightCurrentSearchResult();
+async function jumpToMessageContext(msgKey) {
+  removeSearchOverlay();
+  const area = document.getElementById('messages-area');
+  area.style.display = 'flex';
+
+  // إذا الرسالة أصلاً معروضة عالشاشة حالياً
+  if (document.getElementById('msg-' + msgKey)) {
+    scrollToMessage(msgKey);
+    return;
+  }
+
+  // إيقاف التنصت للرسائل الجديدة مؤقتاً لنجيب الأرشيف بهدوء
+  if (messagesRef && messagesListener) {
+    messagesRef.off('child_added', messagesListener);
+  }
+
+  area.innerHTML = '<div style="text-align:center; padding:40px; color:var(--neon-cyan);">جاري استرجاع المحادثة من الأرشيف... ⏳</div>';
+
+  try {
+    // سحب 30 رسالة قبل وبعد لعمل سياق محترم
+    const snapBefore = await db.ref('chats/' + currentChat.chatId + '/messages').orderByKey().endAt(msgKey).limitToLast(30).once('value');
+    const snapAfter = await db.ref('chats/' + currentChat.chatId + '/messages').orderByKey().startAt(msgKey).limitToFirst(30).once('value');
+
+    let msgsMap = {};
+    if (snapBefore.exists()) snapBefore.forEach(c => { msgsMap[c.key] = { ...c.val(), key: c.key }; });
+    if (snapAfter.exists()) snapAfter.forEach(c => { msgsMap[c.key] = { ...c.val(), key: c.key }; });
+
+    let msgs = Object.values(msgsMap).sort((a, b) => a.timestamp - b.timestamp);
+    area.innerHTML = '';
+
+    const topBtn = document.createElement('div');
+    topBtn.innerHTML = `<div style="text-align:center; margin-bottom:15px;"><button class="btn-primary" style="width:auto; padding:8px 16px; font-size:13px; background:var(--neon-purple); border:none; box-shadow:var(--shadow-purple);" onclick="returnToLiveChat()">⬇️ العودة لآخر الرسائل ⬇️</button></div>`;
+    area.appendChild(topBtn);
+
+    let tempLastDate = '';
+    msgs.forEach(m => {
+      const dStr = formatDate(m.timestamp);
+      if (dStr !== tempLastDate) {
+        const sep = document.createElement('div');
+        sep.className = 'date-sep';
+        sep.innerHTML = `<span>${dStr}</span>`;
+        area.appendChild(sep);
+        tempLastDate = dStr;
+      }
+      area.appendChild(buildMsgEl(m, true));
+    });
+
+    const botBtn = document.createElement('div');
+    botBtn.innerHTML = `<div style="text-align:center; margin-top:15px; padding-bottom:20px;"><button class="btn-primary" style="width:auto; padding:8px 16px; font-size:13px; background:var(--neon-purple); border:none; box-shadow:var(--shadow-purple);" onclick="returnToLiveChat()">⬇️ العودة لآخر الرسائل ⬇️</button></div>`;
+    area.appendChild(botBtn);
+
+    setTimeout(() => {
+      scrollToMessage(msgKey);
+    }, 150);
+
+  } catch (e) {
+    area.innerHTML = '<div style="text-align:center; color:var(--neon-pink); padding:20px;">حدث خطأ في جلب الرسائل القديمة ❌</div><div style="text-align:center;"><button class="btn-primary" style="width:auto;" onclick="returnToLiveChat()">رجوع للمحادثة</button></div>';
   }
 }
 
-function nextSearchResult() {
-  if (chatSearchResults.length === 0) return;
-  currentSearchIndex--;
-  if (currentSearchIndex < 0) currentSearchIndex = chatSearchResults.length - 1;
-  highlightCurrentSearchResult();
+function returnToLiveChat() {
+  if (currentChat) {
+    attachMessages(currentChat.chatId);
+  }
 }
 
-function prevSearchResult() {
-  if (chatSearchResults.length === 0) return;
-  currentSearchIndex++;
-  if (currentSearchIndex >= chatSearchResults.length) currentSearchIndex = 0;
-  highlightCurrentSearchResult();
-}
-
-function highlightCurrentSearchResult() {
-  chatSearchResults.forEach((b, idx) => {
-    if (idx === currentSearchIndex) {
-      b.style.boxShadow = '0 0 20px var(--neon-cyan)';
-      b.style.transform = 'scale(1.03)';
-      b.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-      b.style.boxShadow = 'none';
-      b.style.transform = 'scale(1)';
-    }
-  });
-}
+function nextSearchResult() { showToast('النتائج كلها معروضة أمامك بالقائمة', 'info'); }
+function prevSearchResult() { showToast('النتائج كلها معروضة أمامك بالقائمة', 'info'); }
+function clearChatHighlights() {}
+function highlightCurrentSearchResult() {}
 
 /* ═══════════════════════════════════
    HOME CHAT MENU & FRIENDS LIST

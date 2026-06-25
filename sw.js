@@ -18,7 +18,7 @@ const messaging = firebase.messaging();
 // لأن فايربيز يقوم بعرض الإشعارات تلقائياً بناءً على البيانات المرسلة من ملف send.js
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-21'; 
+const CACHE_NAME = 'app-cache-22'; 
 const ASSETS = [
   './',
   './index.html',
