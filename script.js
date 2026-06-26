@@ -1263,10 +1263,16 @@ function buildMsgEl(msg, isBackground = false) {
   bubble.className = 'msg-bubble';
   bubble.id = 'msg-' + msg.key;
 
+  // 🌟 إضافة أيقونة الرد التي ستظهر خلف الرسالة أثناء السحب 🌟
+  let replyIcon = document.createElement('div');
+  replyIcon.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2.5"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>`;
+  replyIcon.style.cssText = `position:absolute; top:50%; margin-top:-11px; transform:scale(0); opacity:0; transition:all 0.2s ease-out; z-index:-1;`;
+  row.style.position = 'relative'; 
+  row.appendChild(replyIcon);
+
   let lastTap = 0, pressTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
-    // تركنا مساحة للمستخدم يضغط على الروابط بدون ما يتدخل اللمس السريع
     if (e.target.tagName === 'A') return;
     
     const now = Date.now();
@@ -1293,18 +1299,45 @@ function buildMsgEl(msg, isBackground = false) {
     if (!touchStartX || !touchStartY) return;
     const dx = e.touches[0].clientX - touchStartX;
     const dy = e.touches[0].clientY - touchStartY;
+    
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
       isVertical = true;
       clearTimeout(pressTimer);
       bubble.style.transition = 'transform 0.2s ease-out';
       bubble.style.transform = 'translateX(0)';
+      replyIcon.style.transform = `scale(0)`;
+      replyIcon.style.opacity = '0';
       return;
     }
+    
     if (Math.abs(dx) > 15 && !isVertical) {
       isSwiping = true;
       clearTimeout(pressTimer);
       let limit = Math.min(Math.abs(dx), 65) * Math.sign(dx);
       bubble.style.transform = `translateX(${limit}px)`;
+      
+      let pullPerc = Math.min(Math.abs(dx) / 50, 1);
+      replyIcon.style.transition = 'none';
+      replyIcon.style.opacity = pullPerc;
+      replyIcon.style.transform = `scale(${pullPerc})`;
+      
+      // تغيير مكان الأيقونة ديناميكياً لتظهر بالجهة المعاكسة للسحب
+      if (dx > 0) { 
+        replyIcon.style.left = '55px'; replyIcon.style.right = 'auto';
+      } else { 
+        replyIcon.style.right = '20px'; replyIcon.style.left = 'auto';
+      }
+      
+      if (pullPerc > 0.85) {
+        replyIcon.style.filter = `drop-shadow(0 0 8px var(--neon-cyan))`;
+        if (navigator.vibrate && !bubble.hasVibrated) { 
+          navigator.vibrate(15); 
+          bubble.hasVibrated = true; 
+        }
+      } else {
+        replyIcon.style.filter = 'none';
+        bubble.hasVibrated = false;
+      }
     }
   }, { passive: true });
 
@@ -1314,14 +1347,22 @@ function buildMsgEl(msg, isBackground = false) {
     clearTimeout(pressTimer);
     bubble.style.transition = 'transform 0.2s ease-out';
     bubble.style.transform = 'translateX(0)';
+    
+    // إخفاء الأيقونة عند إفلات الرسالة
+    replyIcon.style.transition = 'all 0.2s ease-out';
+    replyIcon.style.transform = `scale(0)`;
+    replyIcon.style.opacity = '0';
+    bubble.hasVibrated = false;
 
     if (isSwiping) {
       const dx = e.changedTouches[0].clientX - touchStartX;
+      // السماح بفتح الرد إذا تم السحب يمين أو يسار لمسافة كافية
       if (Math.abs(dx) > 45) {
         prepareReply(msg);
         if (navigator.vibrate) navigator.vibrate(40);
       }
     }
+    isSwiping = false;
     touchStartX = 0;
     touchStartY = 0;
   });
@@ -1396,6 +1437,7 @@ function buildMsgEl(msg, isBackground = false) {
   row.appendChild(bubble);
   return row;
 }
+
 
 
 
