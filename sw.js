@@ -18,7 +18,7 @@ const messaging = firebase.messaging();
 // لأن فايربيز يقوم بعرض الإشعارات تلقائياً بناءً على البيانات المرسلة من ملف send.js
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-22'; 
+const CACHE_NAME = 'app-cache-23'; 
 const ASSETS = [
   './',
   './index.html',
@@ -53,6 +53,8 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+	  if (event.request.method !== 'GET') return;
+	
   // 1. استثناء اتصالات سيرفر فيرسيل بس
   if (event.request.url.includes('vercel.app')) {
     return;

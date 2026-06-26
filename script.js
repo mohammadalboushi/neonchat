@@ -1736,8 +1736,9 @@ async function toggleRecording(isSinging = false) {
     return;
   }
   try {
-    isSingingMode = isSinging; // حفظ نوع التسجيل مضغوط
+    isSingingMode = isSinging; 
 
+    // نبقي فلاتر المتصفح المزعجة مغلقة للحفاظ على فخامة الصوت
     let audioConstraints = {
       echoCancellation: false,
       noiseSuppression: false,
@@ -1754,14 +1755,39 @@ async function toggleRecording(isSinging = false) {
     
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioCtx.createMediaStreamSource(rawStream);
+    const analyser = audioCtx.createAnalyser();
+analyser.fftSize = 64;
+source.connect(analyser);
+
     
+    // 1. سر الكاريوكي: تقليل حساسية المايك بنسبة 50% لمنع التقاط هواء الغرفة المزعج
+    const preGain = audioCtx.createGain();
+    preGain.gain.value = 0.2;
+
+    // 2. فلتر قطع الترددات الخشنة
     const lowCutFilter = audioCtx.createBiquadFilter();
     lowCutFilter.type = "highpass";
-    lowCutFilter.frequency.value = 130;
+    lowCutFilter.frequency.value = 160;
 
+    // 3. فلتر قطع الطنين
     const highCutFilter = audioCtx.createBiquadFilter();
     highCutFilter.type = "lowpass";
     highCutFilter.frequency.value = 10000;
+
+    // 4. فلتر "لمعة الصوت" (Presence EQ) لإبراز وتصفية الكلمات 
+    const presenceEQ = audioCtx.createBiquadFilter();
+    presenceEQ.type = "peaking";
+    presenceEQ.frequency.value = 3500; 
+    presenceEQ.Q.value = 1;
+    presenceEQ.gain.value = 4; // إضافة 4 ديسبل لنقاوة فائقة
+
+    // 5. ضاغط الصوت (Studio Compressor) لرفع وتضخيم صوتك فقط دون رفع هواء الغرفة
+    const compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -24; // استهداف الأصوات العميقة
+    compressor.knee.value = 30; // منحنى انسيابي ناعم جداً
+    compressor.ratio.value = 5; // نسبة ضغط تعطي فخامة ورنين
+    compressor.attack.value = 0.005; 
+    compressor.release.value = 0.25;
 
     function generateReverb(ctx) {
       const length = ctx.sampleRate * 3.5; 
@@ -1780,21 +1806,27 @@ async function toggleRecording(isSinging = false) {
     convolver.buffer = generateReverb(audioCtx);
     
     const dryGain = audioCtx.createGain();
-    dryGain.gain.value = 1; 
+    dryGain.gain.value = 0.5; 
     
     const wetGain = audioCtx.createGain();
-    // 🚀 السحر هنا: إذا كان نمط غناء يعطي قوة صدى 15%، وإذا عادي يعطي 5%
-    wetGain.gain.value = isSingingMode ? (15 / 100) * 3 : (5 / 100) * 3; 
+    // نسبة الصدى (غناء 13 وعادي 3) كما قمت بضبطها
+    wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
     
     const dest = audioCtx.createMediaStreamDestination();
     
-    source.connect(lowCutFilter);
+    // التوصيل التسلسلي لنظام هندسة الصوت المتكامل
+    source.connect(preGain);
+    preGain.connect(lowCutFilter);
     lowCutFilter.connect(highCutFilter);
+    highCutFilter.connect(presenceEQ);
+    presenceEQ.connect(compressor);
     
-    highCutFilter.connect(dryGain);
+    // مسار الصوت الرئيسي الجاف
+    compressor.connect(dryGain);
     dryGain.connect(dest);
     
-    highCutFilter.connect(convolver);
+    // مسار الصدى
+    compressor.connect(convolver);
     convolver.connect(wetGain);
     wetGain.connect(dest);
 
@@ -1876,7 +1908,6 @@ async function toggleRecording(isSinging = false) {
     isRecording = true;
     recordStart = Date.now();
 
-    // تشغيل تأثير النبض الأحمر على الزر النشط وإخفاء الزر الآخر مؤقتاً
     if (isSingingMode) {
       const btnMusic = document.getElementById('btn-music-voice');
       if (btnMusic) btnMusic.classList.add('recording');
@@ -1891,17 +1922,61 @@ async function toggleRecording(isSinging = false) {
     document.getElementById('btn-attach').style.display = 'none';
     document.getElementById('btn-cancel-voice').style.display = 'flex';
     document.getElementById('recording-indicator').style.display = 'flex';
+        let canvas = document.getElementById('neon-visualizer');
+    if (!canvas) {
+      canvas = document.createElement('canvas');
+      canvas.id = 'neon-visualizer';
+      canvas.width = 100;
+      canvas.height = 25;
+      canvas.style.marginLeft = '12px';
+      document.getElementById('recording-indicator').appendChild(canvas);
+    }
+    canvas.style.display = 'block';
+    const canvasCtx = canvas.getContext('2d');
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    function drawVisualizer() {
+      if (!isRecording) return;
+      requestAnimationFrame(drawVisualizer);
+      analyser.getByteFrequencyData(dataArray);
+      canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+      let x = 0;
+      const barWidth = (canvas.width / analyser.frequencyBinCount) * 2;
+      for (let i = 0; i < analyser.frequencyBinCount; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height;
+        canvasCtx.fillStyle = isSingingMode ? 'rgba(255, 0, 144, 0.9)' : 'rgba(0, 240, 255, 0.9)';
+        canvasCtx.shadowBlur = 6;
+        canvasCtx.shadowColor = isSingingMode ? '#ff0090' : '#00f0ff';
+        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        x += barWidth + 1.5;
+      }
+    }
+    drawVisualizer();
+
     
     if (currentChat) {
       const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
       recRef.set('recording');
       recRef.onDisconnect().remove();
     }
-    startRecordTimer();
+    if (typeof recordTimerInt !== 'undefined') clearInterval(recordTimerInt);
+    recordDurationStr = '0:00';
+    const timerSpan = document.getElementById('rec-timer-text'); // أو حسب الـ id الخاص بالعداد عندك
+    if (timerSpan) timerSpan.textContent = '0:00';
+    
+    recordTimerInt = setInterval(() => {
+      const sec = Math.floor((Date.now() - recordStart) / 1000);
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      recordDurationStr = m + ':' + (s < 10 ? '0' : '') + s;
+      if (timerSpan) timerSpan.textContent = recordDurationStr;
+    }, 1000);
+
   } catch (e) {
     showToast('تعذر الوصول للمايكروفون', 'error');
   }
 }
+
 
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
@@ -1926,6 +2001,9 @@ function stopRecording() {
   document.getElementById('btn-attach').style.display = 'flex';
   document.getElementById('btn-cancel-voice').style.display = 'none';
   document.getElementById('recording-indicator').style.display = 'none';
+  const canvas = document.getElementById('neon-visualizer');
+if (canvas) canvas.style.display = 'none';
+
   clearInterval(recordTimerInt);
 }
 
