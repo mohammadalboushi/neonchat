@@ -19,6 +19,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
 
   <link rel="stylesheet" href="style.css">
 </head>
@@ -67,6 +68,7 @@
   <input type="file" id="file-img-input" accept="image/*" style="display:none;">
   <input type="file" id="file-avatar-input" accept="image/*" style="display:none;">
   <audio id="remote-audio-el" autoplay playsinline style="display:none;"></audio>
+  <audio id="ringtone-audio" loop src="https://actions.google.com/sounds/v1/alarms/phone_ringing.ogg" style="display:none;"></audio>
 
   <div id="app">
 
@@ -265,6 +267,7 @@
     <line x1="12" y1="19" x2="12" y2="23"></line>
     <line x1="8" y1="23" x2="16" y2="23"></line>
   </svg>
+  
 </button>
 
 <button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%">
