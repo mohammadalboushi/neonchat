@@ -2265,37 +2265,63 @@ imgEl.addEventListener('touchmove', (e) => {
 });
 
 /* ═══════════════════════════════════
-   CALL SYSTEM — WebRTC
+   CALL SYSTEM — AGORA (With Studio Filters & Ringtone)
 ═══════════════════════════════════ */
+let rtcCallClient = null;
+let localCallTrack = null;
+let callAudioCtx = null;
+let callRawStream = null;
+let currentCallId = null;
+let callTimerInt = null;
+const AGORA_APP_ID = "7ca23eb56dfd45f7a89e9fd2a03a40ca"; // معرّف Agora الخاص بك
+
 function initCallListener(uid) {
   if (myCallListener) db.ref('calls/' + uid).off('value', myCallListener);
-  myCallListener = db.ref('calls/' + uid).on('value', async snap => {
+  myCallListener = db.ref('calls/' + uid).on('value', snap => {
     const data = snap.val();
     if (!data) {
-      closeCallUI();
+      forceEndCallUI();
       return;
     }
 
     currentCallPeer = data.peerUid;
-    document.getElementById('call-name-view').textContent = data.peerName || 'مستخدم';
-    document.getElementById('call-avatar-view').textContent = (data.peerName || '?').charAt(0);
+    currentCallId = data.chatId;
+
+    const avatarView = document.getElementById('call-avatar-view');
+    const nameView = document.getElementById('call-name-view');
+    const statusView = document.getElementById('call-status-view');
+    const acceptBtn = document.getElementById('btn-accept-call');
+    const ringAudio = document.getElementById('ringtone-audio');
+
+    if (nameView) nameView.textContent = data.peerName || 'مستخدم';
+    if (avatarView) avatarView.textContent = (data.peerName || '?').charAt(0);
 
     if (data.status === 'incoming') {
-      document.getElementById('call-status-view').textContent = 'يتصل بك... 📞';
-      document.getElementById('call-status-view').style.color = 'var(--neon-cyan)';
-      document.getElementById('btn-accept-call').style.display = 'flex';
+      if(statusView) {
+        statusView.textContent = 'يتصل بك... 📞';
+        statusView.style.color = 'var(--neon-cyan)';
+      }
+      if(acceptBtn) acceptBtn.style.display = 'flex';
+      
+      // تشغيل نغمة الرنين للمتلقي
+      if(ringAudio && ringAudio.paused) {
+        ringAudio.play().catch(e => console.log('Auto-play prevented'));
+      }
       if (navigator.vibrate) navigator.vibrate([500, 300, 500, 300, 500]);
       renderScreenUI('call');
 
     } else if (data.status === 'answered') {
-      document.getElementById('btn-accept-call').style.display = 'none';
+      // إيقاف الرنين عند الطرفين وبدء الاتصال
+      if(ringAudio && !ringAudio.paused) ringAudio.pause();
+      if(acceptBtn) acceptBtn.style.display = 'none';
+      if(statusView) statusView.textContent = 'جاري التوصيل...';
+      
       startCallTimer();
-      if (data.role === 'caller' && !peerConnection) {
-        callIsCaller = true;
-        await setupWebRTCPeer(true);
+      if (data.role === 'caller') {
+        joinAgoraVoice(currentCallId);
       }
     } else if (data.status === 'ended') {
-      endCall();
+      forceEndCallUI();
     }
   });
 }
@@ -2303,186 +2329,181 @@ function initCallListener(uid) {
 async function startCall() {
   if (!currentChat) return;
   currentCallPeer = currentChat.friendUid;
-  document.getElementById('call-name-view').textContent = currentChat.friendProfile.name;
-  document.getElementById('call-avatar-view').textContent = (currentChat.friendProfile.name || '?').charAt(0);
-  document.getElementById('call-status-view').textContent = 'جاري الاتصال...';
-  document.getElementById('call-status-view').style.color = 'var(--neon-cyan)';
-  document.getElementById('btn-accept-call').style.display = 'none';
+  const chatId = [currentUser.uid, currentCallPeer].sort().join('_');
+  currentCallId = chatId;
+
+  const avatarView = document.getElementById('call-avatar-view');
+  const nameView = document.getElementById('call-name-view');
+  const statusView = document.getElementById('call-status-view');
+  const acceptBtn = document.getElementById('btn-accept-call');
+  const ringAudio = document.getElementById('ringtone-audio');
+
+  if(nameView) nameView.textContent = currentChat.friendProfile.name;
+  if(avatarView) avatarView.textContent = (currentChat.friendProfile.name || '?').charAt(0);
+  if(statusView) {
+    statusView.textContent = 'جاري الاتصال...';
+    statusView.style.color = 'var(--neon-cyan)';
+  }
+  if(acceptBtn) acceptBtn.style.display = 'none';
+  
+  // تشغيل نغمة الرنين كأنك تتصل (Dialing)
+  if(ringAudio && ringAudio.paused) {
+    ringAudio.play().catch(e => console.log('Auto-play prevented'));
+  }
+  
   renderScreenUI('call');
 
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    callIsCaller = true;
-
-    await db.ref('calls/' + currentUser.uid).set({
-      status: 'calling',
-      role: 'caller',
-      peerUid: currentCallPeer,
-      peerName: currentChat.friendProfile.name
-    });
-    await db.ref('calls/' + currentCallPeer).set({
-      status: 'incoming',
-      role: 'callee',
-      peerUid: currentUser.uid,
-      peerName: myProfile.name
-    });
-  } catch (e) {
-    showToast('فشل فتح المايكروفون: تأكد من الصلاحيات', 'error');
-    endCall();
-  }
+  await db.ref('calls/' + currentUser.uid).set({
+    status: 'calling',
+    role: 'caller',
+    peerUid: currentCallPeer,
+    peerName: currentChat.friendProfile.name,
+    chatId: chatId
+  });
+  await db.ref('calls/' + currentCallPeer).set({
+    status: 'incoming',
+    role: 'callee',
+    peerUid: currentUser.uid,
+    peerName: myProfile.name,
+    chatId: chatId
+  });
 }
 
 async function acceptCall() {
   if (!currentCallPeer) return;
-  document.getElementById('call-status-view').textContent = 'جاري الاتصال...';
-  document.getElementById('btn-accept-call').style.display = 'none';
+  const acceptBtn = document.getElementById('btn-accept-call');
+  const statusView = document.getElementById('call-status-view');
+  const ringAudio = document.getElementById('ringtone-audio');
+  
+  if(ringAudio && !ringAudio.paused) ringAudio.pause();
+  if(acceptBtn) acceptBtn.style.display = 'none';
+  if(statusView) statusView.textContent = 'جاري التوصيل...';
 
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    callIsCaller = false;
+  await db.ref('calls/' + currentUser.uid).update({ status: 'answered' });
+  await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
 
-    await db.ref('calls/' + currentUser.uid).update({ status: 'answered' });
-    await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
-
-    await setupWebRTCPeer(false);
-  } catch (e) {
-    showToast('لا يمكن الرد بدون صلاحية المايكروفون', 'error');
-    endCall();
-  }
+  startCallTimer();
+  joinAgoraVoice(currentCallId);
 }
 
 function endCall() {
   if (currentCallPeer) {
-    const chatId = [currentUser.uid, currentCallPeer].sort().join('_');
-    db.ref('chats/' + chatId + '/webrtc').remove();
-    db.ref('calls/' + currentCallPeer).remove();
-    db.ref('calls/' + currentUser.uid).remove();
+    db.ref('calls/' + currentCallPeer).update({ status: 'ended' });
   }
-  closeCallUI();
+  db.ref('calls/' + currentUser.uid).remove();
+  setTimeout(() => forceEndCallUI(), 500);
 }
 
-function closeCallUI() {
-  clearInterval(callDurationInt);
-  callDurationInt = null;
+function forceEndCallUI() {
+  clearInterval(callTimerInt);
+  callTimerInt = null;
 
-  if (localStream) {
-    localStream.getTracks().forEach(t => t.stop());
-    localStream = null;
-  }
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
+  const ringAudio = document.getElementById('ringtone-audio');
+  if (ringAudio && !ringAudio.paused) {
+    ringAudio.pause();
+    ringAudio.currentTime = 0;
   }
 
-  const remoteAudio = document.getElementById('remote-audio-el');
-  if (remoteAudio) remoteAudio.srcObject = null;
+  // تنظيف وإغلاق محرك الصوت الخاص بأغورا
+  if (localCallTrack) {
+    localCallTrack.close();
+    localCallTrack = null;
+  }
+  if (rtcCallClient) {
+    rtcCallClient.leave();
+    rtcCallClient = null;
+  }
+  if (callAudioCtx && callAudioCtx.state !== 'closed') {
+    callAudioCtx.close();
+    callAudioCtx = null;
+  }
+  if (callRawStream) {
+    callRawStream.getTracks().forEach(t => t.stop());
+    callRawStream = null;
+  }
+  
+  currentCallId = null;
 
   if (document.getElementById('screen-call').classList.contains('active')) {
     renderScreenUI('chat');
   }
 }
 
-async function setupWebRTCPeer(isCaller) {
-  if (!currentCallPeer) return;
-  const chatId = [currentUser.uid, currentCallPeer].sort().join('_');
-  const signalRef = db.ref('chats/' + chatId + '/webrtc');
-
-  if (isCaller) {
-    await signalRef.remove();
-  }
-
-  peerConnection = new RTCPeerConnection(rtcConfig);
-
-  if (localStream) {
-    localStream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, localStream);
-    });
-  }
-
-  peerConnection.ontrack = event => {
-    const remoteAudio = document.getElementById('remote-audio-el');
-    if (remoteAudio) {
-      if (event.streams && event.streams[0]) {
-        remoteAudio.srcObject = event.streams[0];
-      } else {
-        remoteAudio.srcObject = new MediaStream([event.track]);
-      }
-      remoteAudio.muted = false;
-      remoteAudio.volume = 1;
-      remoteAudio.play().catch(e => console.error("Audio play error:", e));
-    }
-  };
-
-  peerConnection.onicecandidate = event => {
-    if (event.candidate) {
-      const candPath = isCaller ? 'callerCandidates' : 'calleeCandidates';
-      signalRef.child(candPath).push(event.candidate.toJSON());
-    }
-  };
-
-  peerConnection.onconnectionstatechange = () => {
-    const state = peerConnection.connectionState;
-    if (state === 'connected') {
-      document.getElementById('call-status-view').style.color = 'var(--neon-green)';
-    } else if (state === 'disconnected' || state === 'failed') {
-      endCall();
-    }
-  };
-
-  if (isCaller) {
-    const offer = await peerConnection.createOffer({ offerToReceiveAudio: true });
-    await peerConnection.setLocalDescription(offer);
-    await signalRef.child('offer').set({ sdp: offer.sdp, type: offer.type });
-
-    signalRef.child('answer').on('value', async snap => {
-      const answer = snap.val();
-      if (answer && peerConnection && peerConnection.signalingState === 'have-local-offer') {
-        try {
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        } catch (e) {
-          console.warn('setRemoteDescription (answer):', e);
-        }
-      }
-    });
-
-    signalRef.child('calleeCandidates').on('child_added', async snap => {
-      const cand = snap.val();
-      if (cand && peerConnection) {
-        try { await peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
-      }
-    });
-  } else {
-    signalRef.child('offer').once('value', async snap => {
-      const offer = snap.val();
-      if (!offer || !peerConnection) return;
-      try {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        await signalRef.child('answer').set({ sdp: answer.sdp, type: answer.type });
-      } catch (e) {
-        console.warn('callee setup:', e);
-      }
-    });
-
-    signalRef.child('callerCandidates').on('child_added', async snap => {
-      const cand = snap.val();
-      if (cand && peerConnection) {
-        try { await peerConnection.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
-      }
-    });
-  }
-}
-
 function startCallTimer() {
-  clearInterval(callDurationInt);
+  clearInterval(callTimerInt);
   const startTime = Date.now();
-  document.getElementById('call-status-view').style.color = 'var(--neon-green)';
-  callDurationInt = setInterval(() => {
+  const statusView = document.getElementById('call-status-view');
+  if(statusView) statusView.style.color = 'var(--neon-green)';
+  
+  callTimerInt = setInterval(() => {
     const sec = Math.floor((Date.now() - startTime) / 1000);
     const m = Math.floor(sec / 60), s = sec % 60;
-    document.getElementById('call-status-view').textContent = `في مكالمة: ${m}:${s<10?'0':''}${s}`;
+    if(statusView) statusView.textContent = `متصل: ${m}:${s<10?'0':''}${s}`;
   }, 1000);
+}
+
+async function joinAgoraVoice(channelName) {
+  if(!rtcCallClient) {
+    rtcCallClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+  }
+  
+  try {
+    await rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
+
+    let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
+    if (internalMicId) {
+      audioConstraints.deviceId = { exact: internalMicId };
+    }
+
+    callRawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = callAudioCtx.createMediaStreamSource(callRawStream);
+    
+    // 🎛️ تطبيق إعدادات المايكروفون النقية الخاصة بك حرفياً 🎛️
+    const preGain = callAudioCtx.createGain(); preGain.gain.value = 0.4;
+    const lowCutFilter = callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
+    const highCutFilter = callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
+    const presenceEQ = callAudioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4;
+    const compressor = callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -24; compressor.knee.value = 30; compressor.ratio.value = 5; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+
+    function generateReverb(ctx) {
+      const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+      const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
+      for (let i = 0; i < length; i++) {
+        const decay = Math.pow(1 - i / length, 1.5);
+        left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay;
+      }
+      return impulse;
+    }
+
+    const convolver = callAudioCtx.createConvolver(); convolver.buffer = generateReverb(callAudioCtx);
+    const dryGain = callAudioCtx.createGain(); dryGain.gain.value = 0.85;
+    
+    // تطبيق صدى بنسبة 2% كما طلبت تماماً
+    const wetGain = callAudioCtx.createGain(); wetGain.gain.value = (2 / 100) * 3; 
+
+    const dest = callAudioCtx.createMediaStreamDestination();
+
+    // التوصيل
+    source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
+    compressor.connect(dryGain); dryGain.connect(dest);
+    compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
+
+    localCallTrack = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: dest.stream.getAudioTracks()[0], encoderConfig: "high_quality_stereo" });
+    await rtcCallClient.publish([localCallTrack]);
+
+    // تشغيل صوت الطرف الآخر بسلاسة بمجرد اتصاله
+    rtcCallClient.on("user-published", async (user, mediaType) => {
+        await rtcCallClient.subscribe(user, mediaType);
+        if (mediaType === "audio") {
+            user.audioTrack.play(); 
+        }
+    });
+
+  } catch (e) {
+    showToast('تعذر الاتصال بالصوت', 'error');
+    forceEndCallUI();
+  }
 }
 
 /* ═══════════════════════════════════
