@@ -398,44 +398,50 @@ async function initMicrophone() {
   } catch (e) { console.log('تعذر تجهيز المايك مسبقاً'); }
 }
 
-auth.onAuthStateChanged(async user => {
-  // إخفاء شاشة التحميل فوراً بالبداية لتجنب التعليق إذا تأخر الفايربيز
-  document.getElementById('loader-screen').classList.add('hidden');
-  
-  if (user) {
-    currentUser = user;
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => {
+  auth.onAuthStateChanged(async user => {
+    // إخفاء شاشة التحميل فوراً بالبداية لتجنب التعليق إذا تأخر الفايربيز
+    document.getElementById('loader-screen').classList.add('hidden');
     
-    // حطيناها بـ try/catch عشان لو علق جلب البيانات ما يوقف باقي التطبيق
-    try {
-      await ensureUserProfile(user);
-    } catch(e) {
-      console.log("Error loading profile", e);
-    }
-
-    if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
-      Notification.requestPermission();
-    }
-
-    setupPresence(user.uid);
-
-    try {
-      const swReg = await navigator.serviceWorker.register('./sw.js');
-      const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-      if (token) {
-        await db.ref('users/' + user.uid + '/fcmToken').set(token);
+    if (user) {
+      currentUser = user;
+      
+      // حطيناها بـ try/catch عشان لو علق جلب البيانات ما يوقف باقي التطبيق
+      try {
+        await ensureUserProfile(user);
+      } catch(e) {
+        console.log("Error loading profile", e);
       }
-    } catch (err) { console.log('تعذر جلب توكن الإشعارات:', err); }
 
-    initCallListener(user.uid);
-    initFriendRequestsListener(user.uid);
-    initFriendsListListener(user.uid); 
-    initMicrophone(); // تجهيز المايك الداخلي فوراً عند الدخول
-    showScreen('home');
-  } else {
-    currentUser = null;
-    myProfile = null;
-    renderScreenUI('login');
-  }
+      if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+
+      setupPresence(user.uid);
+
+      try {
+        const swReg = await navigator.serviceWorker.register('./sw.js');
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+        if (token) {
+          await db.ref('users/' + user.uid + '/fcmToken').set(token);
+        }
+      } catch (err) { console.log('تعذر جلب توكن الإشعارات:', err); }
+
+      initCallListener(user.uid);
+      initFriendRequestsListener(user.uid);
+      initFriendsListListener(user.uid); 
+      initMicrophone(); // تجهيز المايك الداخلي فوراً عند الدخول
+      showScreen('home');
+    } else {
+      // 🚀 حماية إضافية: إذا كان المستخدم يملك بيانات مسجلة وانقطع النت لحظياً، لا تطرده
+      if (!navigator.onLine && localStorage.getItem('myProfile')) {
+        return; 
+      }
+      currentUser = null;
+      myProfile = null;
+      renderScreenUI('login');
+    }
+  });
 });
 
 
@@ -1804,7 +1810,7 @@ source.connect(analyser);
     
     // 1. سر الكاريوكي: تقليل حساسية المايك بنسبة 50% لمنع التقاط هواء الغرفة المزعج
     const preGain = audioCtx.createGain();
-    preGain.gain.value = 0.2;
+    preGain.gain.value = 0.5;
 
     // 2. فلتر قطع الترددات الخشنة
     const lowCutFilter = audioCtx.createBiquadFilter();
@@ -1825,9 +1831,9 @@ source.connect(analyser);
 
     // 5. ضاغط الصوت (Studio Compressor) لرفع وتضخيم صوتك فقط دون رفع هواء الغرفة
     const compressor = audioCtx.createDynamicsCompressor();
-    compressor.threshold.value = -24; // استهداف الأصوات العميقة
+    compressor.threshold.value = -15; // استهداف الأصوات العميقة
     compressor.knee.value = 30; // منحنى انسيابي ناعم جداً
-    compressor.ratio.value = 5; // نسبة ضغط تعطي فخامة ورنين
+    compressor.ratio.value = 3; // نسبة ضغط تعطي فخامة ورنين
     compressor.attack.value = 0.005; 
     compressor.release.value = 0.25;
 
@@ -1848,7 +1854,7 @@ source.connect(analyser);
     convolver.buffer = generateReverb(audioCtx);
     
     const dryGain = audioCtx.createGain();
-    dryGain.gain.value = 0.5; 
+    dryGain.gain.value = 0.6; 
     
     const wetGain = audioCtx.createGain();
     // نسبة الصدى (غناء 13 وعادي 3) كما قمت بضبطها
