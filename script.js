@@ -1055,7 +1055,7 @@ function attachMessages(chatId) {
   area.innerHTML = '';
   lastMsgDate = '';
   oldestMsgTimestamp = null;
-  oldestMsgKey = null;
+  oldestMsgKey = null; 
   isLoadingHistory = false;
   hasMoreHistory = true;
   
@@ -1067,16 +1067,76 @@ function attachMessages(chatId) {
     friendPhoto: myProfile.photo || ''
   });
 
+  // ─── السحر الأول: تحميل المحادثة من الذاكرة المحلية (صفر تحميل) ───
+  const cacheKey = 'chat_cache_' + chatId;
+  const cachedData = localStorage.getItem(cacheKey);
+  let liveMsgsCache = [];
+  
+  if (cachedData) {
+    try {
+      liveMsgsCache = JSON.parse(cachedData);
+      const fragment = document.createDocumentFragment();
+      let tempLastDate = '';
+      
+      liveMsgsCache.forEach(m => {
+        const dStr = formatDate(m.timestamp);
+        if (dStr !== tempLastDate) {
+          const sep = document.createElement('div');
+          sep.className = 'date-sep';
+          sep.innerHTML = `<span>${dStr}</span>`;
+          fragment.appendChild(sep);
+          tempLastDate = dStr;
+        }
+        fragment.appendChild(buildMsgEl(m, true));
+      });
+      
+      area.appendChild(fragment);
+      area.scrollTop = area.scrollHeight;
+      
+      if (liveMsgsCache.length > 0) {
+        lastMsgDate = tempLastDate;
+        oldestMsgKey = liveMsgsCache[0].key;
+        oldestMsgTimestamp = liveMsgsCache[0].timestamp;
+      }
+    } catch (e) {
+      liveMsgsCache = [];
+    }
+  }
+  // ─────────────────────────────────────────────────────────────
+
   messagesRef = db.ref('chats/' + chatId + '/messages');
   
-  // استخدمنا orderByKey بدال orderByChild مشان ما يحمل كل المحادثة ليفرزها
-  let query = messagesRef.orderByKey().limitToLast(100);
+  // ─── التزامن الذكي مع فايربيس ───
+  let query;
+  if (liveMsgsCache.length > 0) {
+    // إذا كان الكاش موجوداً، نطلب من فايربيس فقط الرسائل الجديدة التي وصلت أثناء غيابنا
+    const latestKey = liveMsgsCache[liveMsgsCache.length - 1].key;
+    query = messagesRef.orderByKey().startAt(latestKey);
+  } else {
+    // إذا لم يكن هناك كاش، نطلب آخر 100 رسالة كالمعتاد
+    query = messagesRef.orderByKey().limitToLast(100);
+  }
+
   let scrollTimeout;
 
   messagesListener = query.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
-    // حفظ أقدم مفتاح عشان التمرير
+    // ─── تحديث الكاش المحلي بالرسائل الجديدة ───
+    const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
+    if (!existsInCache) {
+      liveMsgsCache.push(msg);
+      if (liveMsgsCache.length > 100) liveMsgsCache.shift(); // نحتفظ بآخر 100 رسالة لتبقى الذاكرة سريعة
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+    }
+    // ─────────────────────────────────────────
+
+    // إذا كانت الرسالة معروضة مسبقاً (تم رسمها من الكاش بثانية الصفر)، نتجاهلها لمنع التكرار
+    if (document.getElementById('msg-' + msg.key)) {
+      return; 
+    }
+
+    // حفظ أقدم مفتاح عشان التمرير للوراء
     if (!oldestMsgKey || snap.key < oldestMsgKey) {
       oldestMsgKey = snap.key;
     }
@@ -1173,10 +1233,17 @@ function attachMessages(chatId) {
     }
   });
 
-
   msgChangedListener = messagesRef.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
+    // ─── تحديث الكاش المحلي فوراً عند التعديل أو الحذف ───
+    const idx = liveMsgsCache.findIndex(m => m.key === msg.key);
+    if (idx !== -1) {
+      liveMsgsCache[idx] = msg;
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+    }
+    // ─────────────────────────────────────────────────────
+
     // تحديث النص الفوري بداخل فقاعة الرسالة في حال تم التعديل
     if (msg.isEdited && !msg.isDeleted && msg.type === 'text') {
       const bubbleEl = document.getElementById('msg-' + msg.key);
@@ -1229,9 +1296,6 @@ function attachMessages(chatId) {
     }
   });
 }
-
-
-
 
 /* ═══════════════════════════════════
    BUILD MESSAGE ELEMENT
