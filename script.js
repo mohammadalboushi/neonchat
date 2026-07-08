@@ -240,9 +240,12 @@ async function initMicrophone() {
   } catch (e) { console.log('تعذر تجهيز المايك مسبقاً'); }
 }
 
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).then(() => {
+window.localImageCache = {}; // 🚀 السحر هون: ذاكرة تخزين مؤقتة لمنع رجفة الصورة وإعادة تحميلها
+
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.log("Auth Error:", err)).finally(() => {
   auth.onAuthStateChanged(async user => {
-    document.getElementById('loader-screen').classList.add('hidden');
+    const loader = document.getElementById('loader-screen');
+    if (loader) loader.classList.add('hidden');
     if (user) {
       currentUser = user;
       try { await ensureUserProfile(user); } catch(e) {}
@@ -276,15 +279,20 @@ function setupPresence(uid) {
       else myStatusRef.set(Date.now());
     }
   });
+  const setOnline = () => { if(isConnected) myStatusRef.set('online'); };
+  const setOffline = () => { 
+     // 🚀 السحر هون: فحصنا إنو الشاشة فعلاً مخفية (document.hidden) ومو مجرد كيبورد فتح وخربطنا!
+     if(isConnected && document.hidden) { 
+       myStatusRef.set(Date.now()); 
+       if (currentChat && currentUser) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
+     } 
+  };
   document.addEventListener('visibilitychange', () => {
-    if (isConnected) {
-      if (document.visibilityState === 'visible') myStatusRef.set('online');
-      else {
-        myStatusRef.set(Date.now());
-        if (currentChat && currentUser) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
-      }
-    }
+    if (document.visibilityState === 'visible') setOnline();
+    else setOffline();
   });
+  window.addEventListener('focus', setOnline);
+  window.addEventListener('blur', setOffline);
 }
 
 async function ensureUserProfile(user) {
@@ -586,6 +594,13 @@ function attachMessages(chatId) {
     messagesListener = currentMessagesQuery.on('child_added', snap => {
       if (isFirst) { isFirst = false; return; }
       const msg = { ...snap.val(), key: snap.key };
+      
+      if (msg.senderUid !== currentUser.uid && !msg.read) { 
+        snap.ref.update({ read: true }); 
+        db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0); 
+        msg.read = true;
+      }
+
       if (!liveMsgsCache.some(m => m.key === msg.key)) {
         liveMsgsCache.push(msg); if (liveMsgsCache.length > 100) liveMsgsCache.shift(); 
         localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
@@ -599,12 +614,11 @@ function attachMessages(chatId) {
       }
       area.appendChild(buildMsgEl(msg, false)); 
       clearTimeout(scrollTimeout); scrollTimeout = setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
-      if (msg.senderUid !== currentUser.uid && !msg.read) { snap.ref.update({ read: true }); db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0); }
     });
   }
 
   if (liveMsgsCache.length > 0) {
-    const fragment = document.createDocumentFragment(); let tempLastDate = '';
+    const fragment = document.createDocumentFragment(); let tempLastDate = ''; let needsUnreadReset = false;
     liveMsgsCache.forEach(m => {
       const dStr = formatDate(m.timestamp);
       if (dStr !== tempLastDate) {
@@ -612,7 +626,15 @@ function attachMessages(chatId) {
         fragment.appendChild(sep); tempLastDate = dStr;
       }
       fragment.appendChild(buildMsgEl(m, true));
+      if (m.senderUid !== currentUser.uid && !m.read) {
+         db.ref('chats/' + chatId + '/messages/' + m.key).update({ read: true });
+         m.read = true; needsUnreadReset = true;
+      }
     });
+    if (needsUnreadReset) {
+      db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache)); 
+    }
     area.appendChild(fragment); area.scrollTop = area.scrollHeight;
     lastMsgDate = tempLastDate; oldestMsgKey = liveMsgsCache[0].key;
     setupChildAddedListener(messagesRef.orderByKey().startAt(liveMsgsCache[liveMsgsCache.length - 1].key), false);
@@ -704,14 +726,27 @@ function buildMsgEl(msg, isBackground = false) {
   const row = document.createElement('div');
   const isOut = msg.senderUid === currentUser.uid;
   row.className = 'msg-row ' + (isOut ? 'out' : 'in');
-  if (isBackground) row.style.animation = 'none';
+  
+  if (isBackground || (msg.url && window.lastUploadedUrl === msg.url)) {
+    row.style.animation = 'none';
+    if (msg.url === window.lastUploadedUrl) window.lastUploadedUrl = null; 
+  }
+
+  // 🚀 تعريف الصورة بناءً على مين اللي باعت (أنت أو صديقك)
+  const profile = isOut ? myProfile : (currentChat.friendProfile || {});
+  let avatarNode = document.createElement(profile.photo ? 'img' : 'div');
+  avatarNode.className = isOut ? 'msg-my-avatar' : 'msg-friend-avatar';
+  if (profile.photo) {
+    avatarNode.src = profile.photo;
+  } else {
+    avatarNode.textContent = (profile.name || '?').charAt(0);
+  }
+
+  // إذا صديقك اللي باعت، الصورة بتنحط قبل فقاعة الدردشة
   if (!isOut) {
-    const fProfile = currentChat.friendProfile || {};
-    let avatarNode = document.createElement(fProfile.photo ? 'img' : 'div');
-    avatarNode.className = 'msg-friend-avatar';
-    if (fProfile.photo) avatarNode.src = fProfile.photo; else avatarNode.textContent = (fProfile.name || '?').charAt(0);
     row.appendChild(avatarNode);
   }
+
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble'; bubble.id = 'msg-' + msg.key;
   let replyIcon = document.createElement('div');
@@ -722,15 +757,27 @@ function buildMsgEl(msg, isBackground = false) {
   let lastTap = 0, pressTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
   bubble.addEventListener('touchstart', e => {
     if (e.target.tagName === 'A') return;
+    touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
+    isSwiping = false; isVertical = false;
+    
+    if (e.target.tagName === 'IMG') { e.target.style.opacity = '0.85'; return; } 
+    
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) { toggleReaction(msg.key); lastTap = 0; if (e.cancelable) e.preventDefault(); return; }
-    lastTap = now; touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY; isSwiping = false; isVertical = false; bubble.style.transition = 'none';
+    lastTap = now; bubble.style.transition = 'none';
     pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending) openMsgMenu(msg, isOut); }, 500);
   }, { passive: false });
+  
   bubble.addEventListener('touchmove', e => {
     if (e.target.tagName === 'A' || !touchStartX) return;
     const dx = e.touches[0].clientX - touchStartX, dy = e.touches[0].clientY - touchStartY;
-    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) { isVertical = true; clearTimeout(pressTimer); bubble.style.transform = 'translateX(0)'; replyIcon.style.opacity = '0'; return; }
+    
+    // تسجيل حركة الإصبع حتى لو كانت فوق الصورة مشان نلغي فتحها بالغلط
+    if (Math.abs(dy) > 10 || Math.abs(dx) > 10) isVertical = true;
+    
+    if (e.target.tagName === 'IMG') return; // منع سحب الرد على الصورة بحد ذاتها
+    
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) { clearTimeout(pressTimer); bubble.style.transform = 'translateX(0)'; replyIcon.style.opacity = '0'; return; }
     if (Math.abs(dx) > 15 && !isVertical && !msg.isPending) {
       isSwiping = true; clearTimeout(pressTimer);
       let limit = Math.min(Math.abs(dx), 65) * Math.sign(dx); bubble.style.transform = `translateX(${limit}px)`;
@@ -740,13 +787,20 @@ function buildMsgEl(msg, isBackground = false) {
       else if (pullPerc <= 0.85) bubble.hasVibrated = false;
     }
   }, { passive: true });
+  
   bubble.addEventListener('touchend', e => {
     if (e.target.tagName === 'A') return;
+    if (e.target.tagName === 'IMG') { 
+      e.target.style.opacity = '1'; 
+      // 🚀 السحر هون: الصورة بتفتح بس إذا ما صار أي سحب أو تمرير (isVertical)
+      if (!isVertical) window.previewImg(e.target.src); 
+      return; 
+    }
     clearTimeout(pressTimer); bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)'; replyIcon.style.opacity = '0'; bubble.hasVibrated = false;
     if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); }
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
-  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || msg.isPending) return; e.preventDefault(); openMsgMenu(msg, isOut); });
+  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || e.target.tagName === 'IMG' || msg.isPending) return; e.preventDefault(); openMsgMenu(msg, isOut); });
 
   let ticks = '';
   if (isOut && !msg.isPending) {
@@ -765,7 +819,9 @@ function buildMsgEl(msg, isBackground = false) {
     let safeText = escHtml(msg.text).replace(/(https?:\/\/[^\s]+)/g, `<a href="$1" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">$1</a>`);
     bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
-    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${msg.url}" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
+    // 🚀 جلب الصورة من الذاكرة المؤقتة فوراً لتجنب التحميل البطيء والرفة
+    const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
+    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" style="pointer-events: auto;"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
     if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
@@ -780,6 +836,12 @@ function buildMsgEl(msg, isBackground = false) {
     bubble.style.overflow = 'hidden'; bubble.appendChild(overlay);
   }
   row.appendChild(bubble);
+
+  // 🚀 إذا أنت اللي باعت، الصورة بتنحط بعد فقاعة الدردشة (عشان تطلع عاليسار ويكون الشكل متوازن)
+  if (isOut) {
+    row.appendChild(avatarNode);
+  }
+
   return row;
 }
 
@@ -804,19 +866,24 @@ async function uploadMediaWithUI(file, type, extraData = null) {
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
   }
 
-  const tryUpload = async () => {
+    const tryUpload = async () => {
     const row = document.getElementById('row_' + tempId);
     if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`; }
     try {
-      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 60000);
+      const controller = new AbortController(); 
+      const timeoutId = setTimeout(() => controller.abort(), 12000); 
       const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
       const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', { method: 'POST', body: fd, signal: controller.signal });
-      clearTimeout(timeoutId); const data = await res.json();
+      clearTimeout(timeoutId); 
+      const data = await res.json();
       if (data.secure_url) {
+        window.lastUploadedUrl = data.secure_url;
+        if (type === 'image' && window.localImageCache) window.localImageCache[data.secure_url] = tempUrl; // 🚀 حفظنا الصورة محلياً لتضل فخمة وبدون رفة
         if (row) row.remove();
-        await pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+        pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
       } else throw new Error('فشل');
     } catch (e) {
+
       if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">فشل، اضغط للإعادة 🔄</button>`; }
     }
   };
@@ -936,7 +1003,7 @@ function cancelVoiceRecord() { isRecordingCanceled = true; stopRecording(); }
 /* ═══════════════════════════════════
    VOICE PLAYBACK & PROGRESS
 ═══════════════════════════════════ */
-let currentAudio = null, currentAudioUrl = null, audioUpdateInterval = null;
+var currentAudio = null, currentAudioUrl = null, audioUpdateInterval = null;
 
 function playVoice(btn, url, msgKey, isOut) {
   if (isOut === false && currentChat) {
@@ -1002,6 +1069,8 @@ function seekVoice(event, url, msgKey) {
 /* ═══════════════════════════════════
    SEND MESSAGES (TEXT), REACTION & MENU
 ═══════════════════════════════════ */
+let lastTypingTime = 0; // 🚀 السحر هون: تعريف المتغير اللي كان ناقص وعم يوقف إشارة الكتابة
+
 document.getElementById('msg-input').addEventListener('input', () => {
   if (!currentChat || isRecording) return;
   const now = Date.now(), typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
@@ -1083,6 +1152,273 @@ function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document
 function cancelReply() { replyingToMsg = null; document.getElementById('msg-reply-preview').classList.remove('active'); }
 function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
 function confirmDeleteMsg(msgKey) { openModal('حذف الرسالة', 'هل تريد حذف هذه الرسالة للجميع؟').then(ok => { if (ok && currentChat) { db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ isDeleted: true, text: null, url: null, type: 'deleted' }).then(() => { updateLastMsgAfterChange(); showToast('تم حذف الرسالة', 'success'); }); } }); }
+
+/* ═══════════════════════════════════
+   IMAGE PREVIEW, ZOOM & PAN
+═══════════════════════════════════ */
+let currentScale = 1; let imgTx = 0, imgTy = 0; let imgStartX = 0, imgStartY = 0;
+
+window.previewImg = function(url) {
+  const img = document.getElementById('img-preview-el');
+  img.src = url;
+  currentScale = 1; imgTx = 0; imgTy = 0;
+  img.style.transform = `translate(0px, 0px) scale(1)`;
+  document.getElementById('img-preview-overlay').classList.add('open');
+  try { history.pushState({ overlay: 'image' }, '', ''); } catch(e){}
+};
+
+// الدالة المسؤولة عن إغلاق الصورة والعودة للمحادثة
+function closeImgPreview() {
+  document.getElementById('img-preview-overlay').classList.remove('open');
+  setTimeout(() => { document.getElementById('img-preview-el').src = ''; }, 250);
+}
+
+const imgEl = document.getElementById('img-preview-el');
+const overlayEl = document.getElementById('img-preview-overlay');
+
+// الخروج عند الضغط خارج الصورة
+overlayEl.addEventListener('click', (e) => { 
+  if (e.target === overlayEl) history.back(); 
+});
+
+let imgLastTap = 0;
+imgEl.addEventListener('touchstart', (e) => {
+  const now = Date.now();
+  if (now - imgLastTap < 300 && now - imgLastTap > 0) {
+    currentScale = currentScale === 1 ? 4 : 1; imgTx = 0; imgTy = 0;
+    imgEl.style.transition = 'transform 0.2s ease';
+    imgEl.style.transform = `translate(0px, 0px) scale(${currentScale})`;
+    e.preventDefault();
+  } else {
+    imgStartX = e.touches[0].clientX - imgTx; imgStartY = e.touches[0].clientY - imgTy;
+    imgEl.style.transition = 'none';
+  }
+  imgLastTap = now;
+});
+imgEl.addEventListener('touchmove', (e) => {
+  if (currentScale > 1) {
+    e.preventDefault();
+    imgTx = e.touches[0].clientX - imgStartX; imgTy = e.touches[0].clientY - imgStartY;
+    imgEl.style.transform = `translate(${imgTx}px, ${imgTy}px) scale(${currentScale})`;
+  }
+});
+
+/* ═══════════════════════════════════
+   UNIVERSAL UPLOAD ENGINE
+═══════════════════════════════════ */
+window.pendingUploads = {};
+window.lastUploadedUrl = null;
+
+async function uploadMediaWithUI(file, type, extraData = null) {
+  const tempId = 'temp_' + Date.now();
+  const tempUrl = URL.createObjectURL(file);
+  const area = document.getElementById('messages-area');
+
+  const tempMsg = {
+    key: tempId, type: type, url: tempUrl, duration: extraData?.duration || '0:00',
+    senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
+    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' } : null
+  };
+  if (replyingToMsg) cancelReply();
+
+  if (area) {
+    const el = buildMsgEl(tempMsg, false); el.id = 'row_' + tempId;
+    area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
+  }
+
+  const tryUpload = async () => {
+    const row = document.getElementById('row_' + tempId);
+    if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`; }
+    try {
+      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
+      const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', { method: 'POST', body: fd, signal: controller.signal });
+      clearTimeout(timeoutId); const data = await res.json();
+      if (data.secure_url) {
+        window.lastUploadedUrl = data.secure_url;
+        if (type === 'image' && window.localImageCache) window.localImageCache[data.secure_url] = tempUrl;
+        if (row) row.remove();
+        await pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+      } else throw new Error('فشل');
+    } catch (e) {
+      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">فشل، اضغط للإعادة 🔄</button>`; }
+    }
+  };
+  window.pendingUploads[tempId] = tryUpload;
+  await tryUpload();
+}
+
+document.getElementById('file-img-input').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file || !currentChat) return;
+  e.target.value = '';
+  uploadMediaWithUI(file, 'image');
+});
+
+/* ═══════════════════════════════════
+   VOICE RECORDING
+═══════════════════════════════════ */
+async function toggleRecording(isSinging = false) {
+  if (isRecording) { stopRecording(); return; }
+  if (!navigator.mediaDevices) { showToast('المتصفح لا يدعم التسجيل', 'error'); return; }
+  try {
+    isSingingMode = isSinging; 
+    let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
+    if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
+    const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(rawStream);
+    const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
+
+    const preGain = audioCtx.createGain(); preGain.gain.value = 0.5;
+    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
+    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
+    const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4; 
+    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+
+    function generateReverb(ctx) {
+      const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+      const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
+      for (let i = 0; i < length; i++) {
+        const decay = Math.pow(1 - i / length, 1.5); 
+        left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay;
+      }
+      return impulse;
+    }
+
+    const convolver = audioCtx.createConvolver(); convolver.buffer = generateReverb(audioCtx);
+    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6; 
+    const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
+    const dest = audioCtx.createMediaStreamDestination();
+
+    source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
+    compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
+
+    audioChunks = []; isRecordingCanceled = false;
+    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
+      if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
+      const blob = new Blob([...audioChunks], { type: 'audio/webm' });
+      uploadMediaWithUI(blob, 'voice', { duration: recordDurationStr });
+    };
+    
+    mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
+
+    if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
+    else { document.getElementById('btn-voice').classList.add('recording'); document.getElementById('btn-music-voice').style.display = 'none'; }
+
+    document.getElementById('msg-input-wrap').style.display = 'none'; document.getElementById('btn-attach').style.display = 'none';
+    document.getElementById('btn-cancel-voice').style.display = 'flex'; document.getElementById('recording-indicator').style.display = 'flex';
+    
+    let canvas = document.getElementById('neon-visualizer');
+    if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'neon-visualizer'; canvas.width = 100; canvas.height = 25; canvas.style.marginLeft = '12px'; document.getElementById('recording-indicator').appendChild(canvas); }
+    canvas.style.display = 'block'; const canvasCtx = canvas.getContext('2d'); const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    
+    function drawVisualizer() {
+      if (!isRecording) return;
+      requestAnimationFrame(drawVisualizer); analyser.getByteFrequencyData(dataArray); canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+      let x = 0; const barWidth = (canvas.width / analyser.frequencyBinCount) * 2;
+      for (let i = 0; i < analyser.frequencyBinCount; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height;
+        canvasCtx.fillStyle = isSingingMode ? 'rgba(255, 0, 144, 0.9)' : 'rgba(0, 240, 255, 0.9)';
+        canvasCtx.shadowBlur = 6; canvasCtx.shadowColor = isSingingMode ? '#ff0090' : '#00f0ff';
+        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight); x += barWidth + 1.5;
+      }
+    }
+    drawVisualizer();
+
+    if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.set('recording'); recRef.onDisconnect().remove(); }
+    if (typeof recordTimerInt !== 'undefined') clearInterval(recordTimerInt);
+    recordDurationStr = '0:00'; const timerSpan = document.getElementById('rec-timer-text'); if (timerSpan) timerSpan.textContent = '0:00';
+    recordTimerInt = setInterval(() => {
+      const sec = Math.floor((Date.now() - recordStart) / 1000), m = Math.floor(sec / 60), s = sec % 60;
+      recordDurationStr = m + ':' + (s < 10 ? '0' : '') + s;
+      if (timerSpan) timerSpan.textContent = recordDurationStr;
+    }, 1000);
+  } catch (e) { showToast('تعذر الوصول للمايكروفون', 'error'); }
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  isRecording = false;
+  if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.remove(); recRef.onDisconnect().cancel(); }
+  document.getElementById('btn-voice').classList.remove('recording'); document.getElementById('btn-voice').style.display = 'flex';
+  const btnMusic = document.getElementById('btn-music-voice'); if (btnMusic) { btnMusic.classList.remove('recording'); btnMusic.style.display = 'flex'; }
+  document.getElementById('msg-input-wrap').style.display = 'block'; document.getElementById('btn-attach').style.display = 'flex';
+  document.getElementById('btn-cancel-voice').style.display = 'none'; document.getElementById('recording-indicator').style.display = 'none';
+  const canvas = document.getElementById('neon-visualizer'); if (canvas) canvas.style.display = 'none';
+  clearInterval(recordTimerInt);
+}
+
+function cancelVoiceRecord() { isRecordingCanceled = true; stopRecording(); }
+
+/* ═══════════════════════════════════
+   VOICE PLAYBACK & PROGRESS
+═══════════════════════════════════ */
+var currentAudio = null, currentAudioUrl = null, audioUpdateInterval = null;
+
+function playVoice(btn, url, msgKey, isOut) {
+  if (isOut === false && currentChat) {
+    db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
+    const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
+  }
+  if (currentAudio && currentAudioUrl === url) {
+    if (!currentAudio.paused) { currentAudio.pause(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; clearInterval(audioUpdateInterval); return; } 
+    else { currentAudio.play(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); return; }
+  }
+  if (currentAudio) {
+    currentAudio.pause(); document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
+    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); clearInterval(audioUpdateInterval);
+  }
+  currentAudioUrl = url; currentAudio = new Audio(url); currentAudio.preload = 'auto'; 
+  btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
+  currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
+  currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
+  
+  let playPromise = currentAudio.play();
+  if (playPromise !== undefined) playPromise.catch(e => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; });
+
+  currentAudio.onended = () => {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+    const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = '0%';
+    const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
+    let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
+    while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
+    let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
+    currentAudio = null; currentAudioUrl = null; clearInterval(audioUpdateInterval);
+    if (nextBtn) nextBtn.click();
+  };
+}
+
+function startAudioProgress(msgKey) {
+  clearInterval(audioUpdateInterval);
+  const durEl = document.getElementById('dur-' + msgKey);
+  const origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0; if (origStr) { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
+  audioUpdateInterval = setInterval(() => {
+    if (currentAudio && !currentAudio.paused) {
+      let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration;
+      if (totalDuration > 0) {
+        let perc = (currentAudio.currentTime / totalDuration) * 100; if (perc > 100) perc = 100;
+        let fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = perc + '%';
+        if (durEl) { const curSec = Math.floor(currentAudio.currentTime), m = Math.floor(curSec / 60), s = curSec % 60; durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`; }
+      }
+    }
+  }, 30); 
+}
+
+function seekVoice(event, url, msgKey) {
+  if (!currentAudio || currentAudioUrl !== url) return;
+  const durEl = document.getElementById('dur-' + msgKey), origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0; if (origStr) { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
+  let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration; if (!totalDuration) return;
+  const rect = event.currentTarget.getBoundingClientRect(), clickX = rect.right - event.clientX; 
+  let perc = clickX / rect.width; if (perc < 0) perc = 0; if (perc > 1) perc = 1;
+  currentAudio.currentTime = totalDuration * perc;
+  const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = (perc * 100) + '%';
+}
 
 /* ═══════════════════════════════════
    SCROLL & CHAT UTILS
