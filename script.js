@@ -117,7 +117,11 @@ window.addEventListener('popstate', e => {
   let isPopupOpen = false;
 
   if (imgOverlay && imgOverlay.classList.contains('open')) {
-    if (currentScale > 1) { currentScale = 1; imgTx = 0; imgTy = 0; img.style.transform = `translate(0px, 0px) scale(1)`; } 
+    if (currentScale > 1) { 
+      currentScale = 1; imgTx = 0; imgTy = 0; 
+      document.getElementById('img-preview-el').style.transform = `translate(0px, 0px) scale(1)`; 
+      history.pushState({ overlay: 'image' }, '', ''); // 🚀 إضافة خطوة وهمية للتاريخ ليحتاج ضغطة رجوع ثانية للخروج
+    } 
     else { closeImgPreview(); }
     isPopupOpen = true;
   }
@@ -270,29 +274,49 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
 function setupPresence(uid) {
   const myStatusRef = db.ref('users/' + uid + '/status');
   const connectedRef = db.ref('.info/connected');
+
   let isConnected = false;
+
+  // مراقبة اتصال الإنترنت من سيرفر فايربيس
   connectedRef.on('value', snap => {
     isConnected = snap.val() === true;
     if (isConnected) {
       myStatusRef.onDisconnect().set(Date.now());
-      if (document.visibilityState === 'visible') myStatusRef.set('online');
-      else myStatusRef.set(Date.now());
+      if (document.visibilityState === 'visible') {
+        myStatusRef.set('online');
+      } else {
+        myStatusRef.set(Date.now());
+      }
     }
   });
-  const setOnline = () => { if(isConnected) myStatusRef.set('online'); };
-  const setOffline = () => { 
-     // 🚀 السحر هون: فحصنا إنو الشاشة فعلاً مخفية (document.hidden) ومو مجرد كيبورد فتح وخربطنا!
-     if(isConnected && document.hidden) { 
-       myStatusRef.set(Date.now()); 
-       if (currentChat && currentUser) db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
-     } 
-  };
+
+  // مراقبة الشاشة (نظامية)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') setOnline();
-    else setOffline();
+    if (isConnected && navigator.onLine) {
+      if (document.visibilityState === 'visible') {
+        myStatusRef.set('online');
+      } else {
+        myStatusRef.set(Date.now());
+        if (currentChat && currentUser) {
+          db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
+        }
+      }
+    }
   });
-  window.addEventListener('focus', setOnline);
-  window.addEventListener('blur', setOffline);
+
+  // 🚀 إضافة استشعار فصل الواي فاي أو البيانات فورياً من الجوال
+  window.addEventListener('offline', () => {
+    myStatusRef.set(Date.now());
+    if (currentChat && currentUser) {
+      db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
+    }
+  });
+
+  window.addEventListener('online', () => {
+    if (document.visibilityState === 'visible') {
+      myStatusRef.set('online');
+    }
+  });
 }
 
 async function ensureUserProfile(user) {
@@ -547,34 +571,77 @@ function detachMessages() {
 }
 
 async function openChat(chatId, friendUid, friendProfile = null) {
-  renderScreenUI('chat'); detachMessages();
-  if (!friendProfile) { const snap = await db.ref('users/' + friendUid).once('value'); friendProfile = snap.val(); }
+  renderScreenUI('chat'); 
+  detachMessages();
+
+  if (!friendProfile) {
+    const snap = await db.ref('users/' + friendUid).once('value');
+    friendProfile = snap.val();
+  }
   currentChat = { chatId, friendUid, friendProfile };
 
   const avatarEl = document.getElementById('chat-header-avatar');
-  if (friendProfile.photo) avatarEl.outerHTML = `<img src="${friendProfile.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover;"/>`;
-  else avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
+  if (friendProfile.photo) {
+    avatarEl.outerHTML = `<img src="${friendProfile.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover;"/>`;
+  } else {
+    avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
+  }
   document.getElementById('chat-header-name').textContent = friendProfile.name;
+
   db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
 
   attachMessages(chatId);
 
   const statusEl = document.getElementById('chat-header-status');
-  statusEl.textContent = 'جاري التحقق...'; statusEl.style.color = 'var(--text-muted)';
+  statusEl.textContent = 'جاري التحقق...';
+  statusEl.style.color = 'var(--text-muted)';
+
   friendStatusRef = db.ref('users/' + friendUid + '/status');
   friendStatusListener = friendStatusRef.on('value', snap => {
     const val = snap.val();
-    if (val === 'online') { baseStatusText = '🟢 متصل الآن'; baseStatusColor = 'var(--neon-green)'; } 
-    else if (val && typeof val === 'number') { baseStatusText = '🔴 آخر ظهور: ' + formatTime(val); baseStatusColor = 'var(--text-secondary)'; } 
-    else { baseStatusText = '🔴 غير متصل'; baseStatusColor = 'var(--text-secondary)'; }
-    if (!statusEl.textContent.includes('يكتب') && !statusEl.textContent.includes('يسجل')) { statusEl.textContent = baseStatusText; statusEl.style.color = baseStatusColor; }
+    if (val === 'online') {
+      baseStatusText = '🟢 متصل الآن';
+      baseStatusColor = 'var(--neon-green)';
+    } else if (val && typeof val === 'number') {
+      const d = new Date(val);
+      const now = new Date();
+      let prefix = '';
+      if (d.toDateString() === now.toDateString()) {
+        prefix = 'اليوم';
+      } else {
+        const yes = new Date(now);
+        yes.setDate(now.getDate() - 1);
+        prefix = d.toDateString() === yes.toDateString() ? 'أمس' : d.toLocaleDateString('ar-EG', {
+          day: '2-digit', month: 'short'
+        });
+      }
+      baseStatusText = '🔴 آخر ظهور: ' + prefix + ' ' + formatTime(val);
+      baseStatusColor = 'var(--text-secondary)';
+    } else {
+      baseStatusText = '🔴 غير متصل';
+      baseStatusColor = 'var(--text-secondary)';
+    }
+    
+    const cur = statusEl.textContent;
+    if (!cur.includes('يكتب') && !cur.includes('يسجل')) {
+      statusEl.textContent = baseStatusText;
+      statusEl.style.color = baseStatusColor;
+    }
   });
+
   typingRef = db.ref('chats/' + chatId + '/typing/' + friendUid);
   typingListener = typingRef.on('value', snap => {
     const state = snap.val();
-    if (state === 'typing') { statusEl.textContent = '✍️ يكتب الآن...'; statusEl.style.color = 'var(--neon-cyan)'; } 
-    else if (state === 'recording') { statusEl.textContent = '🎙️ يسجل مقطع صوتي...'; statusEl.style.color = 'var(--neon-pink)'; } 
-    else { statusEl.textContent = baseStatusText; statusEl.style.color = baseStatusColor; }
+    if (state === 'typing') {
+      statusEl.textContent = '✍️ يكتب الآن...';
+      statusEl.style.color = 'var(--neon-cyan)';
+    } else if (state === 'recording') {
+      statusEl.textContent = '🎙️ يسجل مقطع صوتي...';
+      statusEl.style.color = 'var(--neon-pink)';
+    } else {
+      statusEl.textContent = baseStatusText;
+      statusEl.style.color = baseStatusColor;
+    }
   });
 }
 
@@ -589,6 +656,22 @@ function attachMessages(chatId) {
   
   // منع تدخل المتصفح العشوائي
   area.style.overflowAnchor = 'none';
+
+  // 🚀 إنشاء زر النزول السريع برمجياً مع عداد الرسائل الجديدة
+  let scrollFab = document.getElementById('scroll-bottom-fab');
+  if (!scrollFab) {
+    scrollFab = document.createElement('div');
+    scrollFab.id = 'scroll-bottom-fab';
+    scrollFab.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg><div id="scroll-fab-badge" style="display:none; position:absolute; top:-6px; right:-6px; background:var(--neon-pink); color:white; font-size:11px; font-weight:bold; width:20px; height:20px; border-radius:50%; align-items:center; justify-content:center; box-shadow:0 0 10px var(--neon-pink); border:2px solid var(--bg-surface); font-family:var(--font-en);">0</div>`;
+    scrollFab.style.cssText = `position:absolute; bottom:calc(var(--input-h) + 20px); right:20px; width:44px; height:44px; background:var(--bg-glass); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--border-glow); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--neon-cyan); box-shadow:var(--shadow-neon); cursor:pointer; z-index:50; opacity:0; pointer-events:none; transition:all 0.3s cubic-bezier(0.4, 0, 0.2, 1); transform:translateY(20px) scale(0.9);`;
+    document.getElementById('screen-chat').appendChild(scrollFab);
+    scrollFab.onclick = () => { area.scrollTo({ top: area.scrollHeight, behavior: 'smooth' }); };
+  }
+  scrollFab.style.opacity = '0';
+  scrollFab.style.pointerEvents = 'none';
+  scrollFab.style.transform = 'translateY(20px) scale(0.9)';
+  const fabBadge = document.getElementById('scroll-fab-badge');
+  if (fabBadge) { fabBadge.style.display = 'none'; fabBadge.textContent = '0'; }
 
   db.ref('userChats/' + currentChat.friendUid + '/' + chatId).update({
     friendName: myProfile.name,
@@ -674,11 +757,30 @@ function attachMessages(chatId) {
       area.appendChild(sep);
       lastMsgDate = dateStr;
     }
+    
+    // فحص إذا المستخدم قريب من الأسفل قبل إضافة الرسالة
+    const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 150;
+    
     area.appendChild(buildMsgEl(msg, false)); 
     
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(() => {
-      area.scrollTop = area.scrollHeight;
+      // بينزل لتحت بس إذا كنت أصلاً تحت أو أنت اللي بعتت الرسالة
+      if (isNearBottom || msg.senderUid === currentUser.uid) {
+        area.scrollTop = area.scrollHeight;
+      } else if (msg.senderUid !== currentUser.uid) {
+        // 🚀 تشغيل عداد الرسائل في الزر إذا كنت عم تقرأ فوق
+        const fab = document.getElementById('scroll-bottom-fab');
+        const badge = document.getElementById('scroll-fab-badge');
+        if (fab && badge) {
+          fab.style.opacity = '1';
+          fab.style.pointerEvents = 'all';
+          fab.style.transform = 'translateY(0) scale(1)';
+          let count = parseInt(badge.textContent || '0') + 1;
+          badge.textContent = count;
+          badge.style.display = 'flex';
+        }
+      }
     }, 50);
 
     if (msg.senderUid !== currentUser.uid) {
@@ -688,6 +790,27 @@ function attachMessages(chatId) {
   });
 
   area.addEventListener('scroll', async () => {
+    // 🚀 إغلاق القائمة المنسدلة تلقائياً عند التمرير مشان ما تضل معلقة
+    const menuOverlay = document.getElementById('msg-menu-overlay');
+    if (menuOverlay && menuOverlay.classList.contains('open')) closeMsgMenu();
+
+    // 🚀 التحكم بظهور زر النزول السريع وإخفاؤه
+    const fab = document.getElementById('scroll-bottom-fab');
+    const badge = document.getElementById('scroll-fab-badge');
+    if (fab && badge) {
+      if (area.scrollHeight - area.scrollTop - area.clientHeight < 150) {
+        fab.style.opacity = '0';
+        fab.style.pointerEvents = 'none';
+        fab.style.transform = 'translateY(20px) scale(0.9)';
+        badge.style.display = 'none';
+        badge.textContent = '0';
+      } else {
+        fab.style.opacity = '1';
+        fab.style.pointerEvents = 'all';
+        fab.style.transform = 'translateY(0) scale(1)';
+      }
+    }
+
     if (area.scrollTop <= 5 && !isLoadingHistory && hasMoreHistory && oldestMsgKey) {
       isLoadingHistory = true;
       
@@ -948,9 +1071,9 @@ function buildMsgEl(msg, isBackground = false) {
     let safeText = escHtml(msg.text).replace(/(https?:\/\/[^\s]+)/g, `<a href="$1" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">$1</a>`);
     bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
-    // 🚀 جلب الصورة من الذاكرة المؤقتة فوراً لتجنب التحميل البطيء والرفة
+    // 🚀 جلب الصورة من الذاكرة المؤقتة فوراً لتجنب التحميل البطيء والرفة، وإصلاح مشكلة الكليك
     const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
-    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" style="pointer-events: auto;"/>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
     if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
@@ -1246,14 +1369,29 @@ function seekVoice(event, url, msgKey) {
 /* ═══════════════════════════════════
    SEND MESSAGES (TEXT), REACTION & MENU
 ═══════════════════════════════════ */
-let lastTypingTime = 0; // 🚀 السحر هون: تعريف المتغير اللي كان ناقص وعم يوقف إشارة الكتابة
+let lastTypingTime = 0; // لضبط الإرسال لفايربيز
 
 document.getElementById('msg-input').addEventListener('input', () => {
   if (!currentChat || isRecording) return;
-  const now = Date.now(), typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
-  if (now - lastTypingTime > 1500) { typingRef.set('typing'); typingRef.onDisconnect().remove(); lastTypingTime = now; }
+  
+  const now = Date.now();
+  const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
+  
+  if (now - lastTypingTime > 1500) {
+    typingRef.set('typing');
+    // هون السحر: لو فصل النت أو تسكر التطبيق فجأة، السيرفر بيمسح جاري الكتابة لحاله
+    typingRef.onDisconnect().remove(); 
+    lastTypingTime = now;
+  }
+  
   clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => { if (currentChat) { typingRef.remove(); typingRef.onDisconnect().cancel(); } lastTypingTime = 0; }, 2000);
+  typingTimeout = setTimeout(() => {
+    if (currentChat) {
+      typingRef.remove();
+      typingRef.onDisconnect().cancel(); // نلغي أمر الحذف التلقائي لأننا حذفناه نظامي
+    }
+    lastTypingTime = 0;
+  }, 2000);
 });
 
 function handleMsgKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTextMsg(); return; } }
@@ -1301,9 +1439,9 @@ function updateLastMsgAfterChange() {
 
 function openMsgMenu(msg, isOut) {
   const menu = document.getElementById('msg-menu'); menu.innerHTML = '';
-  const emojis = ['😂', '😅', '🤣', '😍', '🥰', '🙂', '🙄', '😱', '🥺', '😴', '🔥', '💯', '🙏🏻', '👍🏻', '👏🏻', '👊🏻', '🎧', '🎶', '💙'];
-  let emojiHtml = `<div style="display:flex; flex-wrap:wrap; gap:8px; padding:10px; background:rgba(0,240,255,0.05); border-radius:12px; margin-bottom:8px; justify-content:center;">`;
-  emojis.forEach(em => { emojiHtml += `<div style="font-size:24px; cursor:pointer; padding:2px;" onclick="addReaction('${msg.key}', '${em}'); closeMsgMenu();">${em}</div>`; }); emojiHtml += `</div>`; menu.innerHTML += emojiHtml;
+  const emojis = ['😂', '😅', '🤣', '😍', '🥰','❤️', '🙂','🫠', '🙄', '😱', '🥺','😳','🤭','😝','😥', '😴', '🔥', '💯', '🙏🏻', '👍🏻', '👏🏻', '👊🏻', '🎧', '🎶', '💙'];
+  let emojiHtml = `<div style="display:flex; flex-wrap:wrap; gap:6px; padding:8px; background:rgba(0,240,255,0.05); border-radius:12px; margin-bottom:8px; justify-content:center;">`;
+  emojis.forEach(em => { emojiHtml += `<div style="font-size:18px; cursor:pointer; padding:2px;" onclick="addReaction('${msg.key}', '${em}'); closeMsgMenu();">${em}</div>`; }); emojiHtml += `</div>`; menu.innerHTML += emojiHtml;
   
   const btnReply = document.createElement('button'); btnReply.className = 'msg-menu-btn'; btnReply.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg> رد`;
   btnReply.onclick = () => { prepareReply(msg); closeMsgMenu(); }; menu.appendChild(btnReply);
@@ -1313,12 +1451,24 @@ function openMsgMenu(msg, isOut) {
     btnCopy.onclick = () => { navigator.clipboard.writeText(msg.text).then(() => showToast('تم النسخ', 'success')); closeMsgMenu(); }; menu.appendChild(btnCopy);
   }
   if (isOut) {
-    if (msg.type === 'text') {
+    // 🚀 السحر هون: حساب فارق الوقت.. مسموح التعديل والحذف فقط إذا مر أقل من دقيقتين (120,000 ميلي ثانية)
+    const timeDiff = Date.now() - msg.timestamp;
+    const canModify = timeDiff <= 120000;
+
+    if (msg.type === 'text' && canModify) {
       const btnEdit = document.createElement('button'); btnEdit.className = 'msg-menu-btn'; btnEdit.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> تعديل`;
       btnEdit.onclick = () => { prepareEdit(msg.key, msg.text); closeMsgMenu(); }; menu.appendChild(btnEdit);
     }
-    const btnDel = document.createElement('button'); btnDel.className = 'msg-menu-btn danger'; btnDel.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> حذف الرسالة`;
-    btnDel.onclick = () => { confirmDeleteMsg(msg.key); closeMsgMenu(); }; menu.appendChild(btnDel);
+    
+    if (canModify) {
+      const btnDel = document.createElement('button'); btnDel.className = 'msg-menu-btn danger'; btnDel.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> حذف الرسالة`;
+      btnDel.onclick = () => { confirmDeleteMsg(msg.key); closeMsgMenu(); }; menu.appendChild(btnDel);
+    } else {
+      const note = document.createElement('div');
+      note.style.cssText = 'font-size:11px; color:var(--text-muted); text-align:center; margin-top:8px; pointer-events:none;';
+      note.textContent = 'لا يمكن الحذف أو التعديل بعد مرور دقيقتين';
+      menu.appendChild(note);
+    }
   }
   document.getElementById('msg-menu-overlay').classList.add('open');
 }
@@ -1605,7 +1755,12 @@ function playVoice(btn, url, msgKey, isOut) {
   
   let playPromise = currentAudio.play();
   if (playPromise !== undefined) {
-    playPromise.catch(e => console.log("Audio playback waiting..."));
+    playPromise.catch(e => {
+      console.log("Audio playback waiting...");
+      // إرجاع الزر لوضع التشغيل (المثلث) بحال المتصفح منع التشغيل مشان ما يعلق
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      clearInterval(audioUpdateInterval);
+    });
   }
   
   startAudioProgress(msgKey);
@@ -1805,13 +1960,21 @@ function searchInChat(query) {
     try {
       const snap = await db.ref('chats/' + currentChat.chatId + '/messages').once('value'); let found = [];
       if (snap.exists()) snap.forEach(child => { const msg = child.val(); if (msg.type === 'text' && msg.text && msg.text.includes(query)) found.push({ ...msg, key: child.key }); });
-      if (found.length === 0) { overlay.innerHTML = `<div style="text-align:center; color:var(--text-muted); margin-top:40px;">لم يتم العثور على نتائج لكلمة "${escHtml(query)}"</div><button class="btn-primary" style="margin-top:20px; width:auto; align-self:center;" onclick="toggleChatSearch()">إغلاق البحث</button>`; return; }
+      if (found.length === 0) { 
+        chatSearchResults = []; currentSearchIndex = -1; 
+        overlay.innerHTML = `<div style="text-align:center; color:var(--text-muted); margin-top:40px;">لم يتم العثور على نتائج لكلمة "${escHtml(query)}"</div><button class="btn-primary" style="margin-top:20px; width:auto; align-self:center;" onclick="toggleChatSearch()">إغلاق البحث</button>`; 
+        return; 
+      }
+      
       found.sort((a, b) => b.timestamp - a.timestamp);
+      chatSearchResults = found;
+      currentSearchIndex = 0; // 🚀 حفظنا النتيجة للأسهم
+
       let htmlStr = `<div style="color:var(--neon-green); margin-bottom:10px; font-weight:bold; text-align:center;">تم العثور على ${found.length} نتيجة</div>`;
-      found.forEach(msg => {
+      found.forEach((msg, idx) => {
         const isMe = msg.senderUid === currentUser.uid, senderName = isMe ? 'أنت' : currentChat.friendProfile.name, dateStr = new Date(msg.timestamp).toLocaleString('ar-EG', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
         const regex = new RegExp(`(${query})`, 'gi'), highlightedText = escHtml(msg.text).replace(regex, `<span style="background:var(--neon-cyan); color:var(--bg-void); padding:0 3px; border-radius:3px; font-weight:bold;">$1</span>`);
-        htmlStr += `<div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:12px; padding:14px; border-right:4px solid ${isMe ? 'var(--neon-cyan)' : 'var(--neon-pink)'}; box-shadow:var(--shadow-neon); cursor:pointer; margin-bottom:8px;" onclick="jumpToMessageContext('${msg.key}')"><div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:10px; border-bottom:1px solid var(--border-subtle); padding-bottom:6px;"><span style="font-weight:bold; color:${isMe ? 'var(--neon-cyan)' : 'var(--neon-pink)'}">${senderName}</span><span>${dateStr}</span></div><div style="font-size:15px; line-height:1.6; color:var(--text-primary);">${highlightedText}</div><div style="text-align:left; margin-top:8px; font-size:11px; color:var(--neon-cyan);">اضغط للانتقال ↗️</div></div>`;
+        htmlStr += `<div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:12px; padding:14px; border-right:4px solid ${isMe ? 'var(--neon-cyan)' : 'var(--neon-pink)'}; box-shadow:var(--shadow-neon); cursor:pointer; margin-bottom:8px;" onclick="currentSearchIndex = ${idx}; jumpToMessageContext('${msg.key}')"><div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:10px; border-bottom:1px solid var(--border-subtle); padding-bottom:6px;"><span style="font-weight:bold; color:${isMe ? 'var(--neon-cyan)' : 'var(--neon-pink)'}">${senderName}</span><span>${dateStr}</span></div><div style="font-size:15px; line-height:1.6; color:var(--text-primary);">${highlightedText}</div><div style="text-align:left; margin-top:8px; font-size:11px; color:var(--neon-cyan);">اضغط للانتقال ↗️</div></div>`;
       });
       htmlStr += `<button class="btn-primary" style="margin-top:20px; margin-bottom:20px; width:auto; align-self:center;" onclick="toggleChatSearch()">إغلاق البحث</button>`;
       overlay.innerHTML = htmlStr;
@@ -1858,8 +2021,20 @@ async function jumpToMessageContext(msgKey) {
   } catch (e) { area.innerHTML = '<div style="text-align:center; color:var(--neon-pink); padding:20px;">خطأ ❌</div><div style="text-align:center;"><button class="btn-primary" style="width:auto;" onclick="returnToLiveChat()">رجوع</button></div>'; }
 }
 function returnToLiveChat() { if (currentChat) attachMessages(currentChat.chatId); }
-function nextSearchResult() { showToast('النتائج كلها معروضة أمامك بالقائمة', 'info'); }
-function prevSearchResult() { showToast('النتائج كلها معروضة أمامك بالقائمة', 'info'); }
+function nextSearchResult() { 
+  if (!chatSearchResults || chatSearchResults.length === 0) return;
+  currentSearchIndex++;
+  if (currentSearchIndex >= chatSearchResults.length) currentSearchIndex = 0;
+  jumpToMessageContext(chatSearchResults[currentSearchIndex].key);
+  showToast(`النتيجة ${currentSearchIndex + 1} من ${chatSearchResults.length}`, 'info');
+}
+function prevSearchResult() { 
+  if (!chatSearchResults || chatSearchResults.length === 0) return;
+  currentSearchIndex--;
+  if (currentSearchIndex < 0) currentSearchIndex = chatSearchResults.length - 1;
+  jumpToMessageContext(chatSearchResults[currentSearchIndex].key);
+  showToast(`النتيجة ${currentSearchIndex + 1} من ${chatSearchResults.length}`, 'info');
+}
 
 function openHomeChatMenu(chatId, friendUid, friendName) {
   const menu = document.getElementById('msg-menu');
@@ -1885,3 +2060,20 @@ async function removeChatFromList(chatId) {
   }
 }
 function blockUser(friendUid) { openModal('حظر', 'حظر هذا الشخص؟').then(ok => { if (ok) { db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).set(true); showToast('تم الحظر بنجاح', 'success'); } }); }
+
+/* ═══════════════════════════════════
+   THEME TOGGLE
+═══════════════════════════════════ */
+let isLightMode = localStorage.getItem('theme') === 'light';
+if (isLightMode) document.body.classList.add('light-theme');
+
+function toggleTheme() {
+  isLightMode = !isLightMode;
+  if (isLightMode) {
+    document.body.classList.add('light-theme');
+    localStorage.setItem('theme', 'light');
+  } else {
+    document.body.classList.remove('light-theme');
+    localStorage.setItem('theme', 'dark');
+  }
+}

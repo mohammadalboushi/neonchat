@@ -47,6 +47,9 @@
   <div class="toast" id="toast"></div>
 
   <div id="img-preview-overlay">
+    <div onclick="history.back()" style="position:absolute; top:20px; left:20px; width:40px; height:40px; background:rgba(0,0,0,0.5); border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; cursor:pointer; z-index:10; border:1px solid var(--border-subtle); backdrop-filter:blur(4px);">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </div>
     <img id="img-preview-el" src="" alt="">
   </div>
 
@@ -197,14 +200,27 @@
           <div class="chat-header-name" id="chat-header-name">…</div>
           <div class="chat-header-status" id="chat-header-status">جاري التحقق...</div>
         </div>
-        <button class="btn-icon" onclick="toggleChatSearch()" title="بحث" style="color:var(--neon-cyan); border-color:var(--border-subtle); margin-left:4px;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <button class="btn-icon" onclick="toggleChatSearch()" title="بحث" style="width:28px; height:28px; color:var(--neon-cyan); border-color:var(--border-subtle); margin-left:0px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </button>
-        <button class="btn-icon" onclick="startCall()" title="اتصال" style="color:var(--neon-green); border-color:rgba(0,255,136,0.3);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="btn-icon" id="theme-toggle-btn" onclick="toggleTheme()" title="تبديل المظهر" style="width:28px; height:28px; color:var(--neon-purple); border-color:var(--border-subtle); margin-left:0px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+        <button class="btn-icon" onclick="startCall()" title="اتصال" style="width:28px; height:28px; color:var(--neon-green); border-color:rgba(0,255,136,0.3);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
           </svg>
         </button>
@@ -383,7 +399,7 @@
       </div>
     </div>
 
-  </div> <script src="script.js"></script>
+  </div> <script src="script.js?v=2"></script>
 
   <script>
     if('serviceWorker' in navigator){

@@ -637,6 +637,24 @@ body {
   border: 1px solid rgba(0, 240, 255, 0.4);
 }
 
+.msg-my-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 8px;
+  align-self: flex-end;
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  flex-shrink: 0;
+  object-fit: cover;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+}
+
 .msg-bubble {
   max-width: 72%;
   padding: 10px 14px;
@@ -774,7 +792,9 @@ body {
   color: var(--text-muted);
   margin: 8px 0;
   padding: 4px 12px;
-  position: relative;
+  position: sticky;
+  top: 4px;
+  z-index: 10;
 }
 
 .date-sep span {
@@ -1588,4 +1608,69 @@ body {
 .msg-bubble .msg-time {
   color: rgba(255, 255, 255, 0.5) !important;
   text-shadow: none !important;
+}
+
+/* ═══════════════════════════════════
+   LIGHT THEME - الوضع النهاري
+═══════════════════════════════════ */
+body.light-theme {
+  --bg-void: #f4f7f6;
+  --bg-deep: #e2e8f0;
+  --bg-surface: #ffffff;
+  --bg-glass: rgba(255, 255, 255, 0.85);
+  --bg-glass2: rgba(0, 128, 255, 0.05);
+  --neon-cyan: #0077ff; 
+  --neon-blue: #0055cc;
+  --neon-purple: #8a2be2;
+  --neon-pink: #d90077;
+  --neon-green: #009955;
+  --text-primary: #1a202c;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+  --border-glow: rgba(0, 128, 255, 0.2);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --shadow-neon: 0 0 15px rgba(0, 128, 255, 0.15);
+}
+
+/* خلفية المحادثة المزخرفة خفيفاً للوضع النهاري */
+body.light-theme #screen-chat {
+  background-color: #f4f7f6 !important;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.15) 2px, transparent 2.5px) !important;
+  background-size: 32px 32px !important;
+  /* الرقم 2px بالأسطر اللي تحت هو للضبابية، فيك تزيده لـ 5px أو 10px لتزيد الغباش */
+  backdrop-filter: blur(5px) !important;
+  -webkit-backdrop-filter: blur(5px) !important;
+}
+
+/* رسائلك (اليمين) في الوضع النهاري */
+body.light-theme .msg-row.out .msg-bubble {
+  background: #e6f7ff !important;
+  border: 1px solid #b3e0ff !important;
+  color: #1a202c !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05) !important;
+}
+
+/* رسائل الصديق (اليسار) في الوضع النهاري */
+body.light-theme .msg-row.in .msg-bubble {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #1a202c !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05) !important;
+}
+
+body.light-theme .msg-bubble .msg-time {
+  color: #718096 !important;
+}
+
+body.light-theme .msg-bubble .reply-badge + div {
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-right-color: #0077ff !important;
+  color: #4a5568 !important;
+}
+
+body.light-theme .search-result-card,
+body.light-theme .glass-card,
+body.light-theme .app-header,
+body.light-theme .input-bar {
+  background: rgba(255, 255, 255, 0.9) !important;
 }
