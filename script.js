@@ -580,137 +580,241 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
 function attachMessages(chatId) {
   const area = document.getElementById('messages-area');
-  area.innerHTML = ''; lastMsgDate = ''; oldestMsgTimestamp = null; oldestMsgKey = null; 
-  isLoadingHistory = false; hasMoreHistory = true; area.style.overflowAnchor = 'none';
+  area.innerHTML = '';
+  lastMsgDate = '';
+  oldestMsgTimestamp = null;
+  oldestMsgKey = null; 
+  isLoadingHistory = false;
+  hasMoreHistory = true;
+  
+  // منع تدخل المتصفح العشوائي
+  area.style.overflowAnchor = 'none';
+
+  db.ref('userChats/' + currentChat.friendUid + '/' + chatId).update({
+    friendName: myProfile.name,
+    friendPhoto: myProfile.photo || ''
+  });
 
   const cacheKey = 'chat_cache_' + chatId;
+  const cachedData = localStorage.getItem(cacheKey);
   let liveMsgsCache = [];
-  if (localStorage.getItem(cacheKey)) { try { liveMsgsCache = JSON.parse(localStorage.getItem(cacheKey)); } catch (e) { liveMsgsCache = []; } }
+  
+  if (cachedData) {
+    try {
+      liveMsgsCache = JSON.parse(cachedData);
+      const fragment = document.createDocumentFragment();
+      let tempLastDate = '';
+      
+      liveMsgsCache.forEach(m => {
+        const dStr = formatDate(m.timestamp);
+        if (dStr !== tempLastDate) {
+          const sep = document.createElement('div');
+          sep.className = 'date-sep';
+          sep.innerHTML = `<span>${dStr}</span>`;
+          fragment.appendChild(sep);
+          tempLastDate = dStr;
+        }
+        fragment.appendChild(buildMsgEl(m, true));
+      });
+      
+      area.appendChild(fragment);
+      area.scrollTop = area.scrollHeight;
+      
+      if (liveMsgsCache.length > 0) {
+        lastMsgDate = tempLastDate;
+        oldestMsgKey = liveMsgsCache[0].key;
+        oldestMsgTimestamp = liveMsgsCache[0].timestamp;
+      }
+    } catch (e) {
+      liveMsgsCache = [];
+    }
+  }
 
   messagesRef = db.ref('chats/' + chatId + '/messages');
   
-  function setupChildAddedListener(query, skipFirst) {
-    currentMessagesQuery = query; let isFirst = skipFirst; let scrollTimeout;
-    messagesListener = currentMessagesQuery.on('child_added', snap => {
-      if (isFirst) { isFirst = false; return; }
-      const msg = { ...snap.val(), key: snap.key };
-      
-      if (msg.senderUid !== currentUser.uid && !msg.read) { 
-        snap.ref.update({ read: true }); 
-        db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0); 
-        msg.read = true;
-      }
-
-      if (!liveMsgsCache.some(m => m.key === msg.key)) {
-        liveMsgsCache.push(msg); if (liveMsgsCache.length > 100) liveMsgsCache.shift(); 
-        localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
-      }
-      if (document.getElementById('msg-' + msg.key)) return; 
-      if (!oldestMsgKey || snap.key < oldestMsgKey) oldestMsgKey = snap.key;
-      const dateStr = formatDate(msg.timestamp);
-      if (dateStr !== lastMsgDate) {
-        const sep = document.createElement('div'); sep.className = 'date-sep'; sep.innerHTML = `<span>${dateStr}</span>`;
-        area.appendChild(sep); lastMsgDate = dateStr;
-      }
-      area.appendChild(buildMsgEl(msg, false)); 
-      clearTimeout(scrollTimeout); scrollTimeout = setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
-    });
-  }
-
+  let query;
   if (liveMsgsCache.length > 0) {
-    const fragment = document.createDocumentFragment(); let tempLastDate = ''; let needsUnreadReset = false;
-    liveMsgsCache.forEach(m => {
-      const dStr = formatDate(m.timestamp);
-      if (dStr !== tempLastDate) {
-        const sep = document.createElement('div'); sep.className = 'date-sep'; sep.innerHTML = `<span>${dStr}</span>`;
-        fragment.appendChild(sep); tempLastDate = dStr;
-      }
-      fragment.appendChild(buildMsgEl(m, true));
-      if (m.senderUid !== currentUser.uid && !m.read) {
-         db.ref('chats/' + chatId + '/messages/' + m.key).update({ read: true });
-         m.read = true; needsUnreadReset = true;
-      }
-    });
-    if (needsUnreadReset) {
-      db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
-      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache)); 
-    }
-    area.appendChild(fragment); area.scrollTop = area.scrollHeight;
-    lastMsgDate = tempLastDate; oldestMsgKey = liveMsgsCache[0].key;
-    setupChildAddedListener(messagesRef.orderByKey().startAt(liveMsgsCache[liveMsgsCache.length - 1].key), false);
+    const latestKey = liveMsgsCache[liveMsgsCache.length - 1].key;
+    query = messagesRef.orderByKey().startAt(latestKey);
   } else {
-    area.innerHTML = '<div id="init-loader" style="text-align:center; padding:30px; color:var(--neon-cyan);">جاري تحميل المحادثة... ⏳</div>';
-    messagesRef.orderByKey().limitToLast(100).once('value', snap => {
-      const l = document.getElementById('init-loader'); if(l) l.remove();
-      const msgs = []; snap.forEach(c => msgs.push({ ...c.val(), key: c.key }));
-      if (msgs.length > 0) {
-        liveMsgsCache = msgs; localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
-        const fragment = document.createDocumentFragment(); let tempLastDate = '';
-        msgs.forEach(m => {
-          const dStr = formatDate(m.timestamp);
-          if (dStr !== tempLastDate) {
-            const sep = document.createElement('div'); sep.className = 'date-sep'; sep.innerHTML = `<span>${dStr}</span>`;
-            fragment.appendChild(sep); tempLastDate = dStr;
-          }
-          fragment.appendChild(buildMsgEl(m, true));
-        });
-        area.appendChild(fragment); area.scrollTop = area.scrollHeight;
-        lastMsgDate = tempLastDate; oldestMsgKey = msgs[0].key;
-        setupChildAddedListener(messagesRef.orderByKey().startAt(msgs[msgs.length - 1].key), true);
-      } else setupChildAddedListener(messagesRef.orderByKey().limitToLast(100), false);
-    });
+    query = messagesRef.orderByKey().limitToLast(100);
   }
+
+  // حفظ الاستعلام لحل مشكلة التعليق عند الدخول والخروج
+  currentMessagesQuery = query;
+
+  let scrollTimeout;
+
+  messagesListener = currentMessagesQuery.on('child_added', snap => {
+    const msg = { ...snap.val(), key: snap.key };
+    
+    const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
+    if (!existsInCache) {
+      liveMsgsCache.push(msg);
+      if (liveMsgsCache.length > 100) liveMsgsCache.shift(); 
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+    }
+
+    if (document.getElementById('msg-' + msg.key)) {
+      return; 
+    }
+
+    if (!oldestMsgKey || snap.key < oldestMsgKey) {
+      oldestMsgKey = snap.key;
+    }
+    if (!oldestMsgTimestamp || msg.timestamp < oldestMsgTimestamp) {
+      oldestMsgTimestamp = msg.timestamp;
+    }
+
+    const dateStr = formatDate(msg.timestamp);
+    if (dateStr !== lastMsgDate) {
+      const sep = document.createElement('div');
+      sep.className = 'date-sep';
+      sep.innerHTML = `<span>${dateStr}</span>`;
+      area.appendChild(sep);
+      lastMsgDate = dateStr;
+    }
+    area.appendChild(buildMsgEl(msg, false)); 
+    
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      area.scrollTop = area.scrollHeight;
+    }, 50);
+
+    if (msg.senderUid !== currentUser.uid) {
+      if (!msg.read) snap.ref.update({ read: true });
+      db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
+    }
+  });
 
   area.addEventListener('scroll', async () => {
     if (area.scrollTop <= 5 && !isLoadingHistory && hasMoreHistory && oldestMsgKey) {
-      isLoadingHistory = true; const oldScrollTop = area.scrollTop;
-      const loader = document.createElement('div'); loader.id = 'history-loader'; loader.innerHTML = '<div style="text-align:center; padding:10px; color:var(--neon-cyan);">جاري التحميل...</div>';
+      isLoadingHistory = true;
+      
+      const oldScrollTop = area.scrollTop;
+
+      const loader = document.createElement('div');
+      loader.id = 'history-loader';
+      loader.innerHTML = '<div style="text-align:center; padding:10px; font-size:12px; color:var(--neon-cyan);">جاري التحميل...</div>';
       area.insertBefore(loader, area.firstChild);
+
       const snap = await messagesRef.orderByKey().endAt(oldestMsgKey).limitToLast(100).once('value');
+      
       loader.remove(); 
+
       if (snap.exists()) {
-        const msgs = []; snap.forEach(child => { if (child.key !== oldestMsgKey) msgs.push({ ...child.val(), key: child.key }); });
+        const msgs = [];
+        snap.forEach(child => {
+          if (child.key !== oldestMsgKey) { 
+            msgs.push({ ...child.val(), key: child.key });
+          }
+        });
+        
         if (msgs.length > 0) {
-          oldestMsgKey = msgs[0].key; const baseScrollHeight = area.scrollHeight;
-          const fragment = document.createDocumentFragment(); let tempLastDate = '';
+          oldestMsgKey = msgs[0].key;
+          oldestMsgTimestamp = msgs[0].timestamp;
+          
+          const baseScrollHeight = area.scrollHeight;
+          
+          const fragment = document.createDocumentFragment();
+          let tempLastDate = '';
           msgs.forEach(m => {
             const dStr = formatDate(m.timestamp);
             if (dStr !== tempLastDate) {
-              const sep = document.createElement('div'); sep.className = 'date-sep'; sep.innerHTML = `<span>${dStr}</span>`;
-              fragment.appendChild(sep); tempLastDate = dStr;
+              const sep = document.createElement('div');
+              sep.className = 'date-sep';
+              sep.innerHTML = `<span>${dStr}</span>`;
+              fragment.appendChild(sep);
+              tempLastDate = dStr;
             }
             fragment.appendChild(buildMsgEl(m, true)); 
           });
+          
           area.insertBefore(fragment, area.firstChild);
-          const allSeps = area.querySelectorAll('.date-sep'); let lastTxt = '';
-          allSeps.forEach(sep => { if(sep.innerText === lastTxt) sep.remove(); else lastTxt = sep.innerText; });
-          area.style.scrollBehavior = 'auto'; area.scrollTop = area.scrollHeight - baseScrollHeight + oldScrollTop;
-          setTimeout(() => { area.style.scrollBehavior = 'smooth'; }, 50);
-        } else hasMoreHistory = false;
-      } else hasMoreHistory = false;
+          
+          const allSeps = area.querySelectorAll('.date-sep');
+          let lastTxt = '';
+          allSeps.forEach(sep => {
+             if(sep.innerText === lastTxt) sep.remove();
+             else lastTxt = sep.innerText;
+          });
+
+          // ─── السحر الثاني: إيقاف النعومة مؤقتاً لمنع الطيران ───
+          area.style.scrollBehavior = 'auto'; 
+          area.scrollTop = area.scrollHeight - baseScrollHeight + oldScrollTop;
+          
+          // إعادة النعومة بعد جزء من الثانية
+          setTimeout(() => {
+            area.style.scrollBehavior = 'smooth';
+          }, 50);
+          // ──────────────────────────────────────────────────────
+        } else {
+          hasMoreHistory = false;
+        }
+      } else {
+        hasMoreHistory = false;
+      }
+      
       isLoadingHistory = false;
     }
   });
 
   msgChangedListener = messagesRef.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
+    
     const idx = liveMsgsCache.findIndex(m => m.key === msg.key);
-    if (idx !== -1) { liveMsgsCache[idx] = msg; localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache)); }
-    if (msg.isEdited && msg.type === 'text') {
-      const bubbleEl = document.getElementById('msg-' + msg.key);
-      if (bubbleEl) { const tempRow = buildMsgEl(msg, true); const tempBubble = tempRow.querySelector('.msg-bubble'); if (tempBubble) bubbleEl.innerHTML = tempBubble.innerHTML; }
+    if (idx !== -1) {
+      liveMsgsCache[idx] = msg;
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
     }
-    if (msg.type === 'voice' && msg.listened) { const dot = document.getElementById('unplayed-' + msg.key); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; } }
+
+    if (msg.isEdited && !msg.isDeleted && msg.type === 'text') {
+      const bubbleEl = document.getElementById('msg-' + msg.key);
+      if (bubbleEl) {
+        const tempRow = buildMsgEl(msg, true);
+        const tempBubble = tempRow.querySelector('.msg-bubble');
+        if (tempBubble) {
+          bubbleEl.innerHTML = tempBubble.innerHTML;
+        }
+      }
+    }
+    
+    if (msg.type === 'voice' && msg.listened) {
+      const dot = document.getElementById('unplayed-' + msg.key);
+      if (dot) {
+        dot.style.background = 'transparent';
+        dot.style.boxShadow = 'none';
+      }
+    }
+
     const ticksEl = document.getElementById('ticks-' + msg.key);
     if (ticksEl) {
-      if (msg.type === 'voice' && msg.listened) { ticksEl.setAttribute('stroke', '#00ff88'); ticksEl.style.stroke = '#00ff88'; ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>'; } 
-      else if (msg.read) { ticksEl.setAttribute('stroke', '#00f0ff'); ticksEl.style.stroke = '#00f0ff'; ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>'; }
+      if (msg.type === 'voice' && msg.listened) {
+        ticksEl.setAttribute('stroke', '#00ff88');
+        ticksEl.style.stroke = '#00ff88';
+        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+      } else if (msg.read) {
+        ticksEl.setAttribute('stroke', '#00f0ff');
+        ticksEl.style.stroke = '#00f0ff';
+        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+      }
     }
     const reactEl = document.getElementById('react-' + msg.key);
-    if (reactEl) { if (msg.reaction) { reactEl.style.display = 'flex'; reactEl.innerHTML = msg.reaction; } else reactEl.style.display = 'none'; }
+    if (reactEl) {
+      if (msg.reaction) {
+        reactEl.style.display = 'flex';
+        reactEl.innerHTML = msg.reaction;
+      } else {
+        reactEl.style.display = 'none';
+      }
+    }
     if (msg.isDeleted) {
       const bubbleEl = document.getElementById('msg-' + msg.key);
-      if (bubbleEl) { bubbleEl.style.background = 'transparent'; bubbleEl.style.border = '1px solid var(--border-subtle)'; bubbleEl.innerHTML = '<div style="color:var(--text-muted);font-style:italic;font-size:12px;">🚫 تم حذف هذه الرسالة</div>'; }
+      if (bubbleEl) {
+        bubbleEl.style.background = 'transparent';
+        bubbleEl.style.border = '1px solid var(--border-subtle)';
+        bubbleEl.innerHTML = '<div style="color:var(--text-muted);font-style:italic;font-size:12px;">🚫 تم حذف هذه الرسالة</div>';
+      }
     }
   });
 }
@@ -1436,6 +1540,9 @@ function scrollToMessage(msgKey) {
     targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
     targetEl.style.transition = 'all 0.3s ease'; targetEl.style.boxShadow = '0 0 20px var(--neon-cyan)'; targetEl.style.transform = 'scale(1.05)';
     setTimeout(() => { targetEl.style.boxShadow = 'none'; targetEl.style.transform = 'scale(1)'; }, 1500);
+  } else {
+    // السحر هون: إذا الرسالة قديمة ومو محملة بالشاشة، استدعي دالة القفز للأرشيف فوراً
+    if (typeof jumpToMessageContext === 'function') jumpToMessageContext(msgKey);
   }
 }
 
@@ -1594,12 +1701,20 @@ function searchInChat(query) {
 }
 async function jumpToMessageContext(msgKey) {
   removeSearchOverlay(); const area = document.getElementById('messages-area'); area.style.display = 'flex';
-  if (document.getElementById('msg-' + msgKey)) { scrollToMessage(msgKey); return; }
+  
+  if (document.getElementById('msg-' + msgKey)) { 
+    const targetEl = document.getElementById('msg-' + msgKey);
+    targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    targetEl.style.transition = 'all 0.3s ease'; targetEl.style.boxShadow = '0 0 20px var(--neon-cyan)'; targetEl.style.transform = 'scale(1.05)';
+    setTimeout(() => { targetEl.style.boxShadow = 'none'; targetEl.style.transform = 'scale(1)'; }, 1500);
+    return; 
+  }
+  
   if (messagesRef && messagesListener) messagesRef.off('child_added', messagesListener);
   area.innerHTML = '<div style="text-align:center; padding:40px; color:var(--neon-cyan);">جاري الاسترجاع... ⏳</div>';
   try {
-    const snapBefore = await db.ref('chats/' + currentChat.chatId + '/messages').orderByKey().endAt(msgKey).limitToLast(30).once('value');
-    const snapAfter = await db.ref('chats/' + currentChat.chatId + '/messages').orderByKey().startAt(msgKey).limitToFirst(30).once('value');
+    const snapBefore = await db.ref('chats/' + currentChat.chatId + '/messages').orderByKey().endAt(msgKey).limitToLast(50).once('value');
+    const snapAfter = await db.ref('chats/' + currentChat.chatId + '/messages').orderByKey().startAt(msgKey).limitToFirst(50).once('value');
     let msgsMap = {};
     if (snapBefore.exists()) snapBefore.forEach(c => { msgsMap[c.key] = { ...c.val(), key: c.key }; });
     if (snapAfter.exists()) snapAfter.forEach(c => { msgsMap[c.key] = { ...c.val(), key: c.key }; });
@@ -1612,7 +1727,15 @@ async function jumpToMessageContext(msgKey) {
       area.appendChild(buildMsgEl(m, true));
     });
     const botBtn = document.createElement('div'); botBtn.innerHTML = `<div style="text-align:center; margin-top:15px; padding-bottom:20px;"><button class="btn-primary" style="width:auto; padding:8px 16px; font-size:13px; background:var(--neon-purple); border:none; box-shadow:var(--shadow-purple);" onclick="returnToLiveChat()">⬇️ العودة لآخر الرسائل ⬇️</button></div>`; area.appendChild(botBtn);
-    setTimeout(() => { scrollToMessage(msgKey); }, 150);
+    
+    setTimeout(() => { 
+       const targetEl = document.getElementById('msg-' + msgKey);
+       if (targetEl) {
+         targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+         targetEl.style.transition = 'all 0.3s ease'; targetEl.style.boxShadow = '0 0 20px var(--neon-cyan)'; targetEl.style.transform = 'scale(1.05)';
+         setTimeout(() => { targetEl.style.boxShadow = 'none'; targetEl.style.transform = 'scale(1)'; }, 1500);
+       }
+    }, 150);
   } catch (e) { area.innerHTML = '<div style="text-align:center; color:var(--neon-pink); padding:20px;">خطأ ❌</div><div style="text-align:center;"><button class="btn-primary" style="width:auto;" onclick="returnToLiveChat()">رجوع</button></div>'; }
 }
 function returnToLiveChat() { if (currentChat) attachMessages(currentChat.chatId); }
