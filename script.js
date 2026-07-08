@@ -866,51 +866,69 @@ function buildMsgEl(msg, isBackground = false) {
   row.style.position = 'relative'; row.appendChild(replyIcon);
   
   let lastTap = 0, pressTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
+
   bubble.addEventListener('touchstart', e => {
     if (e.target.tagName === 'A') return;
-    touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
-    isSwiping = false; isVertical = false;
-    
-    if (e.target.tagName === 'IMG') { e.target.style.opacity = '0.85'; return; } 
     
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) { toggleReaction(msg.key); lastTap = 0; if (e.cancelable) e.preventDefault(); return; }
-    lastTap = now; bubble.style.transition = 'none';
+    lastTap = now;
+    touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
+    isSwiping = false; isVertical = false;
+    bubble.style.transition = 'none';
+
+    if (e.target.tagName === 'IMG') { e.target.style.opacity = '0.85'; return; } 
+
     pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending) openMsgMenu(msg, isOut); }, 500);
   }, { passive: false });
-  
+
   bubble.addEventListener('touchmove', e => {
     if (e.target.tagName === 'A' || !touchStartX) return;
     const dx = e.touches[0].clientX - touchStartX, dy = e.touches[0].clientY - touchStartY;
     
-    // تسجيل حركة الإصبع حتى لو كانت فوق الصورة مشان نلغي فتحها بالغلط
-    if (Math.abs(dy) > 10 || Math.abs(dx) > 10) isVertical = true;
+    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+      isVertical = true; clearTimeout(pressTimer);
+      bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
+      replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0'; return;
+    }
+
+    if (e.target.tagName === 'IMG') return; // منع سحب الصورة
     
-    if (e.target.tagName === 'IMG') return; // منع سحب الرد على الصورة بحد ذاتها
-    
-    if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) { clearTimeout(pressTimer); bubble.style.transform = 'translateX(0)'; replyIcon.style.opacity = '0'; return; }
     if (Math.abs(dx) > 15 && !isVertical && !msg.isPending) {
       isSwiping = true; clearTimeout(pressTimer);
       let limit = Math.min(Math.abs(dx), 65) * Math.sign(dx); bubble.style.transform = `translateX(${limit}px)`;
-      let pullPerc = Math.min(Math.abs(dx) / 50, 1); replyIcon.style.opacity = pullPerc; replyIcon.style.transform = `scale(${pullPerc})`;
-      if (dx > 0) { replyIcon.style.left = '55px'; replyIcon.style.right = 'auto'; } else { replyIcon.style.right = '20px'; replyIcon.style.left = 'auto'; }
-      if (pullPerc > 0.85 && navigator.vibrate && !bubble.hasVibrated) { navigator.vibrate(15); bubble.hasVibrated = true; } 
-      else if (pullPerc <= 0.85) bubble.hasVibrated = false;
+      
+      let pullPerc = Math.min(Math.abs(dx) / 50, 1);
+      replyIcon.style.transition = 'none'; replyIcon.style.opacity = pullPerc; replyIcon.style.transform = `scale(${pullPerc})`;
+      
+      if (dx > 0) { replyIcon.style.left = '55px'; replyIcon.style.right = 'auto'; } 
+      else { replyIcon.style.right = '20px'; replyIcon.style.left = 'auto'; }
+      
+      if (pullPerc > 0.85) {
+        replyIcon.style.filter = `drop-shadow(0 0 8px var(--neon-cyan))`;
+        if (navigator.vibrate && !bubble.hasVibrated) { navigator.vibrate(15); bubble.hasVibrated = true; }
+      } else { replyIcon.style.filter = 'none'; bubble.hasVibrated = false; }
     }
   }, { passive: true });
-  
+
   bubble.addEventListener('touchend', e => {
     if (e.target.tagName === 'A') return;
+
     if (e.target.tagName === 'IMG') { 
       e.target.style.opacity = '1'; 
-      // 🚀 السحر هون: الصورة بتفتح بس إذا ما صار أي سحب أو تمرير (isVertical)
       if (!isVertical) window.previewImg(e.target.src); 
       return; 
     }
-    clearTimeout(pressTimer); bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)'; replyIcon.style.opacity = '0'; bubble.hasVibrated = false;
+    
+    clearTimeout(pressTimer);
+    bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
+    replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
+    bubble.hasVibrated = false;
+
     if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); }
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
+
   bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || e.target.tagName === 'IMG' || msg.isPending) return; e.preventDefault(); openMsgMenu(msg, isOut); });
 
   let ticks = '';
@@ -1057,8 +1075,56 @@ async function toggleRecording(isSinging = false) {
     mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
-      const blob = new Blob([...audioChunks], { type: 'audio/webm' });
-      uploadMediaWithUI(blob, 'voice', { duration: recordDurationStr });
+      
+      const localChunks = [...audioChunks];
+      const blob = new Blob(localChunks, { type: 'audio/webm' });
+      const finalDuration = recordDurationStr;
+      
+      const tempId = 'temp-audio-' + Date.now();
+      const area = document.getElementById('messages-area');
+      if (area) {
+        const tempDiv = document.createElement('div');
+        tempDiv.className = 'msg-row out';
+        tempDiv.id = tempId;
+        tempDiv.innerHTML = `<div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); display:flex; align-items:center; gap:8px;"><div style="width:16px; height:16px; border:2px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div><span style="font-size:13px;">${isSingingMode ? 'جاري إرسال مقطع الغناء... 🎤' : 'جاري إرسال المقطع...'}</span></div>`;
+        area.appendChild(tempDiv);
+        area.scrollTop = area.scrollHeight;
+      }
+
+      await new Promise(r => setTimeout(r, 50));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); 
+
+      try {
+        const fd = new FormData();
+        fd.append('file', blob);
+        fd.append('upload_preset', 'malaboushi_preset');
+        
+        const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', {
+          method: 'POST', body: fd, signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+
+        if (data.secure_url) {
+          let replyData = null;
+          if (replyingToMsg) {
+            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+            cancelReply();
+          }
+          await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+        } else throw new Error('فشل الرفع');
+      } catch (e) {
+        clearTimeout(timeoutId);
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+        if (e.name === 'AbortError') { showToast('انتهى وقت الرفع، تأكد من جودة اتصالك', 'error'); } 
+        else { showToast('فشل: ' + e.message, 'error'); }
+      }
     };
     
     mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
@@ -1411,8 +1477,56 @@ async function toggleRecording(isSinging = false) {
     mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
-      const blob = new Blob([...audioChunks], { type: 'audio/webm' });
-      uploadMediaWithUI(blob, 'voice', { duration: recordDurationStr });
+      
+      const localChunks = [...audioChunks];
+      const blob = new Blob(localChunks, { type: 'audio/webm' });
+      const finalDuration = recordDurationStr;
+      
+      const tempId = 'temp-audio-' + Date.now();
+      const area = document.getElementById('messages-area');
+      if (area) {
+        const tempDiv = document.createElement('div');
+        tempDiv.className = 'msg-row out';
+        tempDiv.id = tempId;
+        tempDiv.innerHTML = `<div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); display:flex; align-items:center; gap:8px;"><div style="width:16px; height:16px; border:2px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div><span style="font-size:13px;">${isSingingMode ? 'جاري إرسال مقطع الغناء... 🎤' : 'جاري إرسال المقطع...'}</span></div>`;
+        area.appendChild(tempDiv);
+        area.scrollTop = area.scrollHeight;
+      }
+
+      await new Promise(r => setTimeout(r, 50));
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); 
+
+      try {
+        const fd = new FormData();
+        fd.append('file', blob);
+        fd.append('upload_preset', 'malaboushi_preset');
+        
+        const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', {
+          method: 'POST', body: fd, signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+
+        if (data.secure_url) {
+          let replyData = null;
+          if (replyingToMsg) {
+            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+            cancelReply();
+          }
+          await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+        } else throw new Error('فشل الرفع');
+      } catch (e) {
+        clearTimeout(timeoutId);
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+        if (e.name === 'AbortError') { showToast('انتهى وقت الرفع، تأكد من جودة اتصالك', 'error'); } 
+        else { showToast('فشل: ' + e.message, 'error'); }
+      }
     };
     
     mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
@@ -1483,13 +1597,18 @@ function playVoice(btn, url, msgKey, isOut) {
     currentAudio.pause(); document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); clearInterval(audioUpdateInterval);
   }
+  
   currentAudioUrl = url; currentAudio = new Audio(url); currentAudio.preload = 'auto'; 
-  btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
-  currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
-  currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
+  
+  // 🚀 السحر هون: رجعنا الدالة القديمة اللي بتشغل فوراً وبتعطي أيقونة التشغيل بدون أي انتظار أو تحميل وهمي
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
   
   let playPromise = currentAudio.play();
-  if (playPromise !== undefined) playPromise.catch(e => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; });
+  if (playPromise !== undefined) {
+    playPromise.catch(e => console.log("Audio playback waiting..."));
+  }
+  
+  startAudioProgress(msgKey);
 
   currentAudio.onended = () => {
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
