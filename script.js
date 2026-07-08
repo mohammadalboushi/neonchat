@@ -736,10 +736,17 @@ function buildMsgEl(msg, isBackground = false) {
   const profile = isOut ? myProfile : (currentChat.friendProfile || {});
   let avatarNode = document.createElement(profile.photo ? 'img' : 'div');
   avatarNode.className = isOut ? 'msg-my-avatar' : 'msg-friend-avatar';
+  
+  // 🚀 السحر هون: ستايل إجباري مدمج مشان المتصفح المعند ما يكبرها أبداً
+  let commonStyle = 'width:32px !important; height:32px !important; min-width:32px !important; min-height:32px !important; max-width:32px !important; max-height:32px !important; border-radius:50%; object-fit:cover; flex-shrink:0; align-self:flex-end; border:1px solid rgba(0, 240, 255, 0.4); margin: 0 6px; z-index:2;';
+  let bgStyle = isOut ? 'background:linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));' : 'background:linear-gradient(135deg, var(--neon-blue), var(--neon-purple));';
+  
   if (profile.photo) {
     avatarNode.src = profile.photo;
+    avatarNode.style.cssText = commonStyle;
   } else {
     avatarNode.textContent = (profile.name || '?').charAt(0);
+    avatarNode.style.cssText = commonStyle + bgStyle + 'display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; color:white;';
   }
 
   // إذا صديقك اللي باعت، الصورة بتنحط قبل فقاعة الدردشة
