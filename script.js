@@ -1078,9 +1078,14 @@ function buildMsgEl(msg, isBackground = false) {
     if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div>${timeEl}${reactHtml}`;
+    
+    let btnStyle = typeof globalVoiceSpeed !== 'undefined' && globalVoiceSpeed > 1 ? 'background:var(--neon-cyan); color:var(--bg-void);' : 'background:rgba(0,240,255,0.1); color:var(--neon-cyan);';
+    let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
+    let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
+    
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
   }
-
+  
   if (msg.isPending) {
     const overlay = document.createElement('div'); overlay.className = 'pending-overlay';
     overlay.style.cssText = 'position:absolute; inset:0; background:rgba(0,0,0,0.6); border-radius:18px; display:flex; align-items:center; justify-content:center; z-index:10; flex-direction:column; gap:8px;';
@@ -1733,6 +1738,26 @@ function cancelVoiceRecord() { isRecordingCanceled = true; stopRecording(); }
    VOICE PLAYBACK & PROGRESS
 ═══════════════════════════════════ */
 var currentAudio = null, currentAudioUrl = null, audioUpdateInterval = null;
+var globalVoiceSpeed = 1;
+
+function toggleVoiceSpeed(btn, msgKey) {
+  if (globalVoiceSpeed === 1) globalVoiceSpeed = 1.5;
+  else if (globalVoiceSpeed === 1.5) globalVoiceSpeed = 2;
+  else globalVoiceSpeed = 1;
+  
+  document.querySelectorAll('button[id^="speed-"]').forEach(b => {
+    b.textContent = globalVoiceSpeed + 'x';
+    if (globalVoiceSpeed > 1) {
+      b.style.background = 'var(--neon-cyan)';
+      b.style.color = 'var(--bg-void)';
+    } else {
+      b.style.background = 'rgba(0, 240, 255, 0.1)';
+      b.style.color = 'var(--neon-cyan)';
+    }
+  });
+
+  if (currentAudio) currentAudio.playbackRate = globalVoiceSpeed;
+}
 
 function playVoice(btn, url, msgKey, isOut) {
   if (isOut === false && currentChat) {
@@ -1741,23 +1766,21 @@ function playVoice(btn, url, msgKey, isOut) {
   }
   if (currentAudio && currentAudioUrl === url) {
     if (!currentAudio.paused) { currentAudio.pause(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; clearInterval(audioUpdateInterval); return; } 
-    else { currentAudio.play(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); return; }
+    else { currentAudio.play(); currentAudio.playbackRate = globalVoiceSpeed; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); return; }
   }
   if (currentAudio) {
     currentAudio.pause(); document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); clearInterval(audioUpdateInterval);
   }
-  
-  currentAudioUrl = url; currentAudio = new Audio(url); currentAudio.preload = 'auto'; 
-  
-  // 🚀 السحر هون: رجعنا الدالة القديمة اللي بتشغل فوراً وبتعطي أيقونة التشغيل بدون أي انتظار أو تحميل وهمي
-  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+  currentAudioUrl = url; currentAudio = new Audio(url); currentAudio.preload = 'auto'; currentAudio.playbackRate = globalVoiceSpeed;
+  btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
+  currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
+  currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
   
   let playPromise = currentAudio.play();
   if (playPromise !== undefined) {
     playPromise.catch(e => {
       console.log("Audio playback waiting...");
-      // إرجاع الزر لوضع التشغيل (المثلث) بحال المتصفح منع التشغيل مشان ما يعلق
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
       clearInterval(audioUpdateInterval);
     });

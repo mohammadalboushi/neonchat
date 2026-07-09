@@ -1575,7 +1575,11 @@ body {
 
 /* 1. خلفية المحادثة: لون ليلي عميق جداً أهدأ من الكحلي وأفخم (بدون نجوم) */
 #screen-chat {
-  background: #070d14 !important; 
+  background-color: rgba(7, 13, 20, 0.85) !important;
+  background-image: radial-gradient(rgba(0, 240, 255, 0.06) 2.5px, transparent 2.5px) !important;
+  background-size: 24px 24px !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
 }
 
 /* 2. رسائلك (اليمين): لون تركواز/أزرق مخضر داكن (مثل تيليجرام وتساب الدارك) */
