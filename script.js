@@ -715,13 +715,7 @@ function attachMessages(chatId) {
 
   messagesRef = db.ref('chats/' + chatId + '/messages');
   
-  let query;
-  if (liveMsgsCache.length > 0) {
-    const latestKey = liveMsgsCache[liveMsgsCache.length - 1].key;
-    query = messagesRef.orderByKey().startAt(latestKey);
-  } else {
-    query = messagesRef.orderByKey().limitToLast(100);
-  }
+  let query = messagesRef.orderByKey().limitToLast(100);
 
   // حفظ الاستعلام لحل مشكلة التعليق عند الدخول والخروج
   currentMessagesQuery = query;
@@ -731,14 +725,29 @@ function attachMessages(chatId) {
   messagesListener = currentMessagesQuery.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
-    const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
-    if (!existsInCache) {
+    const existsInCache = liveMsgsCache.findIndex(m => m.key === msg.key);
+    if (existsInCache === -1) {
       liveMsgsCache.push(msg);
       if (liveMsgsCache.length > 100) liveMsgsCache.shift(); 
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+    } else {
+      liveMsgsCache[existsInCache] = msg;
       localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
     }
 
     if (document.getElementById('msg-' + msg.key)) {
+      const ticksEl = document.getElementById('ticks-' + msg.key);
+      if (ticksEl) {
+        if (msg.type === 'voice' && msg.listened) {
+          ticksEl.setAttribute('stroke', '#00ff88');
+          ticksEl.style.stroke = '#00ff88';
+          ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+        } else if (msg.read) {
+          ticksEl.setAttribute('stroke', '#00f0ff');
+          ticksEl.style.stroke = '#00f0ff';
+          ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+        }
+      }
       return; 
     }
 
