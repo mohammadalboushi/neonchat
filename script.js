@@ -1097,7 +1097,13 @@ function buildMsgEl(msg, isBackground = false) {
   if (msg.replyTo) { replyHtml = `<div onclick="scrollToMessage('${msg.replyTo.key}')" style="cursor:pointer;"><div class="reply-badge">↩ رد على رسالة</div><div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;margin-bottom:6px;border-right:2px solid var(--neon-cyan);font-size:12px;opacity:0.8;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escHtml(msg.replyTo.text)}</div></div>`; }
 
   if (msg.type === 'text') {
-    let safeText = escHtml(msg.text).replace(/(https?:\/\/[^\s]+)/g, `<a href="$1" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">$1</a>`);
+    let safeText = escHtml(msg.text).replace(/(https?:\/\/[^\s]+)/g, function(url) {
+      if (url.includes('instagram.com')) {
+        let intentUrl = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=https;end;';
+        return `<a href="${intentUrl}" target="_top" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">${url}</a>`;
+      }
+      return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">${url}</a>`;
+    });
     bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
     // 🚀 جلب الصورة من الذاكرة المؤقتة فوراً لتجنب التحميل البطيء والرفة، وإصلاح مشكلة الكليك
