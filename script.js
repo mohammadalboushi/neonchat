@@ -1108,7 +1108,7 @@ function buildMsgEl(msg, isBackground = false) {
   } else if (msg.type === 'image') {
     // 🚀 جلب الصورة من الذاكرة المؤقتة فوراً لتجنب التحميل البطيء والرفة، وإصلاح مشكلة الكليك
     const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
-    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
     if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
