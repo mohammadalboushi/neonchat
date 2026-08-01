@@ -37,13 +37,19 @@ module.exports = async (req, res) => {
       body: body || 'لديك رسالة جديدة',
     },
     webpush: {
+      headers: {
+        Urgency: 'high'
+      },
       notification: {
-        icon: icon || 'https://mohammadalboushi.github.io/neonchat/icon.png',
+        icon: icon || 'https://neonchat.mooo.com/icon.png',
         dir: 'rtl'
       },
       fcmOptions: {
-        link: url || 'https://mohammadalboushi.github.io/neonchat/'
+        link: url || 'https://neonchat.mooo.com/'
       }
+    },
+    android: {
+      priority: 'high'
     }
   };
 
