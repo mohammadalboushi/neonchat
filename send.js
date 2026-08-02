@@ -42,14 +42,13 @@ module.exports = async (req, res) => {
       },
       notification: {
         icon: icon || 'https://neonchat.mooo.com/icon.png',
-        dir: 'rtl'
+        dir: 'rtl',
+        requireInteraction: true,
+        vibrate: [300, 100, 300]
       },
       fcmOptions: {
         link: url || 'https://neonchat.mooo.com/'
       }
-    },
-    android: {
-      priority: 'high'
     }
   };
 
