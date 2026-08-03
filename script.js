@@ -1050,7 +1050,7 @@ function buildMsgEl(msg, isBackground = false) {
     isSwiping = false; isVertical = false;
     bubble.style.transition = 'none';
 
-    if (e.target.tagName === 'IMG') { e.target.style.opacity = '0.85'; return; } 
+    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { e.target.style.opacity = '0.85'; return; } 
 
     pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending) openMsgMenu(msg, isOut); }, 500);
   }, { passive: false });
@@ -1065,7 +1065,7 @@ function buildMsgEl(msg, isBackground = false) {
       replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0'; return;
     }
 
-    if (e.target.tagName === 'IMG') return; // منع سحب الصورة
+    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) return; // منع سحب الصورة العادية
     
     if (Math.abs(dx) > 15 && !isVertical && !msg.isPending) {
       isSwiping = true; clearTimeout(pressTimer);
@@ -1087,7 +1087,7 @@ function buildMsgEl(msg, isBackground = false) {
   bubble.addEventListener('touchend', e => {
     if (e.target.tagName === 'A') return;
 
-    if (e.target.tagName === 'IMG') { 
+    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { 
       e.target.style.opacity = '1'; 
       if (!isVertical) window.previewImg(e.target.src); 
       return; 
@@ -1130,11 +1130,12 @@ function buildMsgEl(msg, isBackground = false) {
     const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
   } else if (msg.type === 'video') {
-    const thumbUrl = msg.url.replace(/\.[^/.]+$/, ".jpg");
+    // نطلب من كلاوديناري صورة بحجم مناسب من أول فريم (so_0) لضمان السرعة وعدم الفشل
+    const thumbUrl = msg.url.replace('/upload/', '/upload/w_400,h_300,c_fill,so_0/').replace(/\.[^/.]+$/, ".jpg");
     const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
     bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" onclick="openVideoPlayer('${msg.url}')">
-        <img src="${thumbUrl}" class="msg-img" onerror="this.src='icon-192.png';"/>
-        <div class="video-play-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+        <img src="${thumbUrl}" class="msg-img" onerror="this.style.display='none';" style="pointer-events: auto;"/>
+        <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
         ${fileSize}
       </div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
@@ -1933,10 +1934,10 @@ function uploadVideoWithXHR(file, fileSizeMB) {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('upload_preset', 'malaboushi_preset');
-  fd.append('return_delete_token', 'true');
+  // تم إزالة return_delete_token لأن الرفع Unsigned
 
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/video/upload', true);
+  xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); // تصحيح الرابط لـ auto/upload
 
   xhr.upload.onprogress = function(e) {
     if (e.lengthComputable) {
@@ -1949,8 +1950,10 @@ function uploadVideoWithXHR(file, fileSizeMB) {
   };
 
   xhr.onload = async function() {
+    let data = {};
+    try { data = JSON.parse(xhr.responseText); } catch(e) {}
+
     if (xhr.status === 200) {
-      const data = JSON.parse(xhr.responseText);
       const row = document.getElementById('row_' + tempId);
       if (row) row.remove();
       
@@ -1967,13 +1970,14 @@ function uploadVideoWithXHR(file, fileSizeMB) {
       });
     } else {
       const row = document.getElementById('row_' + tempId);
-      if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink);">فشل رفع الفيديو ❌</div>`;
+      const errMsg = data.error ? data.error.message : 'خطأ بالسيرفر';
+      if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">فشل: ${errMsg} ❌</div>`;
     }
   };
 
   xhr.onerror = function() {
     const row = document.getElementById('row_' + tempId);
-    if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink);">خطأ بالاتصال ❌</div>`;
+    if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">خطأ بالاتصال ❌</div>`;
   };
 
   xhr.send(fd);
