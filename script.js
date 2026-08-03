@@ -112,6 +112,7 @@ let isFirstChatsLoad = true;
 history.pushState({ screen: 'home' }, '', '');
 window.addEventListener('popstate', e => {
   const imgOverlay = document.getElementById('img-preview-overlay');
+  const videoOverlay = document.getElementById('video-preview-overlay');
   const msgMenuOverlay = document.getElementById('msg-menu-overlay');
   const modalOverlay = document.getElementById('modal-overlay');
   let isPopupOpen = false;
@@ -120,11 +121,17 @@ window.addEventListener('popstate', e => {
     if (currentScale > 1) { 
       currentScale = 1; imgTx = 0; imgTy = 0; 
       document.getElementById('img-preview-el').style.transform = `translate(0px, 0px) scale(1)`; 
-      history.pushState({ overlay: 'image' }, '', ''); // 🚀 إضافة خطوة وهمية للتاريخ ليحتاج ضغطة رجوع ثانية للخروج
+      history.pushState({ overlay: 'image' }, '', ''); 
     } 
     else { closeImgPreview(); }
     isPopupOpen = true;
   }
+  
+  if (videoOverlay && videoOverlay.classList.contains('open')) {
+    closeVideoPlayer();
+    isPopupOpen = true;
+  }
+  
   if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) { closeMsgMenu(); isPopupOpen = true; }
   if (modalOverlay && modalOverlay.classList.contains('open')) { modalOverlay.classList.remove('open'); isPopupOpen = true; }
 
@@ -760,6 +767,20 @@ function attachMessages(chatId) {
   messagesListener = currentMessagesQuery.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
+    if (msg.type === 'video' && msg.timestamp) {
+      const ONE_DAY = 24 * 60 * 60 * 1000;
+      const age = Date.now() - msg.timestamp;
+      
+      if (age > ONE_DAY) {
+        deleteExpiredVideo(chatId, msg);
+        return; 
+      } else {
+        setTimeout(() => {
+          deleteExpiredVideo(chatId, msg);
+        }, ONE_DAY - age);
+      }
+    }
+
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
     if (!existsInCache) {
       liveMsgsCache.push(msg);
@@ -1106,9 +1127,16 @@ function buildMsgEl(msg, isBackground = false) {
     });
     bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
-    // 🚀 جلب الصورة من الذاكرة المؤقتة فوراً لتجنب التحميل البطيء والرفة، وإصلاح مشكلة الكليك
     const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
+  } else if (msg.type === 'video') {
+    const thumbUrl = msg.url.replace(/\.[^/.]+$/, ".jpg");
+    const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
+    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" onclick="openVideoPlayer('${msg.url}')">
+        <img src="${thumbUrl}" class="msg-img" onerror="this.src='icon-192.png';"/>
+        <div class="video-play-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+        ${fileSize}
+      </div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
     if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
@@ -1444,14 +1472,14 @@ async function sendTextMsg() {
   inp.value = ''; autoResize(inp); inp.focus(); 
   if (editingMsgKey) { await db.ref('chats/' + currentChat.chatId + '/messages/' + editingMsgKey).update({ text, isEdited: true }); updateLastMsgAfterChange(); editingMsgKey = null; showToast('تم تعديل الرسالة', 'success'); return; }
   let replyData = null;
-  if (replyingToMsg) { replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' }; cancelReply(); }
+  if (replyingToMsg) { replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : '🎙️ صوت' }; cancelReply(); }
   await pushMessage({ type: 'text', text, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
 }
 
 async function pushMessage(msg) {
   const { chatId, friendUid } = currentChat;
   const ref = db.ref('chats/' + chatId + '/messages').push(); await ref.set(msg);
-  const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : '🎙️ رسالة صوتية';
+  const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ رسالة صوتية';
   await db.ref().update({
     [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
     [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
@@ -1471,7 +1499,7 @@ function updateLastMsgAfterChange() {
   if (!currentChat) return;
   db.ref('chats/' + currentChat.chatId + '/messages').orderByChild('timestamp').limitToLast(1).once('value', snap => {
     if (snap.exists()) { snap.forEach(child => {
-        const m = child.val(), text = m.isDeleted ? '🚫 رسالة محذوفة' : (m.type === 'text' ? m.text : m.type === 'image' ? '📷 صورة' : '🎙️ مقطع صوتي');
+        const m = child.val(), text = m.isDeleted ? '🚫 رسالة محذوفة' : (m.type === 'text' ? m.text : m.type === 'image' ? '📷 صورة' : m.type === 'video' ? '🎥 فيديو' : '🎙️ مقطع صوتي');
         db.ref().update({ [`userChats/${currentUser.uid}/${currentChat.chatId}/lastMsg`]: text, [`userChats/${currentChat.friendUid}/${currentChat.chatId}/lastMsg`]: text });
     }); }
   });
@@ -1515,7 +1543,7 @@ function openMsgMenu(msg, isOut) {
 
 function addReaction(msgKey, emoji) { if (!currentChat) return; db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: emoji }); }
 function closeMsgMenu() { document.getElementById('msg-menu-overlay').classList.remove('open'); }
-function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document.getElementById('msg-reply-preview').classList.add('active'); document.getElementById('msg-reply-text').textContent = 'رد على: ' + (msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : '🎙️ صوتية'); document.getElementById('msg-input').focus(); }
+function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document.getElementById('msg-reply-preview').classList.add('active'); document.getElementById('msg-reply-text').textContent = 'رد على: ' + (msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ صوتية'); document.getElementById('msg-input').focus(); }
 function cancelReply() { replyingToMsg = null; document.getElementById('msg-reply-preview').classList.remove('active'); }
 function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
 function confirmDeleteMsg(msgKey) { openModal('حذف الرسالة', 'هل تريد حذف هذه الرسالة للجميع؟').then(ok => { if (ok && currentChat) { db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ isDeleted: true, text: null, url: null, type: 'deleted' }).then(() => { updateLastMsgAfterChange(); showToast('تم حذف الرسالة', 'success'); }); } }); }
@@ -1584,7 +1612,7 @@ async function uploadMediaWithUI(file, type, extraData = null) {
   const tempMsg = {
     key: tempId, type: type, url: tempUrl, duration: extraData?.duration || '0:00',
     senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
-    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' } : null
+    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : '🎙️ صوت' } : null
   };
   if (replyingToMsg) cancelReply();
 
@@ -1861,6 +1889,196 @@ function seekVoice(event, url, msgKey) {
   let perc = clickX / rect.width; if (perc < 0) perc = 0; if (perc > 1) perc = 1;
   currentAudio.currentTime = totalDuration * perc;
   const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = (perc * 100) + '%';
+}
+
+/* ═══════════════════════════════════
+   VIDEO UPLOAD & PLAYER LOGIC
+═══════════════════════════════════ */
+document.getElementById('file-video-input').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file || !currentChat) return;
+  e.target.value = '';
+  
+  const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+  if (file.size > 100 * 1024 * 1024) {
+    showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); return;
+  }
+
+  uploadVideoWithXHR(file, fileSizeMB);
+});
+
+function uploadVideoWithXHR(file, fileSizeMB) {
+  const tempId = 'temp_vid_' + Date.now();
+  const area = document.getElementById('messages-area');
+
+  const tempMsg = {
+    key: tempId, type: 'text', senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
+    text: `جاري رفع فيديو...`,
+    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : 'ميديا' } : null
+  };
+  if (replyingToMsg) cancelReply();
+
+  if (area) {
+    const el = buildMsgEl(tempMsg, false); el.id = 'row_' + tempId;
+    const bubble = el.querySelector('.msg-bubble');
+    bubble.innerHTML = `
+      <div style="font-size:13px; font-weight:bold; margin-bottom:5px;">جاري رفع فيديو (${fileSizeMB} MB)</div>
+      <div style="font-size:11px; color:var(--text-secondary); text-align:left;" id="pct_${tempId}">0%</div>
+      <div class="upload-progress-wrapper"><div class="upload-progress-bar" id="bar_${tempId}"></div></div>
+    `;
+    bubble.style.overflow = 'hidden'; 
+    area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
+  }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('upload_preset', 'malaboushi_preset');
+  fd.append('return_delete_token', 'true');
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/video/upload', true);
+
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) {
+      const percent = Math.round((e.loaded / e.total) * 100);
+      const bar = document.getElementById('bar_' + tempId);
+      const pctTxt = document.getElementById('pct_' + tempId);
+      if (bar) bar.style.width = percent + '%';
+      if (pctTxt) pctTxt.textContent = percent + '%';
+    }
+  };
+
+  xhr.onload = async function() {
+    if (xhr.status === 200) {
+      const data = JSON.parse(xhr.responseText);
+      const row = document.getElementById('row_' + tempId);
+      if (row) row.remove();
+      
+      const deleteToken = data.delete_token || null;
+      
+      await pushMessage({ 
+        type: 'video', 
+        url: data.secure_url, 
+        size: fileSizeMB, 
+        deleteToken: deleteToken,
+        senderUid: currentUser.uid, 
+        timestamp: Date.now(), 
+        replyTo: tempMsg.replyTo 
+      });
+    } else {
+      const row = document.getElementById('row_' + tempId);
+      if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink);">فشل رفع الفيديو ❌</div>`;
+    }
+  };
+
+  xhr.onerror = function() {
+    const row = document.getElementById('row_' + tempId);
+    if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink);">خطأ بالاتصال ❌</div>`;
+  };
+
+  xhr.send(fd);
+}
+
+let videoEl = document.getElementById('custom-video-el');
+let videoUpdateInt = null;
+
+function openVideoPlayer(url) {
+  const overlay = document.getElementById('video-preview-overlay');
+  videoEl.src = url;
+  overlay.classList.add('open');
+  
+  document.getElementById('video-loading-text').style.display = 'block';
+  videoEl.load();
+  let playPromise = videoEl.play();
+  if (playPromise !== undefined) {
+    playPromise.then(_ => { document.getElementById('video-loading-text').style.display = 'none'; })
+    .catch(error => { console.log("Auto-play prevented"); });
+  }
+
+  updateVideoControls();
+  videoUpdateInt = setInterval(updateVideoControls, 100);
+
+  try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
+}
+
+function closeVideoPlayer() {
+  document.getElementById('video-preview-overlay').classList.remove('open');
+  videoEl.pause();
+  videoEl.src = '';
+  clearInterval(videoUpdateInt);
+}
+
+function toggleVideoPlay() {
+  const btn = document.getElementById('btn-video-play');
+  if (videoEl.paused) {
+    videoEl.play();
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+  } else {
+    videoEl.pause();
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  }
+}
+
+function skipVideo(seconds) {
+  videoEl.currentTime += seconds;
+}
+
+function updateVideoControls() {
+  if (!videoEl.duration) return;
+  
+  document.getElementById('video-time-current').textContent = formatVideoTime(videoEl.currentTime);
+  document.getElementById('video-time-total').textContent = formatVideoTime(videoEl.duration);
+  
+  const percent = (videoEl.currentTime / videoEl.duration) * 100;
+  document.getElementById('video-progress-fill').style.width = percent + '%';
+  
+  if (videoEl.buffered.length > 0) {
+    const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
+    const buffPercent = (bufferedEnd / videoEl.duration) * 100;
+    document.getElementById('video-buffer-bar').style.width = buffPercent + '%';
+    
+    const loadingText = document.getElementById('video-loading-text');
+    if (buffPercent < 100 && videoEl.readyState < 4) {
+      loadingText.style.display = 'block';
+      document.getElementById('video-buffer-percent').textContent = Math.round(buffPercent) + '%';
+    } else {
+      loadingText.style.display = 'none';
+    }
+  }
+  
+  const btn = document.getElementById('btn-video-play');
+  if (videoEl.paused) btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  else btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+}
+
+function seekVideoClick(e) {
+  const rect = document.getElementById('video-progress-container').getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const percent = clickX / rect.width;
+  if (videoEl.duration) videoEl.currentTime = percent * videoEl.duration;
+}
+
+function formatVideoTime(sec_num) {
+  sec_num = Math.floor(sec_num);
+  let m = Math.floor(sec_num / 60);
+  let s = sec_num % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+async function deleteExpiredVideo(chatId, msg) {
+  if (msg.isDeleted) return;
+  
+  await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
+     isDeleted: true, text: null, url: null, type: 'deleted'
+  });
+  
+  if (msg.deleteToken) {
+      const fd = new FormData();
+      fd.append('token', msg.deleteToken);
+      fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/delete_by_token', {
+         method: 'POST', body: fd
+      }).catch(e => console.log('تعذر حذف الفيديو من كلاوديناري', e));
+  }
 }
 
 /* ═══════════════════════════════════
