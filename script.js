@@ -289,11 +289,12 @@ function setupPresence(uid) {
   connectedRef.on('value', snap => {
     isConnected = snap.val() === true;
     if (isConnected) {
-      myStatusRef.onDisconnect().set(Date.now());
+      // السحر هون: تسجيل توقيت السيرفر لحظة الانقطاع الفعلي بدل توقيت الجوال لحظة الاتصال
+      myStatusRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
       if (document.visibilityState === 'visible') {
         myStatusRef.set('online');
       } else {
-        myStatusRef.set(Date.now());
+        myStatusRef.set(firebase.database.ServerValue.TIMESTAMP);
       }
     }
   });
@@ -303,8 +304,10 @@ function setupPresence(uid) {
     if (isConnected && navigator.onLine) {
       if (document.visibilityState === 'visible') {
         myStatusRef.set('online');
+        // إعادة ضبط أمر الانقطاع لضمان الدقة
+        myStatusRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
       } else {
-        myStatusRef.set(Date.now());
+        myStatusRef.set(firebase.database.ServerValue.TIMESTAMP);
         if (currentChat && currentUser) {
           db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
         }
@@ -314,7 +317,7 @@ function setupPresence(uid) {
 
   // 🚀 إضافة استشعار فصل الواي فاي أو البيانات فورياً من الجوال
   window.addEventListener('offline', () => {
-    myStatusRef.set(Date.now());
+    myStatusRef.set(firebase.database.ServerValue.TIMESTAMP);
     if (currentChat && currentUser) {
       db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
     }
@@ -323,6 +326,7 @@ function setupPresence(uid) {
   window.addEventListener('online', () => {
     if (document.visibilityState === 'visible') {
       myStatusRef.set('online');
+      myStatusRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
     }
   });
 }
@@ -359,7 +363,7 @@ function cleanupListeners() {
     if (friendRequestsListener) db.ref('friendRequests/' + currentUser.uid).off('value', friendRequestsListener);
     if (friendsListListener) db.ref('friendsList/' + currentUser.uid).off();
     if (myCallListener) db.ref('calls/' + currentUser.uid).off('value', myCallListener);
-    Object.keys(presenceListeners).forEach(fUid => db.ref('users/' + fUid + '/status').off('value', presenceListeners[fUid]));
+    Object.keys(presenceListeners).forEach(fUid => db.ref('users/' + fUid).off('value', presenceListeners[fUid]));
     presenceListeners = {};
   }
   detachMessages();
@@ -434,6 +438,7 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
    CHATS & FRIENDS LIST
 ═══════════════════════════════════ */
 let friendsStatus = {};
+let friendsLiveProfiles = {};
 let presenceListeners = {};
 
 function loadChats() {
@@ -447,8 +452,11 @@ function loadChats() {
         if (!isFirstChatsLoad && d.unread > (lastUnreads[c.key] || 0)) hasNew = true;
         lastUnreads[c.key] = d.unread;
         if (!presenceListeners[d.friendUid]) {
-          presenceListeners[d.friendUid] = db.ref('users/' + d.friendUid + '/status').on('value', sSnap => {
-            friendsStatus[d.friendUid] = sSnap.val(); renderChatsList();
+          presenceListeners[d.friendUid] = db.ref('users/' + d.friendUid).on('value', sSnap => {
+            const fData = sSnap.val() || {};
+            friendsStatus[d.friendUid] = fData.status;
+            friendsLiveProfiles[d.friendUid] = fData;
+            renderChatsList();
           });
         }
       });
@@ -462,26 +470,34 @@ function loadChats() {
 function renderChatsList(filter = '') {
   const list = document.getElementById('chats-list'), empty = document.getElementById('chats-empty');
   const items = Object.entries(chatsData).sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0));
-  const filtered = filter ? items.filter(([, v]) => v.friendName && v.friendName.includes(filter)) : items;
+  
+  const getFriendData = (uid, data) => ({
+    name: (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].name) ? friendsLiveProfiles[uid].name : data.friendName,
+    photo: (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].photo) ? friendsLiveProfiles[uid].photo : data.friendPhoto
+  });
+
+  const filtered = filter ? items.filter(([, v]) => getFriendData(v.friendUid, v).name && getFriendData(v.friendUid, v).name.includes(filter)) : items;
   if (!filtered.length) { empty.style.display = 'flex'; list.querySelectorAll('.chat-item').forEach(e => e.remove()); return; }
   empty.style.display = 'none'; list.querySelectorAll('.chat-item').forEach(e => e.remove());
   filtered.forEach(([chatId, data]) => {
     const div = document.createElement('div'); div.className = 'chat-item';
-    const initials = (data.friendName || '?').charAt(0);
-    const avatarHtml = data.friendPhoto ? `<img src="${data.friendPhoto}" class="chat-avatar" style="object-fit:cover;"/>` : `<div class="chat-avatar">${initials}</div>`;
+    const liveData = getFriendData(data.friendUid, data);
+    
+    const initials = (liveData.name || '?').charAt(0);
+    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover;"/>` : `<div class="chat-avatar">${initials}</div>`;
     const isOnline = friendsStatus[data.friendUid] === 'online';
     const onlineBadge = isOnline ? `<div style="position:absolute; bottom:2px; right:2px; width:13px; height:13px; background:var(--neon-green); border-radius:50%; border:2px solid var(--bg-surface); z-index:2;"></div>` : '';
     const lastMsg = data.lastMsg || 'اضغط لبدء المحادثة';
-    div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(data.friendName||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
+    div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(liveData.name||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
     
-    // التمرير السريع الفوري
-    div.addEventListener('click', () => openChat(chatId, data.friendUid, { name: data.friendName, photo: data.friendPhoto }));
+    // التمرير السريع الفوري مع إرسال البيانات المحدثة
+    div.addEventListener('click', () => openChat(chatId, data.friendUid, { name: liveData.name, photo: liveData.photo }));
     
     let pressTimer;
-    div.addEventListener('touchstart', () => { pressTimer = setTimeout(() => { openHomeChatMenu(chatId, data.friendUid, data.friendName); }, 600); }, { passive: true });
+    div.addEventListener('touchstart', () => { pressTimer = setTimeout(() => { openHomeChatMenu(chatId, data.friendUid, liveData.name); }, 600); }, { passive: true });
     div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
     div.addEventListener('touchend', () => clearTimeout(pressTimer));
-    div.addEventListener('contextmenu', e => { e.preventDefault(); openHomeChatMenu(chatId, data.friendUid, data.friendName); });
+    div.addEventListener('contextmenu', e => { e.preventDefault(); openHomeChatMenu(chatId, data.friendUid, liveData.name); });
     list.appendChild(div);
   });
 }
@@ -604,9 +620,52 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   statusEl.textContent = 'جاري التحقق...';
   statusEl.style.color = 'var(--text-muted)';
 
-  friendStatusRef = db.ref('users/' + friendUid + '/status');
+  friendStatusRef = db.ref('users/' + friendUid);
   friendStatusListener = friendStatusRef.on('value', snap => {
-    const val = snap.val();
+    const fData = snap.val() || {};
+    
+    currentChat.friendProfile = fData;
+    
+    const avatarEl = document.getElementById('chat-header-avatar');
+    if (avatarEl) {
+      if (fData.photo) {
+        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover;"/>`;
+      } else {
+        avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(fData.name||'?').charAt(0)}</div>`;
+      }
+    }
+    
+    const nameEl = document.getElementById('chat-header-name');
+    if (nameEl) nameEl.textContent = fData.name || 'مستخدم';
+    
+    document.querySelectorAll('.msg-friend-avatar').forEach(el => {
+      let commonStyle = 'width:32px !important; height:32px !important; min-width:32px !important; min-height:32px !important; max-width:32px !important; max-height:32px !important; border-radius:50%; object-fit:cover; flex-shrink:0; align-self:flex-end; border:1px solid rgba(0, 240, 255, 0.4); margin: 0 6px; z-index:2;';
+      let bgStyle = 'background:linear-gradient(135deg, var(--neon-blue), var(--neon-purple));';
+      
+      if (fData.photo) {
+        if (el.tagName !== 'IMG') {
+          const newEl = document.createElement('img');
+          newEl.className = 'msg-friend-avatar';
+          newEl.src = fData.photo;
+          newEl.style.cssText = commonStyle;
+          el.replaceWith(newEl);
+        } else {
+          el.src = fData.photo;
+        }
+      } else {
+        if (el.tagName === 'IMG') {
+          const newEl = document.createElement('div');
+          newEl.className = 'msg-friend-avatar';
+          newEl.textContent = (fData.name || '?').charAt(0);
+          newEl.style.cssText = commonStyle + bgStyle + 'display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; color:white;';
+          el.replaceWith(newEl);
+        } else {
+          el.textContent = (fData.name || '?').charAt(0);
+        }
+      }
+    });
+
+    const val = fData.status;
     if (val === 'online') {
       baseStatusText = '🟢 متصل الآن';
       baseStatusColor = 'var(--neon-green)';
