@@ -269,6 +269,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       } catch (err) {}
       initCallListener(user.uid); initFriendRequestsListener(user.uid); initFriendsListListener(user.uid); 
       initMicrophone(); 
+      syncPendingMessages();
       showScreen('home');
     } else {
       if (!navigator.onLine && localStorage.getItem('myProfile')) return; 
@@ -1477,9 +1478,47 @@ async function sendTextMsg() {
   await pushMessage({ type: 'text', text, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
 }
 
+async function syncPendingMessages() {
+  let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+  if (pending.length === 0) return;
+  const now = Date.now();
+  const validPending = [];
+  for (const p of pending) {
+    if (now - p.time > 86400000) continue; // مسح المعلق من أكتر من 24 ساعة
+    validPending.push(p);
+    const msgRef = db.ref('chats/' + p.chatId + '/messages/' + p.key);
+    msgRef.set(p.msg).then(() => {
+       const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : '🎙️ رسالة صوتية';
+       db.ref().update({
+          [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: p.msg.timestamp,
+          [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: p.msg.timestamp
+       });
+       db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
+       let currentPending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+       localStorage.setItem('neon_pending_msgs', JSON.stringify(currentPending.filter(item => item.key !== p.key)));
+    }).catch(() => {});
+  }
+  if (validPending.length !== pending.length) localStorage.setItem('neon_pending_msgs', JSON.stringify(validPending));
+}
+
+window.addEventListener('online', syncPendingMessages);
+
 async function pushMessage(msg) {
   const { chatId, friendUid } = currentChat;
-  const ref = db.ref('chats/' + chatId + '/messages').push(); await ref.set(msg);
+  const ref = db.ref('chats/' + chatId + '/messages').push(); 
+  
+  // حفظ الرسالة فوراً في طابور الإرسال تحسباً لانقطاع النت أو خروجك
+  let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+  pending.push({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
+  localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
+
+  // محاولة الإرسال للسيرفر
+  await ref.set(msg);
+  
+  // إذا وصلت للسيرفر بنجاح، احذفها من الطابور
+  pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+  localStorage.setItem('neon_pending_msgs', JSON.stringify(pending.filter(p => p.key !== ref.key)));
+
   const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ رسالة صوتية';
   await db.ref().update({
     [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
