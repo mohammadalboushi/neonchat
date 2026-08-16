@@ -1207,6 +1207,13 @@ function buildMsgEl(msg, isBackground = false) {
         <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
         ${fileSize}
       </div>${timeEl}${reactHtml}`;
+  } else if (msg.type === 'audio') {
+    const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
+    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" style="background: linear-gradient(135deg, var(--neon-purple), var(--bg-deep)); display:flex; align-items:center; justify-content:center;" onclick="openVideoPlayer('${msg.url}')">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="var(--neon-cyan)" style="opacity:0.8;"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+        <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+        ${fileSize}
+      </div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
     if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
@@ -1561,7 +1568,7 @@ async function syncPendingMessages() {
     validPending.push(p);
     const msgRef = db.ref('chats/' + p.chatId + '/messages/' + p.key);
     msgRef.set(p.msg).then(() => {
-       const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : '🎙️ رسالة صوتية';
+       const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
        db.ref().update({
           [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: p.msg.timestamp,
           [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: p.msg.timestamp
@@ -1592,7 +1599,7 @@ async function pushMessage(msg) {
   pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
   localStorage.setItem('neon_pending_msgs', JSON.stringify(pending.filter(p => p.key !== ref.key)));
 
-  const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ رسالة صوتية';
+  const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
   await db.ref().update({
     [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
     [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
@@ -1612,7 +1619,7 @@ function updateLastMsgAfterChange() {
   if (!currentChat) return;
   db.ref('chats/' + currentChat.chatId + '/messages').orderByChild('timestamp').limitToLast(1).once('value', snap => {
     if (snap.exists()) { snap.forEach(child => {
-        const m = child.val(), text = m.isDeleted ? '🚫 رسالة محذوفة' : (m.type === 'text' ? m.text : m.type === 'image' ? '📷 صورة' : m.type === 'video' ? '🎥 فيديو' : '🎙️ مقطع صوتي');
+        const m = child.val(), text = m.isDeleted ? '🚫 رسالة محذوفة' : (m.type === 'text' ? m.text : m.type === 'image' ? '📷 صورة' : m.type === 'video' ? '🎥 فيديو' : m.type === 'audio' ? '🎵 أغنية' : '🎙️ مقطع صوتي');
         db.ref().update({ [`userChats/${currentUser.uid}/${currentChat.chatId}/lastMsg`]: text, [`userChats/${currentChat.friendUid}/${currentChat.chatId}/lastMsg`]: text });
     }); }
   });
@@ -1738,7 +1745,7 @@ async function uploadMediaWithUI(file, type, extraData = null) {
     const row = document.getElementById('row_' + tempId);
     if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`; }
     try {
-      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 120000);
       const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
       const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', { method: 'POST', body: fd, signal: controller.signal });
       clearTimeout(timeoutId); const data = await res.json();
@@ -1760,21 +1767,24 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
   const file = e.target.files[0];
   if (!file || !currentChat) return;
   e.target.value = '';
-  if (file.type.startsWith('image/')) {
+  
+  const fileName = file.name.toLowerCase();
+  const isImage = file.type.startsWith('image/');
+  const isVideo = file.type.startsWith('video/');
+  const isAudio = file.type.startsWith('audio/') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg');
+
+  if (isImage) {
     uploadMediaWithUI(file, 'image');
-  } else if (file.type.startsWith('video/')) {
+  } else if (isVideo) {
     const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
     if (file.size > 100 * 1024 * 1024) { showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); return; }
-    uploadVideoWithXHR(file, fileSizeMB);
-  } else if (file.type.startsWith('audio/')) {
-    const tempUrl = URL.createObjectURL(file);
-    const tempAudio = new Audio(tempUrl);
-    tempAudio.onloadedmetadata = () => {
-      const sec = Math.floor(tempAudio.duration);
-      const durationStr = Math.floor(sec / 60) + ':' + (sec % 60 < 10 ? '0' : '') + (sec % 60);
-      uploadMediaWithUI(file, 'voice', { duration: durationStr });
-    };
-    tempAudio.onerror = () => uploadMediaWithUI(file, 'voice', { duration: '0:00' });
+    uploadLargeMediaWithXHR(file, fileSizeMB, 'video');
+  } else if (isAudio) {
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    if (file.size > 50 * 1024 * 1024) { showToast('الأغنية كبيرة جداً! الحد الأقصى 50 ميغابايت', 'error'); return; }
+    uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
+  } else {
+    uploadMediaWithUI(file, 'image');
   }
 });
 
@@ -2035,13 +2045,14 @@ document.getElementById('file-video-input').addEventListener('change', async e =
   uploadVideoWithXHR(file, fileSizeMB);
 });
 
-function uploadVideoWithXHR(file, fileSizeMB) {
-  const tempId = 'temp_vid_' + Date.now();
+function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType) {
+  const tempId = 'temp_media_' + Date.now();
   const area = document.getElementById('messages-area');
+  const labelText = mediaType === 'audio' ? 'أغنية' : 'فيديو';
 
   const tempMsg = {
     key: tempId, type: 'text', senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
-    text: `جاري رفع فيديو...`,
+    text: `جاري رفع ${labelText}...`,
     replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : 'ميديا' } : null
   };
   if (replyingToMsg) cancelReply();
@@ -2050,7 +2061,7 @@ function uploadVideoWithXHR(file, fileSizeMB) {
     const el = buildMsgEl(tempMsg, false); el.id = 'row_' + tempId;
     const bubble = el.querySelector('.msg-bubble');
     bubble.innerHTML = `
-      <div style="font-size:13px; font-weight:bold; margin-bottom:5px;">جاري رفع فيديو (${fileSizeMB} MB)</div>
+      <div style="font-size:13px; font-weight:bold; margin-bottom:5px;">جاري رفع ${labelText} (${fileSizeMB} MB)</div>
       <div style="font-size:11px; color:var(--text-secondary); text-align:left;" id="pct_${tempId}">0%</div>
       <div class="upload-progress-wrapper"><div class="upload-progress-bar" id="bar_${tempId}"></div></div>
     `;
@@ -2061,10 +2072,9 @@ function uploadVideoWithXHR(file, fileSizeMB) {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('upload_preset', 'malaboushi_preset');
-  // تم إزالة return_delete_token لأن الرفع Unsigned
 
   const xhr = new XMLHttpRequest();
-  xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); // تصحيح الرابط لـ auto/upload
+  xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); 
 
   xhr.upload.onprogress = function(e) {
     if (e.lengthComputable) {
@@ -2087,7 +2097,7 @@ function uploadVideoWithXHR(file, fileSizeMB) {
       const deleteToken = data.delete_token || null;
       
       await pushMessage({ 
-        type: 'video', 
+        type: mediaType, 
         url: data.secure_url, 
         size: fileSizeMB, 
         deleteToken: deleteToken,
@@ -2230,10 +2240,19 @@ function scrollToMessage(msgKey) {
 document.body.style.overscrollBehavior = 'none';
 document.documentElement.style.overscrollBehavior = 'none';
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
-    const appEl = document.getElementById('app'); appEl.style.height = window.visualViewport.height + 'px'; appEl.style.position = 'fixed'; appEl.style.top = '0'; appEl.style.width = '100%';
-    window.scrollTo(0, 0); const area = document.getElementById('messages-area'); if (area) area.scrollTop = area.scrollHeight;
-  });
+  const updateAppLayout = () => {
+    const appEl = document.getElementById('app');
+    appEl.style.height = window.visualViewport.height + 'px';
+    appEl.style.position = 'fixed';
+    appEl.style.top = '0px';
+    appEl.style.width = '100%';
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+    const area = document.getElementById('messages-area');
+    if (area) area.scrollTop = area.scrollHeight;
+  };
+  window.visualViewport.addEventListener('resize', updateAppLayout);
+  window.visualViewport.addEventListener('scroll', updateAppLayout);
 }
 document.body.addEventListener('touchmove', (e) => {
   const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results');
