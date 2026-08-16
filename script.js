@@ -1153,7 +1153,7 @@ function buildMsgEl(msg, isBackground = false) {
     }
   }, { passive: true });
 
-  bubble.addEventListener('touchend', e => {
+      bubble.addEventListener('touchend', e => {
     if (e.target.tagName === 'A') return;
 
     if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { 
@@ -1167,7 +1167,13 @@ function buildMsgEl(msg, isBackground = false) {
     replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
     bubble.hasVibrated = false;
 
-    if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); }
+    if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
+      prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
+    } else if (!isSwiping && !isVertical && (Date.now() - lastTap < 400)) {
+      if (e.target.closest('.video-thumb-container')) {
+        openVideoPlayer(msg.url);
+      }
+    }
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
 
@@ -2060,19 +2066,6 @@ function seekVoice(event, url, msgKey) {
 /* ═══════════════════════════════════
    VIDEO UPLOAD & PLAYER LOGIC
 ═══════════════════════════════════ */
-document.getElementById('file-video-input').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file || !currentChat) return;
-  e.target.value = '';
-  
-  const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-  if (file.size > 100 * 1024 * 1024) {
-    showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); return;
-  }
-
-  uploadVideoWithXHR(file, fileSizeMB);
-});
-
 function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = null) {
   const tempId = 'temp_media_' + Date.now();
   const area = document.getElementById('messages-area');
