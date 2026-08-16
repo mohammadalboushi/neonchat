@@ -1537,7 +1537,7 @@ document.getElementById('msg-input').addEventListener('input', () => {
   }, 2000);
 });
 
-function handleMsgKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTextMsg(); return; } }
+function handleMsgKey(e) { if (e.key === 'Enter' && !e.shiftKey) { return; } }
 
 async function sendTextMsg() {
   if (isRecording) { stopRecording(); return; }
@@ -1760,7 +1760,22 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
   const file = e.target.files[0];
   if (!file || !currentChat) return;
   e.target.value = '';
-  uploadMediaWithUI(file, 'image');
+  if (file.type.startsWith('image/')) {
+    uploadMediaWithUI(file, 'image');
+  } else if (file.type.startsWith('video/')) {
+    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    if (file.size > 100 * 1024 * 1024) { showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); return; }
+    uploadVideoWithXHR(file, fileSizeMB);
+  } else if (file.type.startsWith('audio/')) {
+    const tempUrl = URL.createObjectURL(file);
+    const tempAudio = new Audio(tempUrl);
+    tempAudio.onloadedmetadata = () => {
+      const sec = Math.floor(tempAudio.duration);
+      const durationStr = Math.floor(sec / 60) + ':' + (sec % 60 < 10 ? '0' : '') + (sec % 60);
+      uploadMediaWithUI(file, 'voice', { duration: durationStr });
+    };
+    tempAudio.onerror = () => uploadMediaWithUI(file, 'voice', { duration: '0:00' });
+  }
 });
 
 /* ═══════════════════════════════════
