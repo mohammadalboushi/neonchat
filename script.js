@@ -1657,6 +1657,26 @@ function openMsgMenu(msg, isOut) {
     const btnCopy = document.createElement('button'); btnCopy.className = 'msg-menu-btn'; btnCopy.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> نسخ النص`;
     btnCopy.onclick = () => { navigator.clipboard.writeText(msg.text).then(() => showToast('تم النسخ', 'success')); closeMsgMenu(); }; menu.appendChild(btnCopy);
   }
+  if (msg.type === 'audio' || msg.type === 'voice') {
+    const btnDownload = document.createElement('button'); btnDownload.className = 'msg-menu-btn'; btnDownload.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> تنزيل المقطع`;
+    btnDownload.onclick = () => { 
+      showToast('جاري التنزيل...');
+      fetch(msg.url).then(res => res.blob()).then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = msg.type === 'audio' ? `Song_${Date.now()}.mp3` : `Voice_${Date.now()}.webm`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showToast('تم التنزيل بنجاح', 'success');
+      }).catch(() => showToast('تعذر التنزيل', 'error'));
+      closeMsgMenu(); 
+    }; 
+    menu.appendChild(btnDownload);
+  }
   if (isOut) {
     // 🚀 السحر هون: حساب فارق الوقت.. مسموح التعديل والحذف فقط إذا مر أقل من دقيقتين (120,000 ميلي ثانية)
     const timeDiff = Date.now() - msg.timestamp;
