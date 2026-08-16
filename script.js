@@ -59,6 +59,19 @@ let editingMsgKey = null;
 let lastUnreads = {};
 let isFirstChatsLoad = true;
 
+const msgReadObserver = new IntersectionObserver((entries, observer) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const msgKey = entry.target.getAttribute('data-msg-key');
+      if (msgKey && currentChat) {
+        db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ read: true });
+        db.ref('userChats/' + currentUser.uid + '/' + currentChat.chatId + '/unread').set(0);
+        observer.unobserve(entry.target);
+      }
+    }
+  });
+}, { threshold: 0.5 });
+
 /* ═══════════════════════════════════
    BACKGROUND CANVAS (مُحسن للبطارية)
 ═══════════════════════════════════ */
@@ -893,10 +906,6 @@ function attachMessages(chatId) {
       }
     }, 50);
 
-    if (msg.senderUid !== currentUser.uid) {
-      if (!msg.read) snap.ref.update({ read: true });
-      db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
-    }
   });
 
   area.addEventListener('scroll', async () => {
@@ -1221,6 +1230,11 @@ function buildMsgEl(msg, isBackground = false) {
   // 🚀 إذا أنت اللي باعت، الصورة بتنحط بعد فقاعة الدردشة (عشان تطلع عاليسار ويكون الشكل متوازن)
   if (isOut) {
     row.appendChild(avatarNode);
+  }
+
+  if (!isOut && !msg.read && !msg.isDeleted) {
+    row.setAttribute('data-msg-key', msg.key);
+    msgReadObserver.observe(row);
   }
 
   return row;
