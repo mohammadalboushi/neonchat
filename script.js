@@ -840,17 +840,17 @@ function attachMessages(chatId) {
   messagesListener = currentMessagesQuery.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
-    if (msg.type === 'video' && msg.timestamp) {
-      const ONE_DAY = 24 * 60 * 60 * 1000;
+    if ((msg.type === 'video' || msg.type === 'audio') && msg.timestamp) {
+      const EXPIRY_TIME = msg.type === 'video' ? (24 * 60 * 60 * 1000) : (60 * 60 * 1000);
       const age = Date.now() - msg.timestamp;
       
-      if (age > ONE_DAY) {
+      if (age > EXPIRY_TIME) {
         deleteExpiredVideo(chatId, msg);
         return; 
       } else {
         setTimeout(() => {
           deleteExpiredVideo(chatId, msg);
-        }, ONE_DAY - age);
+        }, EXPIRY_TIME - age);
       }
     }
 
@@ -1198,7 +1198,7 @@ function buildMsgEl(msg, isBackground = false) {
   } else if (msg.type === 'image') {
     const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
     bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
-  } else if (msg.type === 'video') {
+    } else if (msg.type === 'video') {
     // نطلب من كلاوديناري صورة بحجم مناسب من أول فريم (so_0) لضمان السرعة وعدم الفشل
     const thumbUrl = msg.url.replace('/upload/', '/upload/w_400,h_300,c_fill,so_0/').replace(/\.[^/.]+$/, ".jpg");
     const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
@@ -1208,14 +1208,16 @@ function buildMsgEl(msg, isBackground = false) {
         ${fileSize}
       </div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'audio') {
-    const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
-    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" style="background: linear-gradient(135deg, var(--neon-purple), var(--bg-deep)); display:flex; align-items:center; justify-content:center;" onclick="openVideoPlayer('${msg.url}')">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="var(--neon-cyan)" style="opacity:0.8;"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
-        <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
-        ${fileSize}
-      </div>${timeEl}${reactHtml}`;
+    const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
+    let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
+    
+    let btnStyle = typeof globalVoiceSpeed !== 'undefined' && globalVoiceSpeed > 1 ? 'background:var(--neon-cyan); color:var(--bg-void);' : 'background:rgba(0,240,255,0.1); color:var(--neon-cyan);';
+    let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
+    let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
+    
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'voice') {
-    if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
+ if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
     
@@ -1294,13 +1296,24 @@ async function uploadMediaWithUI(file, type, extraData = null) {
 }
 
 /* ═══════════════════════════════════
-   IMAGE UPLOAD
+   MEDIA UPLOAD
 ═══════════════════════════════════ */
 document.getElementById('file-img-input').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file || !currentChat) return;
   e.target.value = '';
-  uploadMediaWithUI(file, 'image');
+  
+  let mediaType = 'image';
+  const fileType = file.type.toLowerCase();
+  const fileName = file.name.toLowerCase();
+  
+  if (fileType.startsWith('video/')) {
+    mediaType = 'video';
+  } else if (fileType.startsWith('audio/') || fileName.match(/\.(mp3|m4a|wav|ogg|aac|amr)$/)) {
+    mediaType = 'audio';
+  }
+  
+  uploadMediaWithUI(file, mediaType);
 });
 
 /* ═══════════════════════════════════
@@ -1771,20 +1784,35 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
   const fileName = file.name.toLowerCase();
   const isImage = file.type.startsWith('image/');
   const isVideo = file.type.startsWith('video/');
-  const isAudio = file.type.startsWith('audio/') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg');
+  const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
 
   if (isImage) {
     uploadMediaWithUI(file, 'image');
   } else if (isVideo) {
     const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    if (file.size > 100 * 1024 * 1024) { showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); return; }
+    if (file.size > 100 * 1024 * 1024) { 
+      showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); 
+      return; 
+    }
     uploadLargeMediaWithXHR(file, fileSizeMB, 'video');
   } else if (isAudio) {
     const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    if (file.size > 50 * 1024 * 1024) { showToast('الأغنية كبيرة جداً! الحد الأقصى 50 ميغابايت', 'error'); return; }
-    uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
+    if (file.size > 50 * 1024 * 1024) { 
+      showToast('الملف الصوتي كبير جداً! الحد الأقصى 50 ميغابايت', 'error'); 
+      return; 
+    }
+    const tempAudio = new Audio(URL.createObjectURL(file));
+    tempAudio.onloadedmetadata = () => {
+      const m = Math.floor(tempAudio.duration / 60);
+      const s = Math.floor(tempAudio.duration % 60);
+      const durStr = `${m}:${s < 10 ? '0' : ''}${s}`;
+      uploadLargeMediaWithXHR(file, fileSizeMB, 'audio', durStr);
+    };
+    tempAudio.onerror = () => {
+      uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
+    };
   } else {
-    uploadMediaWithUI(file, 'image');
+    showToast('نوع الملف غير مدعوم!', 'error');
   }
 });
 
@@ -2045,7 +2073,7 @@ document.getElementById('file-video-input').addEventListener('change', async e =
   uploadVideoWithXHR(file, fileSizeMB);
 });
 
-function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType) {
+function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = null) {
   const tempId = 'temp_media_' + Date.now();
   const area = document.getElementById('messages-area');
   const labelText = mediaType === 'audio' ? 'أغنية' : 'فيديو';
@@ -2100,6 +2128,7 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType) {
         type: mediaType, 
         url: data.secure_url, 
         size: fileSizeMB, 
+        duration: extraDuration,
         deleteToken: deleteToken,
         senderUid: currentUser.uid, 
         timestamp: Date.now(), 
@@ -2239,28 +2268,35 @@ function scrollToMessage(msgKey) {
 
 document.body.style.overscrollBehavior = 'none';
 document.documentElement.style.overscrollBehavior = 'none';
+
 if (window.visualViewport) {
-  const updateAppLayout = () => {
+  window.visualViewport.addEventListener('resize', () => {
     const appEl = document.getElementById('app');
     appEl.style.height = window.visualViewport.height + 'px';
     appEl.style.position = 'fixed';
-    appEl.style.top = '0px';
+    appEl.style.top = '0';
     appEl.style.width = '100%';
     window.scrollTo(0, 0);
-    document.body.scrollTop = 0;
     const area = document.getElementById('messages-area');
     if (area) area.scrollTop = area.scrollHeight;
-  };
-  window.visualViewport.addEventListener('resize', updateAppLayout);
-  window.visualViewport.addEventListener('scroll', updateAppLayout);
+  });
 }
+
 document.body.addEventListener('touchmove', (e) => {
   const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results');
-  if (!isScrollable) e.preventDefault();
+  if (!isScrollable) {
+    e.preventDefault();
+  }
 }, { passive: false });
 
 const msgInputEl = document.getElementById('msg-input');
-if(msgInputEl) { msgInputEl.addEventListener('focus', () => { setTimeout(() => window.scrollTo(0, 0), 50); }); }
+if(msgInputEl) {
+  msgInputEl.addEventListener('focus', () => {
+    setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, 50);
+  });
+}
 
 /* ═══════════════════════════════════
    CALL SYSTEM & AGORA
