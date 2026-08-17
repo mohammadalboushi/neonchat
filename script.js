@@ -454,9 +454,24 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
 let friendsStatus = {};
 let friendsLiveProfiles = {};
 let presenceListeners = {};
+let myBlockedUsers = {};
+let myBlockedUsersListener = null;
 
 function loadChats() {
   if (!currentUser) return;
+  if (!myBlockedUsersListener) {
+    myBlockedUsersListener = db.ref('blockedUsers/' + currentUser.uid).on('value', snap => {
+      myBlockedUsers = snap.val() || {};
+      renderChatsList();
+      if (document.getElementById('screen-my-friends').classList.contains('active')) {
+         const container = document.getElementById('my-friends-container');
+         if(container) { Array.from(container.children).forEach(child => {
+            const fId = child.id.replace('friend-card-', '');
+            if(myBlockedUsers[fId]) child.style.display = 'none'; else child.style.display = 'flex';
+         });}
+      }
+    });
+  }
   if (chatsListener) db.ref('userChats/' + currentUser.uid).off('value', chatsListener);
   chatsListener = db.ref('userChats/' + currentUser.uid).orderByChild('updatedAt').on('value', snap => {
     chatsData = {}; let hasNew = false;
@@ -490,7 +505,8 @@ function renderChatsList(filter = '') {
     photo: (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].photo) ? friendsLiveProfiles[uid].photo : data.friendPhoto
   });
 
-  const filtered = filter ? items.filter(([, v]) => getFriendData(v.friendUid, v).name && getFriendData(v.friendUid, v).name.includes(filter)) : items;
+  let filtered = filter ? items.filter(([, v]) => getFriendData(v.friendUid, v).name && getFriendData(v.friendUid, v).name.includes(filter)) : items;
+  filtered = filtered.filter(([, v]) => !myBlockedUsers[v.friendUid]);
   if (!filtered.length) { empty.style.display = 'flex'; list.querySelectorAll('.chat-item').forEach(e => e.remove()); return; }
   empty.style.display = 'none'; list.querySelectorAll('.chat-item').forEach(e => e.remove());
   filtered.forEach(([chatId, data]) => {
@@ -597,7 +613,7 @@ function initFriendsListListener(uid) {
     const friendUid = snap.key, fData = snap.val();
     if (document.getElementById('friend-card-' + friendUid)) return;
     const card = document.createElement('div'); card.className = 'search-result-card'; card.id = 'friend-card-' + friendUid;
-    card.style.cssText = 'padding:12px 16px; margin-bottom:8px; display:flex; align-items:center;';
+    card.style.cssText = `padding:12px 16px; margin-bottom:8px; display:${myBlockedUsers[friendUid] ? 'none' : 'flex'}; align-items:center;`;
     card.innerHTML = `<div class="search-result-avatar" style="width:40px;height:40px;font-size:15px;">${fData.photo ? `<img src="${fData.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"/>` : (fData.name || '?').charAt(0)}</div><div class="search-result-info" style="flex:1; margin-right:12px;"><div class="search-result-name" id="friend-name-text-${friendUid}" style="font-size:16px;margin-bottom:0;">${escHtml(fData.name)}</div></div><button class="btn-primary" style="width:auto;padding:8px 16px;font-size:13px;" onclick="startChat('${friendUid}')">مراسلة</button>`;
     container.appendChild(card);
   });
@@ -608,10 +624,14 @@ function initFriendsListListener(uid) {
 ═══════════════════════════════════ */
 let currentMessagesQuery = null;
 
+let iAmBlockedRef = null;
+let iAmBlockedListener = null;
+
 function detachMessages() {
   if (messagesRef) { messagesRef.off(); messagesListener = null; msgChangedListener = null; }
   if (friendStatusRef && friendStatusListener) { friendStatusRef.off('value', friendStatusListener); friendStatusRef = null; friendStatusListener = null; }
   if (typingRef && typingListener) { typingRef.off('value', typingListener); typingRef = null; typingListener = null; }
+  if (iAmBlockedRef && iAmBlockedListener) { iAmBlockedRef.off('value', iAmBlockedListener); iAmBlockedRef = null; iAmBlockedListener = null; }
 }
 
 async function openChat(chatId, friendUid, friendProfile = null) {
@@ -641,8 +661,17 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   statusEl.style.color = 'var(--text-muted)';
 
   friendStatusRef = db.ref('users/' + friendUid);
-  friendStatusListener = friendStatusRef.on('value', snap => {
-    const fData = snap.val() || {};
+  
+  let isBlockedByThem = false;
+  let blockTimestamp = null;
+  let realFriendData = {};
+
+  function updateChatHeaderUI() {
+    const fData = { ...realFriendData };
+    if (isBlockedByThem) {
+       fData.photo = ''; 
+       fData.status = blockTimestamp; 
+    }
     
     currentChat.friendProfile = fData;
     
@@ -685,6 +714,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
       }
     });
 
+    const statusEl = document.getElementById('chat-header-status');
     const val = fData.status;
     if (val === 'online') {
       baseStatusText = '🟢 متصل الآن';
@@ -709,16 +739,34 @@ async function openChat(chatId, friendUid, friendProfile = null) {
       baseStatusColor = 'var(--text-secondary)';
     }
     
-    const cur = statusEl.textContent;
-    if (!cur.includes('يكتب') && !cur.includes('يسجل')) {
-      statusEl.textContent = baseStatusText;
-      statusEl.style.color = baseStatusColor;
+    if (statusEl) {
+       const cur = statusEl.textContent;
+       if (!cur.includes('يكتب') && !cur.includes('يسجل')) {
+         statusEl.textContent = baseStatusText;
+         statusEl.style.color = baseStatusColor;
+       }
     }
+  }
+
+  iAmBlockedRef = db.ref('blockedUsers/' + friendUid + '/' + currentUser.uid);
+  iAmBlockedListener = iAmBlockedRef.on('value', bSnap => {
+     isBlockedByThem = bSnap.exists();
+     blockTimestamp = bSnap.val();
+     updateChatHeaderUI();
+  });
+
+  friendStatusListener = friendStatusRef.on('value', snap => {
+    realFriendData = snap.val() || {};
+    updateChatHeaderUI();
   });
 
   typingRef = db.ref('chats/' + chatId + '/typing/' + friendUid);
   typingListener = typingRef.on('value', snap => {
+    if (isBlockedByThem) return; // منع إظهار حالة الكتابة للمحظور
     const state = snap.val();
+    const statusEl = document.getElementById('chat-header-status');
+    if (!statusEl) return;
+    
     if (state === 'typing') {
       statusEl.textContent = '✍️ يكتب الآن...';
       statusEl.style.color = 'var(--neon-cyan)';
@@ -1566,7 +1614,7 @@ function seekVoice(event, url, msgKey) {
 let lastTypingTime = 0; // لضبط الإرسال لفايربيز
 
 document.getElementById('msg-input').addEventListener('input', () => {
-  if (!currentChat || isRecording) return;
+  if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
   
   const now = Date.now();
   const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
@@ -2751,13 +2799,10 @@ async function removeChatFromList(chatId) {
 function blockUser(friendUid) {
   openModal('حظر', 'هل أنت متأكد من حظر هذا الشخص؟').then(ok => {
     if (ok) {
-      db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).set(true);
-      db.ref('friendsList/' + currentUser.uid + '/' + friendUid).remove();
-      db.ref('friendsList/' + friendUid + '/' + currentUser.uid).remove();
-      const chatId = [currentUser.uid, friendUid].sort().join('_');
-      db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
-      db.ref('userChats/' + friendUid + '/' + chatId).remove();
+      // نسجل توقيت الحظر عشان يظهر كآخر ظهور عنده
+      db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).set(Date.now());
       showToast('تم الحظر بنجاح', 'success');
+      showScreen('home'); // نرجعه للرئيسية عشان تختفي المحادثة قدامه فوراً
     }
   });
 }
