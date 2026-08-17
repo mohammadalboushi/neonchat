@@ -167,7 +167,10 @@
       <header class="app-header home-header" style="gap: 6px; padding: 0 10px;">
         <div id="home-avatar" class="home-avatar-placeholder" onclick="showScreen('profile')" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">أ</div>
         <div class="header-title" style="font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          <div>المحادثات</div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            المحادثات 
+            <span style="font-size: 9px; background: rgba(0, 240, 255, 0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan); padding: 2px 4px; border-radius: 4px; font-family: var(--font-en); font-weight: bold; line-height: 1;">v1.0.1</span>
+          </div>
           <div class="header-subtitle" id="home-subtitle" style="font-size: 11px;">مرحباً!</div>
         </div>
         <div class="my-id-badge" id="my-id-badge" onclick="copyMyId()" style="font-size: 11px; padding: 2px 4px; letter-spacing: 0; flex-shrink: 0;">------</div>
@@ -456,7 +459,7 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=18"></script>
+  </div> <script src="script.js?v=19"></script>
 
   <script>
     if('serviceWorker' in navigator){
