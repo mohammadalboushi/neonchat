@@ -1704,10 +1704,20 @@ window.addEventListener('online', syncPendingMessages);
 async function pushMessage(msg) {
   const { chatId, friendUid } = currentChat;
 
-  const isBlockedByMe = (await db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).once('value')).exists();
+  // فحص الحظر السريع: الاعتماد على المتغيرات المحلية لتفادي تجميد إرسال الرسائل والصوت
+  let isBlockedByMe = false, isBlockedByThem = false;
+  if (typeof myBlockedUsers !== 'undefined') {
+     isBlockedByMe = !!myBlockedUsers[friendUid];
+     isBlockedByThem = typeof blockedByThemStatus !== 'undefined' ? !!blockedByThemStatus[friendUid] : false;
+  } else {
+     // إذا ما كانت جاهزة، منعطيها مهلة نصف ثانية بس كرمال ما يعلق الإرسال
+     try {
+        isBlockedByMe = await Promise.race([db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).once('value').then(s => s.exists()), new Promise(r => setTimeout(() => r(false), 500))]);
+        isBlockedByThem = await Promise.race([db.ref('blockedUsers/' + friendUid + '/' + currentUser.uid).once('value').then(s => s.exists()), new Promise(r => setTimeout(() => r(false), 500))]);
+     } catch(e) {}
+  }
+
   if (isBlockedByMe) { showToast('لقد قمت بحظر هذا الشخص، لا يمكنك المراسلة', 'error'); return; }
-  
-  const isBlockedByThem = (await db.ref('blockedUsers/' + friendUid + '/' + currentUser.uid).once('value')).exists();
   if (isBlockedByThem) { showToast('لا يمكنك إرسال رسالة لهذا المستخدم', 'error'); return; }
 
   const ref = db.ref('chats/' + chatId + '/messages').push(); 
@@ -1738,7 +1748,20 @@ async function pushMessage(msg) {
   } catch (err) {}
 }
 
-function toggleReaction(msgKey) { if (!currentChat) return; const ref = db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey); ref.once('value', snap => { const m = snap.val(); if (m) ref.update({ reaction: m.reaction === '❤️' ? null : '❤️' }); }); }
+function toggleReaction(msgKey) {
+  if (!currentChat) return;
+  const reactEl = document.getElementById('react-' + msgKey);
+  let newEmoji = '❤️';
+  if (reactEl && reactEl.style.display !== 'none' && reactEl.textContent.trim() === '❤️') {
+    newEmoji = null;
+  }
+  // تحديث الشاشة فوراً بدون انتظار السيرفر
+  if (reactEl) {
+    reactEl.style.display = newEmoji ? 'flex' : 'none';
+    reactEl.textContent = newEmoji || '';
+  }
+  db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: newEmoji });
+}
 
 function updateLastMsgAfterChange() {
   if (!currentChat) return;
@@ -1807,7 +1830,15 @@ function openMsgMenu(msg, isOut) {
   document.getElementById('msg-menu-overlay').classList.add('open');
 }
 
-function addReaction(msgKey, emoji) { if (!currentChat) return; db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: emoji }); }
+function addReaction(msgKey, emoji) {
+  if (!currentChat) return;
+  const reactEl = document.getElementById('react-' + msgKey);
+  if (reactEl) {
+    reactEl.style.display = 'flex';
+    reactEl.textContent = emoji;
+  }
+  db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: emoji });
+}
 function closeMsgMenu() { document.getElementById('msg-menu-overlay').classList.remove('open'); }
 function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document.getElementById('msg-reply-preview').classList.add('active'); document.getElementById('msg-reply-text').textContent = 'رد على: ' + (msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ صوتية'); document.getElementById('msg-input').focus(); }
 function cancelReply() { replyingToMsg = null; document.getElementById('msg-reply-preview').classList.remove('active'); }
