@@ -379,6 +379,10 @@ function cleanupListeners() {
     if (myCallListener) db.ref('calls/' + currentUser.uid).off('value', myCallListener);
     Object.keys(presenceListeners).forEach(fUid => db.ref('users/' + fUid).off('value', presenceListeners[fUid]));
     presenceListeners = {};
+    if (typeof blockedByThemListeners !== 'undefined') {
+      Object.keys(blockedByThemListeners).forEach(fUid => db.ref('blockedUsers/' + fUid + '/' + currentUser.uid).off('value', blockedByThemListeners[fUid]));
+      blockedByThemListeners = {};
+    }
   }
   detachMessages();
 }
@@ -456,6 +460,8 @@ let friendsLiveProfiles = {};
 let presenceListeners = {};
 let myBlockedUsers = {};
 let myBlockedUsersListener = null;
+let blockedByThemStatus = {};
+let blockedByThemListeners = {};
 
 function loadChats() {
   if (!currentUser) return;
@@ -480,11 +486,20 @@ function loadChats() {
         const d = c.val(); chatsData[c.key] = d;
         if (!isFirstChatsLoad && d.unread > (lastUnreads[c.key] || 0)) hasNew = true;
         lastUnreads[c.key] = d.unread;
+        
         if (!presenceListeners[d.friendUid]) {
           presenceListeners[d.friendUid] = db.ref('users/' + d.friendUid).on('value', sSnap => {
             const fData = sSnap.val() || {};
             friendsStatus[d.friendUid] = fData.status;
             friendsLiveProfiles[d.friendUid] = fData;
+            renderChatsList();
+          });
+        }
+        
+        // 🚀 السحر هون: الاستماع إذا هاد الشخص حظرني عشان أخفي صورته وحالته بالرئيسية
+        if (!blockedByThemListeners[d.friendUid]) {
+          blockedByThemListeners[d.friendUid] = db.ref('blockedUsers/' + d.friendUid + '/' + currentUser.uid).on('value', bSnap => {
+            blockedByThemStatus[d.friendUid] = bSnap.exists();
             renderChatsList();
           });
         }
@@ -500,23 +515,34 @@ function renderChatsList(filter = '') {
   const list = document.getElementById('chats-list'), empty = document.getElementById('chats-empty');
   const items = Object.entries(chatsData).sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0));
   
-  const getFriendData = (uid, data) => ({
-    name: (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].name) ? friendsLiveProfiles[uid].name : data.friendName,
-    photo: (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].photo) ? friendsLiveProfiles[uid].photo : data.friendPhoto
-  });
+  const getFriendData = (uid, data) => {
+    let name = (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].name) ? friendsLiveProfiles[uid].name : data.friendName;
+    let photo = (friendsLiveProfiles[uid] && friendsLiveProfiles[uid].photo) ? friendsLiveProfiles[uid].photo : data.friendPhoto;
+    
+    // إذا كان حاظرني، مخفي صورته فوراً من الرئيسية
+    if (blockedByThemStatus[uid]) {
+      photo = '';
+    }
+    
+    return { name, photo };
+  };
 
   let filtered = filter ? items.filter(([, v]) => getFriendData(v.friendUid, v).name && getFriendData(v.friendUid, v).name.includes(filter)) : items;
   filtered = filtered.filter(([, v]) => !myBlockedUsers[v.friendUid]);
   if (!filtered.length) { empty.style.display = 'flex'; list.querySelectorAll('.chat-item').forEach(e => e.remove()); return; }
   empty.style.display = 'none'; list.querySelectorAll('.chat-item').forEach(e => e.remove());
+  
   filtered.forEach(([chatId, data]) => {
     const div = document.createElement('div'); div.className = 'chat-item';
     const liveData = getFriendData(data.friendUid, data);
     
     const initials = (liveData.name || '?').charAt(0);
     const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover;"/>` : `<div class="chat-avatar">${initials}</div>`;
-    const isOnline = friendsStatus[data.friendUid] === 'online';
+    
+    // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
+    const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
     const onlineBadge = isOnline ? `<div style="position:absolute; bottom:2px; right:2px; width:13px; height:13px; background:var(--neon-green); border-radius:50%; border:2px solid var(--bg-surface); z-index:2;"></div>` : '';
+    
     const lastMsg = data.lastMsg || 'اضغط لبدء المحادثة';
     div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(liveData.name||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
     
