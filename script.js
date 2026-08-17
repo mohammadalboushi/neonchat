@@ -2132,10 +2132,8 @@ async function toggleRecording(isSinging = false) {
     compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
 
     audioChunks = []; isRecordingCanceled = false;
-    let recOptions = { audioBitsPerSecond: 128000 };
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) recOptions.mimeType = 'audio/webm;codecs=opus';
-    
-    mediaRecorder = new MediaRecorder(dest.stream, recOptions);
+    // رجعنا الجودة لـ 256000 ليرجع الصوت نقي ومفتوح متل قبل
+    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
     mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
