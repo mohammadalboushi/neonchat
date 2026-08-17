@@ -170,6 +170,7 @@ function renderScreenUI(name) {
   if (name === 'home') loadChats();
   if (name === 'profile') populateProfile();
   if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
+  if (name === 'blocked-users') loadBlockedUsers();
   if (name !== 'chat') detachMessages();
 }
 
@@ -540,6 +541,12 @@ async function sendFriendRequest(friendUid) {
   const btn = document.getElementById(`btn-send-req-${friendUid}`);
   btn.disabled = true; btn.textContent = 'جاري الإرسال...';
   try {
+    const isBlockedByMe = (await db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).once('value')).exists();
+    if (isBlockedByMe) { showToast('لقد قمت بحظر هذا الشخص', 'error'); btn.disabled = false; btn.textContent = 'إرسال طلب'; return; }
+    
+    const isBlockedByThem = (await db.ref('blockedUsers/' + friendUid + '/' + currentUser.uid).once('value')).exists();
+    if (isBlockedByThem) { showToast('لا يمكنك إرسال طلب لهذا المستخدم', 'error'); btn.disabled = false; btn.textContent = 'إرسال طلب'; return; }
+
     await db.ref('friendRequests/' + friendUid + '/' + currentUser.uid).set({ uid: currentUser.uid, name: myProfile.name, timestamp: Date.now() });
     showToast('تم إرسال طلب الصداقة بنجاح', 'success'); btn.textContent = 'تم الإرسال ✔';
   } catch (e) { btn.disabled = false; btn.textContent = 'إرسال طلب'; }
@@ -1622,6 +1629,13 @@ window.addEventListener('online', syncPendingMessages);
 
 async function pushMessage(msg) {
   const { chatId, friendUid } = currentChat;
+
+  const isBlockedByMe = (await db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).once('value')).exists();
+  if (isBlockedByMe) { showToast('لقد قمت بحظر هذا الشخص، لا يمكنك المراسلة', 'error'); return; }
+  
+  const isBlockedByThem = (await db.ref('blockedUsers/' + friendUid + '/' + currentUser.uid).once('value')).exists();
+  if (isBlockedByThem) { showToast('لا يمكنك إرسال رسالة لهذا المستخدم', 'error'); return; }
+
   const ref = db.ref('chats/' + chatId + '/messages').push(); 
   
   // حفظ الرسالة فوراً في طابور الإرسال تحسباً لانقطاع النت أو خروجك
@@ -2706,7 +2720,20 @@ function openHomeChatMenu(chatId, friendUid, friendName) {
   <button class="msg-menu-btn danger" onclick="blockUser('${friendUid}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> حظر الشخص</button>`;
   document.getElementById('msg-menu-overlay').classList.add('open'); if (navigator.vibrate) navigator.vibrate(50);
 }
-function clearChatHistory(chatId) { openModal('مسح', 'مسح رسائل هذه المحادثة من جهازك؟').then(ok => { if (ok) { db.ref('chats/' + chatId + '/messages').remove().then(() => showToast('تم مسح المحادثة', 'success')); db.ref('userChats/' + currentUser.uid + '/' + chatId + '/lastMsg').set(''); } }); }
+function clearChatHistory(chatId) {
+  openModal('مسح', 'مسح رسائل هذه المحادثة من جهازك؟').then(ok => {
+    if (ok) {
+      db.ref('chats/' + chatId + '/messages').remove().then(() => {
+        localStorage.removeItem('chat_cache_' + chatId);
+        if (currentChat && currentChat.chatId === chatId) {
+          document.getElementById('messages-area').innerHTML = '';
+        }
+        showToast('تم مسح المحادثة', 'success');
+      });
+      db.ref('userChats/' + currentUser.uid + '/' + chatId + '/lastMsg').set('');
+    }
+  });
+}
 async function removeChatFromList(chatId) {
   const ok = await openModal('إخفاء المحادثة', 'سيتم إخفاء المحادثة، ولكن سيبقى الشخص في قائمة الأصدقاء.');
   if (ok) {
@@ -2721,7 +2748,19 @@ async function removeChatFromList(chatId) {
     } catch (err) { showToast('خطأ', 'error'); }
   }
 }
-function blockUser(friendUid) { openModal('حظر', 'حظر هذا الشخص؟').then(ok => { if (ok) { db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).set(true); showToast('تم الحظر بنجاح', 'success'); } }); }
+function blockUser(friendUid) {
+  openModal('حظر', 'هل أنت متأكد من حظر هذا الشخص؟').then(ok => {
+    if (ok) {
+      db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).set(true);
+      db.ref('friendsList/' + currentUser.uid + '/' + friendUid).remove();
+      db.ref('friendsList/' + friendUid + '/' + currentUser.uid).remove();
+      const chatId = [currentUser.uid, friendUid].sort().join('_');
+      db.ref('userChats/' + currentUser.uid + '/' + chatId).remove();
+      db.ref('userChats/' + friendUid + '/' + chatId).remove();
+      showToast('تم الحظر بنجاح', 'success');
+    }
+  });
+}
 
 /* ═══════════════════════════════════
    THEME TOGGLE
@@ -2738,4 +2777,57 @@ function toggleTheme() {
     document.body.classList.remove('light-theme');
     localStorage.setItem('theme', 'dark');
   }
+}
+/* ═══════════════════════════════════
+   BLOCKED USERS SYSTEM
+═══════════════════════════════════ */
+function loadBlockedUsers() {
+  const container = document.getElementById('blocked-users-container');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center; color:var(--neon-cyan); margin-top:40px;">جاري التحميل... ⏳</div>';
+  
+  db.ref('blockedUsers/' + currentUser.uid).once('value', async snap => {
+    if (!snap.exists()) {
+      container.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top:40px;">لا يوجد أشخاص محظورين</div>';
+      return;
+    }
+    
+    container.innerHTML = '';
+    const blockedIds = Object.keys(snap.val());
+    for (let i = 0; i < blockedIds.length; i++) {
+      const bUid = blockedIds[i];
+      const userSnap = await db.ref('users/' + bUid).once('value');
+      if (userSnap.exists()) {
+        const uData = userSnap.val();
+        const card = document.createElement('div');
+        card.className = 'search-result-card';
+        card.style.cssText = 'padding:12px 16px; margin-bottom:8px; display:flex; align-items:center; border-color:rgba(255,0,144,0.3);';
+        card.innerHTML = `
+          <div class="search-result-avatar" style="width:40px;height:40px;font-size:15px; border-color:var(--neon-pink); background:rgba(255,0,144,0.1); color:var(--neon-pink);">
+            ${uData.photo ? `<img src="${uData.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"/>` : (uData.name || '?').charAt(0)}
+          </div>
+          <div class="search-result-info" style="flex:1; margin-right:12px;">
+            <div class="search-result-name" style="font-size:16px;margin-bottom:0; color:var(--text-primary);">${escHtml(uData.name)}</div>
+          </div>
+          <button class="btn-danger" style="width:auto;padding:8px 16px;font-size:13px;" onclick="unblockUser('${bUid}', this)">إلغاء الحظر</button>
+        `;
+        container.appendChild(card);
+      }
+    }
+  });
+}
+
+function unblockUser(bUid, btnEl) {
+  openModal('إلغاء الحظر', 'هل أنت متأكد من فك الحظر عن هذا الشخص؟').then(ok => {
+    if (ok) {
+      db.ref('blockedUsers/' + currentUser.uid + '/' + bUid).remove().then(() => {
+        showToast('تم إلغاء الحظر بنجاح', 'success');
+        if (btnEl) btnEl.closest('.search-result-card').remove();
+        const container = document.getElementById('blocked-users-container');
+        if (container && container.children.length === 0) {
+           container.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top:40px;">لا يوجد أشخاص محظورين</div>';
+        }
+      });
+    }
+  });
 }
