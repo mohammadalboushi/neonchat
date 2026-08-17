@@ -2096,7 +2096,14 @@ async function toggleRecording(isSinging = false) {
     let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
     if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
     const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    
+    // 🚀 السحر هون: نعطي المايك والمتصفح 300 ميلي ثانية لـ "يسخن" قبل ما نبدأ نعالج الصوت
+    // هاد بيمنع إرسال ملفات WebM معطوبة بالثواني الأولى وبيعالج مشكلة التعليق على 100%
+    await new Promise(r => setTimeout(r, 300));
+    
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    
     const source = audioCtx.createMediaStreamSource(rawStream);
     const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
 
@@ -2125,7 +2132,10 @@ async function toggleRecording(isSinging = false) {
     compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
 
     audioChunks = []; isRecordingCanceled = false;
-    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
+    let recOptions = { audioBitsPerSecond: 128000 };
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) recOptions.mimeType = 'audio/webm;codecs=opus';
+    
+    mediaRecorder = new MediaRecorder(dest.stream, recOptions);
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
     mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
@@ -2134,6 +2144,12 @@ async function toggleRecording(isSinging = false) {
       const localChunks = [...audioChunks];
       const blob = new Blob(localChunks, { type: 'audio/webm' });
       const finalDuration = recordDurationStr;
+      
+      // 🚀 حماية: إذا كان التسجيل فارغ تماماً (المستخدم ضغط وفلت فوراً قبل ما يلقط صوت)، منرميه
+      if (blob.size < 1000) {
+         showToast('لم يتم التقاط الصوت، المايكروفون كان قيد التجهيز', 'error');
+         return;
+      }
       
       const tempId = 'temp-audio-' + Date.now();
       const area = document.getElementById('messages-area');
@@ -2163,6 +2179,9 @@ async function toggleRecording(isSinging = false) {
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+      
+      // 🚀 مهلة 30 ثانية لتفادي التعليق للأبد، إذا مارد السيرفر بيحذفه من الشاشة
+      xhr.timeout = 30000;
 
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {
@@ -2189,7 +2208,7 @@ async function toggleRecording(isSinging = false) {
             }
             await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
           } else {
-            showToast('فشل الرفع', 'error');
+            showToast('فشل الرفع، سيرفر الصورة رفض الملف', 'error');
           }
         } else {
           showToast('فشل الرفع', 'error');
@@ -2201,11 +2220,18 @@ async function toggleRecording(isSinging = false) {
         if (tempEl) tempEl.remove();
         showToast('خطأ بالاتصال، تأكد من الشبكة', 'error');
       };
+      
+      xhr.ontimeout = function() {
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+        showToast('انتهى وقت الرفع (السيرفر لم يستجب)', 'error');
+      };
 
       xhr.send(fd);
     };
     
-    mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
+    // 🚀 إزالة تقطيع 200 ميلي ثانية لتجنب تشوه رأس الملف WebM
+    mediaRecorder.start(); isRecording = true; recordStart = Date.now();
 
     if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
     else { document.getElementById('btn-voice').classList.add('recording'); document.getElementById('btn-music-voice').style.display = 'none'; }
