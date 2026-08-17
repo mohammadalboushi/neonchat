@@ -702,6 +702,7 @@ body {
   border-radius: 12px;
   cursor: pointer;
   display: block;
+  -webkit-touch-callout: none;
 }
 
 .voice-msg {

@@ -1107,19 +1107,25 @@ function buildMsgEl(msg, isBackground = false) {
   replyIcon.style.cssText = `position:absolute; top:50%; margin-top:-11px; transform:scale(0); opacity:0; transition:all 0.2s ease-out; z-index:-1;`;
   row.style.position = 'relative'; row.appendChild(replyIcon);
   
-  let lastTap = 0, pressTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
+    let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
     if (e.target.tagName === 'A') return;
     
     const now = Date.now();
-    if (now - lastTap < 300 && now - lastTap > 0) { toggleReaction(msg.key); lastTap = 0; if (e.cancelable) e.preventDefault(); return; }
+    if (now - lastTap < 300 && now - lastTap > 0) { 
+      clearTimeout(singleTapTimer); 
+      toggleReaction(msg.key); 
+      lastTap = 0; 
+      if (e.cancelable) e.preventDefault(); 
+      return; 
+    }
     lastTap = now;
     touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
     isSwiping = false; isVertical = false;
     bubble.style.transition = 'none';
 
-    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { e.target.style.opacity = '0.85'; return; } 
+    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { e.target.style.opacity = '0.85'; } 
 
     pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending) openMsgMenu(msg, isOut); }, 500);
   }, { passive: false });
@@ -1133,8 +1139,6 @@ function buildMsgEl(msg, isBackground = false) {
       bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
       replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0'; return;
     }
-
-    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) return; // منع سحب الصورة العادية
     
     if (Math.abs(dx) > 15 && !isVertical && !msg.isPending) {
       isSwiping = true; clearTimeout(pressTimer);
@@ -1153,13 +1157,11 @@ function buildMsgEl(msg, isBackground = false) {
     }
   }, { passive: true });
 
-      bubble.addEventListener('touchend', e => {
+  bubble.addEventListener('touchend', e => {
     if (e.target.tagName === 'A') return;
 
     if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { 
       e.target.style.opacity = '1'; 
-      if (!isVertical) window.previewImg(e.target.src); 
-      return; 
     }
     
     clearTimeout(pressTimer);
@@ -1169,15 +1171,19 @@ function buildMsgEl(msg, isBackground = false) {
 
     if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
       prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
-    } else if (!isSwiping && !isVertical && (Date.now() - lastTap < 400)) {
-      if (e.target.closest('.video-thumb-container')) {
-        openVideoPlayer(msg.url);
-      }
+    } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
+      singleTapTimer = setTimeout(() => {
+        if (e.target.closest('.video-thumb-container')) {
+          openVideoPlayer(msg.url);
+        } else if (e.target.tagName === 'IMG') {
+          window.previewImg(e.target.src);
+        }
+      }, 250);
     }
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
 
-  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || e.target.tagName === 'IMG' || msg.isPending) return; e.preventDefault(); openMsgMenu(msg, isOut); });
+  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || msg.isPending) return; e.preventDefault(); openMsgMenu(msg, isOut); });
 
   let ticks = '';
   if (isOut && !msg.isPending) {
@@ -1203,12 +1209,12 @@ function buildMsgEl(msg, isBackground = false) {
     bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
     const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
-    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;" onclick="previewImg('${msg.url}')"/>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;"/>${timeEl}${reactHtml}`;
     } else if (msg.type === 'video') {
     // نطلب من كلاوديناري صورة بحجم مناسب من أول فريم (so_0) لضمان السرعة وعدم الفشل
     const thumbUrl = msg.url.replace('/upload/', '/upload/w_400,h_300,c_fill,so_0/').replace(/\.[^/.]+$/, ".jpg");
     const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
-    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" onclick="openVideoPlayer('${msg.url}')">
+    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container">
         <img src="${thumbUrl}" class="msg-img" onerror="this.style.display='none';" style="pointer-events: auto;"/>
         <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
         ${fileSize}
@@ -1330,10 +1336,17 @@ async function toggleRecording(isSinging = false) {
   if (!navigator.mediaDevices) { showToast('المتصفح لا يدعم التسجيل', 'error'); return; }
   try {
     isSingingMode = isSinging; 
+    
+    // 🚀 السحر هون: إنشاء محرك الصوت وإيقاظه فوراً عند الضغطة قبل الانتظار
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
+    }
+
     let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
     if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
     const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
     const source = audioCtx.createMediaStreamSource(rawStream);
     const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
 
@@ -1510,12 +1523,17 @@ function playVoice(btn, url, msgKey, isOut) {
 function startAudioProgress(msgKey) {
   clearInterval(audioUpdateInterval);
   const durEl = document.getElementById('dur-' + msgKey);
-  const origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; if (origStr) { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
+  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0; if (origStr && origStr !== '🎵 أغنية') { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
   audioUpdateInterval = setInterval(() => {
     if (currentAudio && !currentAudio.paused) {
       let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration;
       if (totalDuration > 0) {
+        if (origStr === '🎵 أغنية' || origStr === '0:00') {
+          const totM = Math.floor(totalDuration / 60), totS = Math.floor(totalDuration % 60);
+          origStr = `${totM}:${totS < 10 ? '0' : ''}${totS}`;
+          if (durEl) durEl.setAttribute('data-orig', origStr);
+        }
         let perc = (currentAudio.currentTime / totalDuration) * 100; if (perc > 100) perc = 100;
         let fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = perc + '%';
         if (durEl) { const curSec = Math.floor(currentAudio.currentTime), m = Math.floor(curSec / 60), s = curSec % 60; durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`; }
@@ -1527,7 +1545,7 @@ function startAudioProgress(msgKey) {
 function seekVoice(event, url, msgKey) {
   if (!currentAudio || currentAudioUrl !== url) return;
   const durEl = document.getElementById('dur-' + msgKey), origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; if (origStr) { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
+  let fallbackDuration = 0; if (origStr && origStr !== '🎵 أغنية') { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
   let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration; if (!totalDuration) return;
   const rect = event.currentTarget.getBoundingClientRect(), clickX = rect.right - event.clientX; 
   let perc = clickX / rect.width; if (perc < 0) perc = 0; if (perc > 1) perc = 1;
@@ -1653,20 +1671,21 @@ function openMsgMenu(msg, isOut) {
   const btnReply = document.createElement('button'); btnReply.className = 'msg-menu-btn'; btnReply.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg> رد`;
   btnReply.onclick = () => { prepareReply(msg); closeMsgMenu(); }; menu.appendChild(btnReply);
   
-  if (msg.type === 'text') {
+     if (msg.type === 'text') {
     const btnCopy = document.createElement('button'); btnCopy.className = 'msg-menu-btn'; btnCopy.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> نسخ النص`;
     btnCopy.onclick = () => { navigator.clipboard.writeText(msg.text).then(() => showToast('تم النسخ', 'success')); closeMsgMenu(); }; menu.appendChild(btnCopy);
   }
-  if (msg.type === 'audio' || msg.type === 'voice') {
-    const btnDownload = document.createElement('button'); btnDownload.className = 'msg-menu-btn'; btnDownload.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> تنزيل المقطع`;
+  if (msg.type === 'audio' || msg.type === 'voice' || msg.type === 'video' || msg.type === 'image') {
+    const btnDownload = document.createElement('button'); btnDownload.className = 'msg-menu-btn'; btnDownload.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${msg.type === 'video' ? 'تنزيل الفيديو' : (msg.type === 'image' ? 'تنزيل الصورة' : 'تنزيل المقطع')}`;
     btnDownload.onclick = () => { 
       showToast('جاري التنزيل...');
       fetch(msg.url).then(res => res.blob()).then(blob => {
-        const url = window.URL.createObjectURL(blob);
+        const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
+        const url = window.URL.createObjectURL(forcedBlob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = msg.type === 'audio' ? `Song_${Date.now()}.mp3` : `Voice_${Date.now()}.webm`;
+        a.download = msg.type === 'video' ? `Video_${Date.now()}.mp4` : msg.type === 'image' ? `Image_${Date.now()}.jpg` : (msg.type === 'audio' ? `Song_${Date.now()}.mp3` : `Voice_${Date.now()}.mp3`);
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -1736,24 +1755,102 @@ overlayEl.addEventListener('click', (e) => {
 });
 
 let imgLastTap = 0;
+let initialPinchDist = null;
+let initialScale = 1;
+let pinchStartX = 0, pinchStartY = 0;
+let initialImgTx = 0, initialImgTy = 0;
+
 imgEl.addEventListener('touchstart', (e) => {
-  const now = Date.now();
-  if (now - imgLastTap < 300 && now - imgLastTap > 0) {
-    currentScale = currentScale === 1 ? 4 : 1; imgTx = 0; imgTy = 0;
-    imgEl.style.transition = 'transform 0.2s ease';
-    imgEl.style.transform = `translate(0px, 0px) scale(${currentScale})`;
+  if (e.touches.length === 2) {
     e.preventDefault();
-  } else {
-    imgStartX = e.touches[0].clientX - imgTx; imgStartY = e.touches[0].clientY - imgTy;
+    initialPinchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    initialScale = currentScale;
+    pinchStartX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    pinchStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    initialImgTx = imgTx;
+    initialImgTy = imgTy;
     imgEl.style.transition = 'none';
+  } else if (e.touches.length === 1) {
+    const now = Date.now();
+    if (now - imgLastTap < 300 && now - imgLastTap > 0) {
+      currentScale = currentScale === 1 ? 2.5 : 1; imgTx = 0; imgTy = 0;
+      imgEl.style.transition = 'transform 0.2s ease';
+      imgEl.style.transform = `translate(0px, 0px) scale(${currentScale})`;
+      imgLastTap = 0;
+      e.preventDefault();
+    } else {
+      imgStartX = e.touches[0].clientX - imgTx; imgStartY = e.touches[0].clientY - imgTy;
+      imgEl.style.transition = 'none';
+      imgLastTap = now;
+    }
   }
-  imgLastTap = now;
 });
+
 imgEl.addEventListener('touchmove', (e) => {
-  if (currentScale > 1) {
+  if (e.touches.length === 2) {
     e.preventDefault();
-    imgTx = e.touches[0].clientX - imgStartX; imgTy = e.touches[0].clientY - imgStartY;
+    const currentDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const currentMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const currentMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    
+    if (initialPinchDist) {
+      currentScale = Math.min(Math.max(0.5, initialScale * (currentDist / initialPinchDist)), 5);
+      imgTx = initialImgTx + (currentMidX - pinchStartX);
+      imgTy = initialImgTy + (currentMidY - pinchStartY);
+      
+      const maxTx = Math.max(0, (imgEl.offsetWidth * currentScale - window.innerWidth) / 2);
+      const maxTy = Math.max(0, (imgEl.offsetHeight * currentScale - window.innerHeight) / 2);
+      if (imgTx > maxTx) { imgTx = maxTx; pinchStartX = currentMidX - (imgTx - initialImgTx); }
+      else if (imgTx < -maxTx) { imgTx = -maxTx; pinchStartX = currentMidX - (imgTx - initialImgTx); }
+      if (imgTy > maxTy) { imgTy = maxTy; pinchStartY = currentMidY - (imgTy - initialImgTy); }
+      else if (imgTy < -maxTy) { imgTy = -maxTy; pinchStartY = currentMidY - (imgTy - initialImgTy); }
+
+      imgEl.style.transform = `translate(${imgTx}px, ${imgTy}px) scale(${currentScale})`;
+    }
+  } else if (e.touches.length === 1 && currentScale > 1) {
+    e.preventDefault();
+    imgTx = e.touches[0].clientX - imgStartX; 
+    imgTy = e.touches[0].clientY - imgStartY;
+
+    const maxTx = Math.max(0, (imgEl.offsetWidth * currentScale - window.innerWidth) / 2);
+    const maxTy = Math.max(0, (imgEl.offsetHeight * currentScale - window.innerHeight) / 2);
+    if (imgTx > maxTx) { imgTx = maxTx; imgStartX = e.touches[0].clientX - imgTx; }
+    else if (imgTx < -maxTx) { imgTx = -maxTx; imgStartX = e.touches[0].clientX - imgTx; }
+    if (imgTy > maxTy) { imgTy = maxTy; imgStartY = e.touches[0].clientY - imgTy; }
+    else if (imgTy < -maxTy) { imgTy = -maxTy; imgStartY = e.touches[0].clientY - imgTy; }
+
     imgEl.style.transform = `translate(${imgTx}px, ${imgTy}px) scale(${currentScale})`;
+  }
+});
+
+imgEl.addEventListener('touchend', (e) => {
+  initialPinchDist = null;
+  if (currentScale < 1) {
+    currentScale = 1; imgTx = 0; imgTy = 0;
+    imgEl.style.transition = 'transform 0.2s ease';
+    imgEl.style.transform = `translate(0px, 0px) scale(1)`;
+  } else {
+    const maxTx = Math.max(0, (imgEl.offsetWidth * currentScale - window.innerWidth) / 2);
+    const maxTy = Math.max(0, (imgEl.offsetHeight * currentScale - window.innerHeight) / 2);
+    let outOfBounds = false;
+    if (imgTx > maxTx) { imgTx = maxTx; outOfBounds = true; }
+    else if (imgTx < -maxTx) { imgTx = -maxTx; outOfBounds = true; }
+    if (imgTy > maxTy) { imgTy = maxTy; outOfBounds = true; }
+    else if (imgTy < -maxTy) { imgTy = -maxTy; outOfBounds = true; }
+    if (outOfBounds) {
+      imgEl.style.transition = 'transform 0.2s ease';
+      imgEl.style.transform = `translate(${imgTx}px, ${imgTy}px) scale(${currentScale})`;
+    }
+  }
+  if (e.touches.length === 1) {
+    imgStartX = e.touches[0].clientX - imgTx;
+    imgStartY = e.touches[0].clientY - imgTy;
   }
 });
 
@@ -1763,7 +1860,7 @@ imgEl.addEventListener('touchmove', (e) => {
 window.pendingUploads = {};
 window.lastUploadedUrl = null;
 
-async function uploadMediaWithUI(file, type, extraData = null) {
+function uploadMediaWithUI(file, type, extraData = null) {
   const tempId = 'temp_' + Date.now();
   const tempUrl = URL.createObjectURL(file);
   const area = document.getElementById('messages-area');
@@ -1780,26 +1877,53 @@ async function uploadMediaWithUI(file, type, extraData = null) {
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
   }
 
-  const tryUpload = async () => {
+  const tryUpload = () => {
     const row = document.getElementById('row_' + tempId);
-    if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`; }
-    try {
-      const controller = new AbortController(); const timeoutId = setTimeout(() => controller.abort(), 120000);
-      const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
-      const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', { method: 'POST', body: fd, signal: controller.signal });
-      clearTimeout(timeoutId); const data = await res.json();
-      if (data.secure_url) {
+    if (row) { 
+      const ov = row.querySelector('.pending-overlay'); 
+      if (ov) ov.innerHTML = `
+        <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
+        <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
+          <div id="bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+        </div>
+      `; 
+    }
+    
+    const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+    
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) {
+        const percent = Math.round((e.loaded / e.total) * 100);
+        const bar = document.getElementById('bar_' + tempId);
+        const pctTxt = document.getElementById('pct_' + tempId);
+        if (bar) bar.style.width = percent + '%';
+        if (pctTxt) pctTxt.textContent = percent + '%';
+      }
+    };
+    
+    xhr.onload = async () => {
+      let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
+      if (xhr.status === 200 && data.secure_url) {
         window.lastUploadedUrl = data.secure_url;
         if (type === 'image' && window.localImageCache) window.localImageCache[data.secure_url] = tempUrl;
-        if (row) row.remove();
+        const currentRow = document.getElementById('row_' + tempId);
+        if (currentRow) currentRow.remove();
         await pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
-      } else throw new Error('فشل');
-    } catch (e) {
-      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">فشل، اضغط للإعادة 🔄</button>`; }
-    }
+      } else {
+        if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">فشل، إضغط للإعادة 🔄</button>`; }
+      }
+    };
+    
+    xhr.onerror = () => {
+      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">خطأ اتصال، أعد المحاولة</button>`; }
+    };
+    
+    xhr.send(fd);
   };
   window.pendingUploads[tempId] = tryUpload;
-  await tryUpload();
+  tryUpload();
 }
 
 document.getElementById('file-img-input').addEventListener('change', async e => {
@@ -1898,45 +2022,68 @@ async function toggleRecording(isSinging = false) {
         const tempDiv = document.createElement('div');
         tempDiv.className = 'msg-row out';
         tempDiv.id = tempId;
-        tempDiv.innerHTML = `<div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); display:flex; align-items:center; gap:8px;"><div style="width:16px; height:16px; border:2px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div><span style="font-size:13px;">${isSingingMode ? 'جاري إرسال مقطع الغناء... 🎤' : 'جاري إرسال المقطع...'}</span></div>`;
+        tempDiv.innerHTML = `
+          <div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); width: 220px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
+              <span>${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
+              <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
+            </div>
+            <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
+              <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+            </div>
+          </div>`;
         area.appendChild(tempDiv);
         area.scrollTop = area.scrollHeight;
       }
 
       await new Promise(r => setTimeout(r, 50));
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); 
+      
+      const fd = new FormData();
+      fd.append('file', blob);
+      fd.append('upload_preset', 'malaboushi_preset');
 
-      try {
-        const fd = new FormData();
-        fd.append('file', blob);
-        fd.append('upload_preset', 'malaboushi_preset');
-        
-        const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', {
-          method: 'POST', body: fd, signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        const data = await res.json();
-        
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          const bar = document.getElementById('voice_bar_' + tempId);
+          const pctTxt = document.getElementById('voice_pct_' + tempId);
+          if (bar) bar.style.width = percent + '%';
+          if (pctTxt) pctTxt.textContent = percent + '%';
+        }
+      };
+
+      xhr.onload = async function() {
         const tempEl = document.getElementById(tempId);
         if (tempEl) tempEl.remove();
 
-        if (data.secure_url) {
-          let replyData = null;
-          if (replyingToMsg) {
-            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-            cancelReply();
+        if (xhr.status === 200) {
+          let data = {};
+          try { data = JSON.parse(xhr.responseText); } catch(e) {}
+          if (data.secure_url) {
+            let replyData = null;
+            if (replyingToMsg) {
+              replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+              cancelReply();
+            }
+            await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+          } else {
+            showToast('فشل الرفع', 'error');
           }
-          await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
-        } else throw new Error('فشل الرفع');
-      } catch (e) {
-        clearTimeout(timeoutId);
+        } else {
+          showToast('فشل الرفع', 'error');
+        }
+      };
+
+      xhr.onerror = function() {
         const tempEl = document.getElementById(tempId);
         if (tempEl) tempEl.remove();
-        if (e.name === 'AbortError') { showToast('انتهى وقت الرفع، تأكد من جودة اتصالك', 'error'); } 
-        else { showToast('فشل: ' + e.message, 'error'); }
-      }
+        showToast('خطأ بالاتصال، تأكد من الشبكة', 'error');
+      };
+
+      xhr.send(fd);
     };
     
     mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
@@ -2058,29 +2205,69 @@ function playVoice(btn, url, msgKey, isOut) {
 function startAudioProgress(msgKey) {
   clearInterval(audioUpdateInterval);
   const durEl = document.getElementById('dur-' + msgKey);
-  const origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; if (origStr) { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
+  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0; 
+  
+  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+    const parts = origStr.split(':'); 
+    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  }
+  
   audioUpdateInterval = setInterval(() => {
     if (currentAudio && !currentAudio.paused) {
-      let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration;
-      if (totalDuration > 0) {
-        let perc = (currentAudio.currentTime / totalDuration) * 100; if (perc > 100) perc = 100;
-        let fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = perc + '%';
-        if (durEl) { const curSec = Math.floor(currentAudio.currentTime), m = Math.floor(curSec / 60), s = curSec % 60; durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`; }
+      let realDur = currentAudio.duration;
+      
+      if (realDur && realDur !== Infinity && !isNaN(realDur)) {
+        if (origStr.includes('أغنية') || origStr === '0:00') {
+          const totM = Math.floor(realDur / 60);
+          const totS = Math.floor(realDur % 60);
+          origStr = `${totM}:${totS < 10 ? '0' : ''}${totS}`;
+          if (durEl) durEl.setAttribute('data-orig', origStr);
+        }
+        fallbackDuration = realDur;
       }
+      
+      const curSec = Math.floor(currentAudio.currentTime || 0);
+      const m = Math.floor(curSec / 60);
+      const s = curSec % 60;
+      const currentFormatted = `${m}:${s < 10 ? '0' : ''}${s}`;
+
+      if (fallbackDuration > 0) {
+        let perc = (currentAudio.currentTime / fallbackDuration) * 100; 
+        if (perc > 100) perc = 100;
+        let fill = document.getElementById('progress-' + msgKey); 
+        if (fill) fill.style.width = perc + '%';
+      }
+      
+      if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
     }
   }, 30); 
 }
 
 function seekVoice(event, url, msgKey) {
   if (!currentAudio || currentAudioUrl !== url) return;
-  const durEl = document.getElementById('dur-' + msgKey), origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; if (origStr) { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
-  let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration; if (!totalDuration) return;
-  const rect = event.currentTarget.getBoundingClientRect(), clickX = rect.right - event.clientX; 
-  let perc = clickX / rect.width; if (perc < 0) perc = 0; if (perc > 1) perc = 1;
+  const durEl = document.getElementById('dur-' + msgKey);
+  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  
+  let fallbackDuration = 0; 
+  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+    const parts = origStr.split(':'); 
+    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  }
+  
+  let realDur = currentAudio.duration; 
+  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
+  
+  if (!totalDuration || totalDuration <= 0) return;
+  
+  const rect = event.currentTarget.getBoundingClientRect();
+  const clickX = rect.right - event.clientX; 
+  let perc = clickX / rect.width; 
+  if (perc < 0) perc = 0; if (perc > 1) perc = 1;
+  
   currentAudio.currentTime = totalDuration * perc;
-  const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = (perc * 100) + '%';
+  const fill = document.getElementById('progress-' + msgKey); 
+  if (fill) fill.style.width = (perc * 100) + '%';
 }
 
 /* ═══════════════════════════════════
@@ -2088,26 +2275,27 @@ function seekVoice(event, url, msgKey) {
 ═══════════════════════════════════ */
 function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = null) {
   const tempId = 'temp_media_' + Date.now();
+  const tempUrl = URL.createObjectURL(file);
   const area = document.getElementById('messages-area');
-  const labelText = mediaType === 'audio' ? 'أغنية' : 'فيديو';
 
   const tempMsg = {
-    key: tempId, type: 'text', senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
-    text: `جاري رفع ${labelText}...`,
-    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : 'ميديا' } : null
+    key: tempId, type: mediaType, url: tempUrl, size: fileSizeMB + ' MB', duration: extraDuration || '0:00',
+    senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
+    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : '🎙️ صوت' } : null
   };
   if (replyingToMsg) cancelReply();
 
   if (area) {
     const el = buildMsgEl(tempMsg, false); el.id = 'row_' + tempId;
-    const bubble = el.querySelector('.msg-bubble');
-    bubble.innerHTML = `
-      <div style="font-size:13px; font-weight:bold; margin-bottom:5px;">جاري رفع ${labelText} (${fileSizeMB} MB)</div>
-      <div style="font-size:11px; color:var(--text-secondary); text-align:left;" id="pct_${tempId}">0%</div>
-      <div class="upload-progress-wrapper"><div class="upload-progress-bar" id="bar_${tempId}"></div></div>
-    `;
-    bubble.style.overflow = 'hidden'; 
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
+    
+    const ov = el.querySelector('.pending-overlay'); 
+    if (ov) ov.innerHTML = `
+        <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
+        <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
+            <div id="bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+        </div>
+    `;
   }
 
   const fd = new FormData();
@@ -2131,7 +2319,7 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
     let data = {};
     try { data = JSON.parse(xhr.responseText); } catch(e) {}
 
-    if (xhr.status === 200) {
+    if (xhr.status === 200 && data.secure_url) {
       const row = document.getElementById('row_' + tempId);
       if (row) row.remove();
       
@@ -2149,14 +2337,13 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       });
     } else {
       const row = document.getElementById('row_' + tempId);
-      const errMsg = data.error ? data.error.message : 'خطأ بالسيرفر';
-      if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">فشل: ${errMsg} ❌</div>`;
+      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">فشل الرفع ❌</div>`; }
     }
   };
 
   xhr.onerror = function() {
     const row = document.getElementById('row_' + tempId);
-    if (row) row.querySelector('.msg-bubble').innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">خطأ بالاتصال ❌</div>`;
+    if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">خطأ بالاتصال ❌</div>`; }
   };
 
   xhr.send(fd);
