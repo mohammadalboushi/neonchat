@@ -1143,6 +1143,18 @@ function attachMessages(chatId) {
 }
 
 function buildMsgEl(msg, isBackground = false) {
+  // فحص أمان: إذا الرسالة صوت أو صورة وما فيها رابط، أو نص وفاضي، منعطل ظهورها
+  if ((msg.type === 'voice' || msg.type === 'audio' || msg.type === 'image' || msg.type === 'video') && !msg.url && !msg.isPending) {
+    const dummy = document.createElement('div');
+    dummy.style.display = 'none';
+    return dummy;
+  }
+  if (msg.type === 'text' && (!msg.text || !msg.text.trim())) {
+    const dummy = document.createElement('div');
+    dummy.style.display = 'none';
+    return dummy;
+  }
+
   if (msg.isDeleted) {
     const row = document.createElement('div');
     row.className = 'msg-row ' + (msg.senderUid === currentUser.uid ? 'out' : 'in');
@@ -1463,8 +1475,15 @@ async function toggleRecording(isSinging = false) {
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
-      const blob = new Blob(localChunks, { type: 'audio/webm' });
+      const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+      const blob = new Blob(localChunks, { type: actualMimeType });
       const finalDuration = recordDurationStr;
+      
+      // حماية صارمة: إذا الحجم صغير كتير أو المدة صفر بنلغي الإرسال لمنع الفقاعات الفاضية
+      if (blob.size < 3000 || finalDuration === '0:00') {
+         showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
+         return;
+      }
       
       const tempId = 'temp-audio-' + Date.now();
       const area = document.getElementById('messages-area');
@@ -1472,45 +1491,93 @@ async function toggleRecording(isSinging = false) {
         const tempDiv = document.createElement('div');
         tempDiv.className = 'msg-row out';
         tempDiv.id = tempId;
-        tempDiv.innerHTML = `<div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); display:flex; align-items:center; gap:8px;"><div style="width:16px; height:16px; border:2px solid var(--border-subtle); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div><span style="font-size:13px;">${isSingingMode ? 'جاري إرسال مقطع الغناء... 🎤' : 'جاري إرسال المقطع...'}</span></div>`;
+        tempDiv.innerHTML = `
+          <div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); width: 220px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
+              <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
+              <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
+            </div>
+            <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
+              <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+            </div>
+          </div>`;
         area.appendChild(tempDiv);
         area.scrollTop = area.scrollHeight;
       }
 
       await new Promise(r => setTimeout(r, 50));
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); 
-
-      try {
-        const fd = new FormData();
-        fd.append('file', blob);
-        fd.append('upload_preset', 'malaboushi_preset');
-        
-        const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', {
-          method: 'POST', body: fd, signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        const data = await res.json();
-        
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
-
-        if (data.secure_url) {
-          let replyData = null;
-          if (replyingToMsg) {
-            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-            cancelReply();
+      
+      const tryUploadVoice = () => {
+          const el = document.getElementById(tempId);
+          if (el) {
+              const lbl = document.getElementById('voice_lbl_' + tempId);
+              const pct = document.getElementById('voice_pct_' + tempId);
+              const bar = document.getElementById('voice_bar_' + tempId);
+              if (lbl) { lbl.textContent = isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'; lbl.style.color = 'var(--text-secondary)'; }
+              if (pct) pct.textContent = '0%';
+              if (bar) { bar.style.width = '0%'; bar.style.background = 'linear-gradient(90deg, var(--neon-purple), var(--neon-cyan))'; }
           }
-          await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
-        } else throw new Error('فشل الرفع');
-      } catch (e) {
-        clearTimeout(timeoutId);
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
-        if (e.name === 'AbortError') { showToast('انتهى وقت الرفع، تأكد من جودة اتصالك', 'error'); } 
-        else { showToast('فشل: ' + e.message, 'error'); }
-      }
+
+          const fd = new FormData();
+          fd.append('file', blob);
+          fd.append('upload_preset', 'malaboushi_preset');
+          fd.append('resource_type', 'video'); // إجباري لعدم التعليق
+
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/video/upload', true);
+          xhr.timeout = 20000; // مهلة 20 ثانية
+
+          xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              const bar = document.getElementById('voice_bar_' + tempId);
+              const pctTxt = document.getElementById('voice_pct_' + tempId);
+              if (bar) bar.style.width = percent + '%';
+              if (pctTxt) pctTxt.textContent = percent + '%';
+              if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
+            }
+          };
+
+          const handleFail = (msg) => {
+             const row = document.getElementById(tempId);
+             if (row) {
+                const bubble = row.querySelector('.msg-bubble');
+                if (bubble) {
+                   bubble.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); width:100%;">${msg} 🔄</button>`;
+                }
+             }
+          };
+
+          xhr.onload = async function() {
+            if (xhr.status === 200) {
+              let data = {};
+              try { data = JSON.parse(xhr.responseText); } catch(e) {}
+              if (data.secure_url) {
+                const tempEl = document.getElementById(tempId);
+                if (tempEl) tempEl.remove();
+                
+                let replyData = null;
+                if (replyingToMsg) {
+                  replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+                  cancelReply();
+                }
+                await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+              } else {
+                handleFail('رفض السيرفر الملف');
+              }
+            } else {
+              handleFail('فشل الرفع');
+            }
+          };
+
+          xhr.onerror = function() { handleFail('خطأ اتصال بالشبكة'); };
+          xhr.ontimeout = function() { handleFail('انتهى الوقت'); };
+
+          xhr.send(fd);
+      };
+      
+      window.pendingUploads[tempId] = tryUploadVoice;
+      tryUploadVoice();
     };
     
     mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
@@ -2009,8 +2076,11 @@ function uploadMediaWithUI(file, type, extraData = null) {
     }
     
     const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
+    
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+    // إجبار السيرفر يعالجها كصورة لعدم التعليق
+    xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/image/upload', true);
+    xhr.timeout = 25000; // مهلة 25 ثانية
     
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) {
@@ -2019,9 +2089,17 @@ function uploadMediaWithUI(file, type, extraData = null) {
         const pctTxt = document.getElementById('pct_' + tempId);
         if (bar) bar.style.width = percent + '%';
         if (pctTxt) pctTxt.textContent = percent + '%';
+        if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
       }
     };
     
+    const handleFail = (msg) => {
+        if (row) { 
+          const ov = row.querySelector('.pending-overlay'); 
+          if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
+        }
+    };
+
     xhr.onload = async () => {
       let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
       if (xhr.status === 200 && data.secure_url) {
@@ -2031,13 +2109,12 @@ function uploadMediaWithUI(file, type, extraData = null) {
         if (currentRow) currentRow.remove();
         await pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
       } else {
-        if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">فشل، إضغط للإعادة 🔄</button>`; }
+        handleFail('فشل الرفع');
       }
     };
     
-    xhr.onerror = () => {
-      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">خطأ اتصال، أعد المحاولة</button>`; }
-    };
+    xhr.onerror = () => handleFail('خطأ اتصال');
+    xhr.ontimeout = () => handleFail('انتهى الوقت');
     
     xhr.send(fd);
   };
@@ -2143,9 +2220,8 @@ async function toggleRecording(isSinging = false) {
       const blob = new Blob(localChunks, { type: 'audio/webm' });
       const finalDuration = recordDurationStr;
       
-      // 🚀 حماية: إذا كان التسجيل فارغ تماماً (المستخدم ضغط وفلت فوراً قبل ما يلقط صوت)، منرميه
-      if (blob.size < 1000) {
-         showToast('لم يتم التقاط الصوت، المايكروفون كان قيد التجهيز', 'error');
+      // حماية صارمة: إذا الحجم أقل من 3 كيلوبايت أو المدة صفر، بنلغي الإرسال فوراً
+      if (blob.size < 3000 || finalDuration === '0:00') {
          return;
       }
       
@@ -2431,65 +2507,80 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
   if (area) {
     const el = buildMsgEl(tempMsg, false); el.id = 'row_' + tempId;
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
-    
-    const ov = el.querySelector('.pending-overlay'); 
-    if (ov) ov.innerHTML = `
-        <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
-        <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
-            <div id="bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
-        </div>
-    `;
   }
 
-  const fd = new FormData();
-  fd.append('file', file);
-  fd.append('upload_preset', 'malaboushi_preset');
-
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); 
-
-  xhr.upload.onprogress = function(e) {
-    if (e.lengthComputable) {
-      const percent = Math.round((e.loaded / e.total) * 100);
-      const bar = document.getElementById('bar_' + tempId);
-      const pctTxt = document.getElementById('pct_' + tempId);
-      if (bar) bar.style.width = percent + '%';
-      if (pctTxt) pctTxt.textContent = percent + '%';
-    }
-  };
-
-  xhr.onload = async function() {
-    let data = {};
-    try { data = JSON.parse(xhr.responseText); } catch(e) {}
-
-    if (xhr.status === 200 && data.secure_url) {
+  const tryUpload = () => {
       const row = document.getElementById('row_' + tempId);
-      if (row) row.remove();
-      
-      const deleteToken = data.delete_token || null;
-      
-      await pushMessage({ 
-        type: mediaType, 
-        url: data.secure_url, 
-        size: fileSizeMB, 
-        duration: extraDuration,
-        deleteToken: deleteToken,
-        senderUid: currentUser.uid, 
-        timestamp: Date.now(), 
-        replyTo: tempMsg.replyTo 
-      });
-    } else {
-      const row = document.getElementById('row_' + tempId);
-      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">فشل الرفع ❌</div>`; }
-    }
-  };
+      if (row) {
+          const ov = row.querySelector('.pending-overlay'); 
+          if (ov) ov.innerHTML = `
+              <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
+              <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
+                  <div id="bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+              </div>
+          `;
+      }
 
-  xhr.onerror = function() {
-    const row = document.getElementById('row_' + tempId);
-    if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="color:var(--neon-pink); font-size:12px; font-weight:bold;">خطأ بالاتصال ❌</div>`; }
-  };
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', 'malaboushi_preset');
+      fd.append('resource_type', 'video'); // للـ فيديو والصوت
 
-  xhr.send(fd);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/video/upload', true); 
+      xhr.timeout = 60000; // مهلة 60 ثانية
+
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          const bar = document.getElementById('bar_' + tempId);
+          const pctTxt = document.getElementById('pct_' + tempId);
+          if (bar) bar.style.width = percent + '%';
+          if (pctTxt) pctTxt.textContent = percent + '%';
+          if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
+        }
+      };
+
+      const handleFail = (msg) => {
+          if (row) { 
+            const ov = row.querySelector('.pending-overlay'); 
+            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
+          }
+      };
+
+      xhr.onload = async function() {
+        let data = {};
+        try { data = JSON.parse(xhr.responseText); } catch(e) {}
+
+        if (xhr.status === 200 && data.secure_url) {
+          const currentRow = document.getElementById('row_' + tempId);
+          if (currentRow) currentRow.remove();
+          
+          const deleteToken = data.delete_token || null;
+          
+          await pushMessage({ 
+            type: mediaType, 
+            url: data.secure_url, 
+            size: fileSizeMB, 
+            duration: extraDuration,
+            deleteToken: deleteToken,
+            senderUid: currentUser.uid, 
+            timestamp: Date.now(), 
+            replyTo: tempMsg.replyTo 
+          });
+        } else {
+          handleFail('فشل الرفع');
+        }
+      };
+
+      xhr.onerror = function() { handleFail('خطأ اتصال'); };
+      xhr.ontimeout = function() { handleFail('انتهى الوقت'); };
+
+      xhr.send(fd);
+  };
+  
+  window.pendingUploads[tempId] = tryUpload;
+  tryUpload();
 }
 
 let videoEl = document.getElementById('custom-video-el');
