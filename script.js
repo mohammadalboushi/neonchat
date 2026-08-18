@@ -1348,71 +1348,10 @@ function buildMsgEl(msg, isBackground = false) {
 }
 
 /* ═══════════════════════════════════
-   UNIVERSAL UPLOAD ENGINE
+   ملاحظة: تم إزالة الكود المكرر من هنا
+   لأنه كان يسبب تعارضاً مع دالة الرفع المخصصة
+   للفيديوهات والمقاطع الصوتية الموجودة في الأسفل.
 ═══════════════════════════════════ */
-window.pendingUploads = {};
-async function uploadMediaWithUI(file, type, extraData = null) {
-  const tempId = 'temp_' + Date.now();
-  const tempUrl = URL.createObjectURL(file);
-  const area = document.getElementById('messages-area');
-
-  const tempMsg = {
-    key: tempId, type: type, url: tempUrl, duration: extraData?.duration || '0:00',
-    senderUid: currentUser.uid, timestamp: Date.now(), isPending: true,
-    replyTo: replyingToMsg ? { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' } : null
-  };
-  if (replyingToMsg) cancelReply();
-
-  if (area) {
-    const el = buildMsgEl(tempMsg, false); el.id = 'row_' + tempId;
-    area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
-  }
-
-    const tryUpload = async () => {
-    const row = document.getElementById('row_' + tempId);
-    if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`; }
-    try {
-      const controller = new AbortController(); 
-      const timeoutId = setTimeout(() => controller.abort(), 12000); 
-      const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
-      const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', { method: 'POST', body: fd, signal: controller.signal });
-      clearTimeout(timeoutId); 
-      const data = await res.json();
-      if (data.secure_url) {
-        window.lastUploadedUrl = data.secure_url;
-        if (type === 'image' && window.localImageCache) window.localImageCache[data.secure_url] = tempUrl; // 🚀 حفظنا الصورة محلياً لتضل فخمة وبدون رفة
-        if (row) row.remove();
-        pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
-      } else throw new Error('فشل');
-    } catch (e) {
-
-      if (row) { const ov = row.querySelector('.pending-overlay'); if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">فشل، اضغط للإعادة 🔄</button>`; }
-    }
-  };
-  window.pendingUploads[tempId] = tryUpload;
-  await tryUpload();
-}
-
-/* ═══════════════════════════════════
-   MEDIA UPLOAD
-═══════════════════════════════════ */
-document.getElementById('file-img-input').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file || !currentChat) return;
-  e.target.value = '';
-  
-  let mediaType = 'image';
-  const fileType = file.type.toLowerCase();
-  const fileName = file.name.toLowerCase();
-  
-  if (fileType.startsWith('video/')) {
-    mediaType = 'video';
-  } else if (fileType.startsWith('audio/') || fileName.match(/\.(mp3|m4a|wav|ogg|aac|amr)$/)) {
-    mediaType = 'audio';
-  }
-  
-  uploadMediaWithUI(file, mediaType);
-});
 
 /* ═══════════════════════════════════
    VOICE RECORDING
@@ -2526,12 +2465,10 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       const fd = new FormData();
       fd.append('file', file);
       fd.append('upload_preset', 'malaboushi_preset');
-      // شلنا الـ resource_type الإجباري لأن الفيديوهات الجاهزة سليمة
 
       const xhr = new XMLHttpRequest();
-      // رجعنا الرفع لـ auto/upload لحل مشكلة رفض السيرفر للفيديو
       xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); 
-      xhr.timeout = 120000; // رفعنا المهلة لـ 120 ثانية لتكفي الفيديوهات اللي بتاخد وقت بالمعالجة
+      xhr.timeout = 180000; // 3 دقائق كاملة
 
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {
@@ -2539,45 +2476,64 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
           const bar = document.getElementById('bar_' + tempId);
           const pctTxt = document.getElementById('pct_' + tempId);
           if (bar) bar.style.width = percent + '%';
-          if (pctTxt) pctTxt.textContent = percent + '%';
-          if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
+          if (pctTxt) {
+              if (percent < 100) {
+                  pctTxt.textContent = percent + '%';
+              } else {
+                  pctTxt.textContent = '⏳ بانتظار السيرفر...';
+              }
+          }
         }
       };
 
       const handleFail = (msg) => {
           if (row) { 
             const ov = row.querySelector('.pending-overlay'); 
-            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
+            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>`; 
           }
       };
 
       xhr.onload = async function() {
-        let data = {};
-        try { data = JSON.parse(xhr.responseText); } catch(e) {}
+        // فحص حالة الاستجابة بشكل دقيق
+        if (xhr.status >= 200 && xhr.status < 300) {
+          let data = {};
+          try { data = JSON.parse(xhr.responseText); } catch(e) {}
 
-        if (xhr.status === 200 && data.secure_url) {
-          const currentRow = document.getElementById('row_' + tempId);
-          if (currentRow) currentRow.remove();
-          
-          const deleteToken = data.delete_token || null;
-          
-          await pushMessage({ 
-            type: mediaType, 
-            url: data.secure_url, 
-            size: fileSizeMB, 
-            duration: extraDuration,
-            deleteToken: deleteToken,
-            senderUid: currentUser.uid, 
-            timestamp: Date.now(), 
-            replyTo: tempMsg.replyTo 
-          });
+          if (data && data.secure_url) {
+            const currentRow = document.getElementById('row_' + tempId);
+            if (currentRow) currentRow.remove();
+            
+            const deleteToken = data.delete_token || null;
+            
+            await pushMessage({ 
+              type: mediaType, 
+              url: data.secure_url, 
+              size: fileSizeMB, 
+              duration: extraDuration,
+              deleteToken: deleteToken,
+              senderUid: currentUser.uid, 
+              timestamp: Date.now(), 
+              replyTo: tempMsg.replyTo 
+            });
+          } else {
+            handleFail('استجابة فارغة من السيرفر');
+          }
         } else {
-          handleFail('فشل الرفع');
+          let serverMsg = 'خطأ ' + xhr.status;
+          try {
+              let errJson = JSON.parse(xhr.responseText);
+              if (errJson && errJson.error && errJson.error.message) {
+                  serverMsg = errJson.error.message;
+              }
+          } catch(e) {
+              if (xhr.responseText) serverMsg = xhr.responseText.substring(0, 40);
+          }
+          handleFail(serverMsg);
         }
       };
 
-      xhr.onerror = function() { handleFail('خطأ اتصال'); };
-      xhr.ontimeout = function() { handleFail('انتهى الوقت'); };
+      xhr.onerror = function() { handleFail('مشكلة شبكة أو CORS'); };
+      xhr.ontimeout = function() { handleFail('انتهى وقت الانتظار'); };
 
       xhr.send(fd);
   };
