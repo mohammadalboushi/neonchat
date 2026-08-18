@@ -2526,11 +2526,12 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       const fd = new FormData();
       fd.append('file', file);
       fd.append('upload_preset', 'malaboushi_preset');
-      fd.append('resource_type', 'video'); // للـ فيديو والصوت
+      // شلنا الـ resource_type الإجباري لأن الفيديوهات الجاهزة سليمة
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/video/upload', true); 
-      xhr.timeout = 60000; // مهلة 60 ثانية
+      // رجعنا الرفع لـ auto/upload لحل مشكلة رفض السيرفر للفيديو
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); 
+      xhr.timeout = 120000; // رفعنا المهلة لـ 120 ثانية لتكفي الفيديوهات اللي بتاخد وقت بالمعالجة
 
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {
