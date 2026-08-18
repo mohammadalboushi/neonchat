@@ -1510,22 +1510,29 @@ async function toggleRecording(isSinging = false) {
       const tryUploadVoice = () => {
           const el = document.getElementById(tempId);
           if (el) {
-              const lbl = document.getElementById('voice_lbl_' + tempId);
-              const pct = document.getElementById('voice_pct_' + tempId);
-              const bar = document.getElementById('voice_bar_' + tempId);
-              if (lbl) { lbl.textContent = isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'; lbl.style.color = 'var(--text-secondary)'; }
-              if (pct) pct.textContent = '0%';
-              if (bar) { bar.style.width = '0%'; bar.style.background = 'linear-gradient(90deg, var(--neon-purple), var(--neon-cyan))'; }
+              // نرجع الفقاعة لشكلها الأصلي بحال كانت جاي من إعادة محاولة
+              const bubble = el.querySelector('.msg-bubble');
+              if (bubble) {
+                 bubble.innerHTML = `
+                  <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
+                    <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
+                    <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
+                  </div>
+                  <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
+                    <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+                  </div>`;
+                 bubble.style.background = 'rgba(0, 240, 255, 0.05)';
+                 bubble.style.border = '1px dashed var(--neon-cyan)';
+              }
           }
 
           const fd = new FormData();
           fd.append('file', blob);
           fd.append('upload_preset', 'malaboushi_preset');
-          fd.append('resource_type', 'video'); // إجباري لعدم التعليق
 
           const xhr = new XMLHttpRequest();
-          xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/video/upload', true);
-          xhr.timeout = 20000; // مهلة 20 ثانية
+          xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+          xhr.timeout = 25000; // مهلة 25 ثانية قبل ما يعتبره فشل
 
           xhr.upload.onprogress = function(e) {
             if (e.lengthComputable) {
@@ -1544,6 +1551,8 @@ async function toggleRecording(isSinging = false) {
                 const bubble = row.querySelector('.msg-bubble');
                 if (bubble) {
                    bubble.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); width:100%;">${msg} 🔄</button>`;
+                   bubble.style.border = 'none';
+                   bubble.style.background = 'transparent';
                 }
              }
           };
@@ -1563,7 +1572,7 @@ async function toggleRecording(isSinging = false) {
                 }
                 await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
               } else {
-                handleFail('رفض السيرفر الملف');
+                handleFail('السيرفر رفض الملف');
               }
             } else {
               handleFail('فشل الرفع');
@@ -1571,7 +1580,7 @@ async function toggleRecording(isSinging = false) {
           };
 
           xhr.onerror = function() { handleFail('خطأ اتصال بالشبكة'); };
-          xhr.ontimeout = function() { handleFail('انتهى الوقت'); };
+          xhr.ontimeout = function() { handleFail('انتهى الوقت، أعد المحاولة'); };
 
           xhr.send(fd);
       };
