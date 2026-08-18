@@ -876,11 +876,10 @@ function attachMessages(chatId) {
 
   messagesRef = db.ref('chats/' + chatId + '/messages');
   
-  let query;
+  // 🚀 الحل الجذري: نلغي الاعتماد على startAt نهائياً لأنه يسبب اختفاء الرسائل لو توقيت الأجهزة مختلف
+  currentMessagesQuery = messagesRef.orderByKey().limitToLast(100);
+  
   if (liveMsgsCache.length > 0) {
-    const latestKey = liveMsgsCache[liveMsgsCache.length - 1].key;
-    query = messagesRef.orderByKey().startAt(latestKey);
-    
     // التحديث الصامت: جلب حالة آخر 50 رسالة وتحديث المؤشرات بدون إعادة بناء الواجهة
     messagesRef.orderByKey().limitToLast(50).once('value', snapshot => {
       if(snapshot.exists()) {
@@ -908,13 +907,7 @@ function attachMessages(chatId) {
         });
       }
     });
-
-  } else {
-    query = messagesRef.orderByKey().limitToLast(100);
   }
-
-  // حفظ الاستعلام لحل مشكلة التعليق عند الدخول والخروج
-  currentMessagesQuery = query;
 
   let scrollTimeout;
 
