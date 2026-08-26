@@ -1796,23 +1796,35 @@ function openMsgMenu(msg, isOut) {
   }
   if (msg.type === 'audio' || msg.type === 'voice' || msg.type === 'video' || msg.type === 'image') {
     const btnDownload = document.createElement('button'); btnDownload.className = 'msg-menu-btn'; btnDownload.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${msg.type === 'video' ? 'تنزيل الفيديو' : (msg.type === 'image' ? 'تنزيل الصورة' : 'تنزيل المقطع')}`;
-    btnDownload.onclick = () => { 
-      showToast('جاري التنزيل...');
-      fetch(msg.url).then(res => res.blob()).then(blob => {
-        const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
-        const url = window.URL.createObjectURL(forcedBlob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = msg.type === 'video' ? `Video_${Date.now()}.mp4` : msg.type === 'image' ? `Image_${Date.now()}.jpg` : (msg.type === 'audio' ? `Song_${Date.now()}.mp3` : `Voice_${Date.now()}.mp3`);
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        showToast('تم التنزيل بنجاح', 'success');
-      }).catch(() => showToast('تعذر التنزيل', 'error'));
-      closeMsgMenu(); 
-    }; 
+                            btnDownload.onclick = () => { 
+          showToast('جاري التنزيل...');
+          let dlUrl = msg.url;
+          let uniqueName = msg.type === 'video' ? `Video_${Date.now()}` : msg.type === 'image' ? `Image_${Date.now()}` : (msg.type === 'audio' ? `Song_${Date.now()}` : `Voice_${Date.now()}`);
+          
+          if (dlUrl.includes('cloudinary.com') && dlUrl.includes('/upload/')) {
+            // إجبار السيرفر يعطي الملف اسم فريد كرمال ما يستبدل القديم
+            dlUrl = dlUrl.replace('/upload/', `/upload/fl_attachment:${uniqueName}/`);
+            
+            // تحويل الصيغة فورياً عن طريق تغيير اللاحقة بالرابط
+            if (msg.type === 'voice' || msg.type === 'audio') {
+              dlUrl = dlUrl.replace(/\.[^/.]+$/, ".mp3");
+            } else if (msg.type === 'video') {
+              dlUrl = dlUrl.replace(/\.[^/.]+$/, ".mp4");
+            } else if (msg.type === 'image') {
+              dlUrl = dlUrl.replace(/\.[^/.]+$/, ".jpg");
+            }
+          }
+          
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = dlUrl;
+          a.download = uniqueName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          showToast('تم التنزيل بنجاح', 'success');
+          closeMsgMenu(); 
+        }; 
     menu.appendChild(btnDownload);
   }
   if (isOut) {
