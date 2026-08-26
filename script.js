@@ -75,13 +75,6 @@ const msgReadObserver = new IntersectionObserver((entries, observer) => {
 /* ═══════════════════════════════════
    BACKGROUND CANVAS (مُحسن للبطارية)
 ═══════════════════════════════════ */
-// تفعيل الفول سكرين تلقائياً عند أول تفاعل للمستخدم (شغال على localhost)
-document.addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  }
-}, { once: true });
-
 (function initBg() {
   const canvas = document.getElementById('bg-canvas');
   const ctx = canvas.getContext('2d');

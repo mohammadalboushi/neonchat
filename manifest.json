@@ -3,9 +3,9 @@
   "short_name": "NeonChat",
   "description": "تم بناؤه بواسطة Mohammad Al Boushi",
   "start_url": "./index.html",
-  "display": "fullscreen",
-  "background_color": "#000000",
-  "theme_color": "#ffffff",
+  "display": "standalone",
+  "background_color": "#020408",
+  "theme_color": "#020408",
   "orientation": "portrait",
   "icons": [
     {
