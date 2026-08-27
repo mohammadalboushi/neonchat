@@ -280,6 +280,14 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
         const swReg = await navigator.serviceWorker.register('./sw.js');
         const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
         if (token) await db.ref('users/' + user.uid + '/fcmToken').set(token);
+        
+        // تحديث التوكن تلقائياً بصمت إذا تغير بالخلفية لضمان استمرار وصول الإشعارات
+        messaging.onTokenRefresh(async () => {
+          try {
+            const newToken = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+            if (newToken) await db.ref('users/' + user.uid + '/fcmToken').set(newToken);
+          } catch (e) {}
+        });
       } catch (err) {}
       initCallListener(user.uid); initFriendRequestsListener(user.uid); initFriendsListListener(user.uid); 
       initMicrophone(); 
