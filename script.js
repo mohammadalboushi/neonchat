@@ -2771,8 +2771,12 @@ function initCallListener(uid) {
   myCallListener = db.ref('calls/' + uid).on('value', snap => {
     const data = snap.val();
     if (!data) { forceEndCallUI(); return; }
-    currentCallPeer = data.peerUid; window.currentCallId = data.chatId;
+    
+    currentCallPeer = data.peerUid; 
+    window.currentCallId = data.chatId;
+    
     const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('btn-accept-call'), ringAudio = document.getElementById('ringtone-audio');
+    
     if (nameView) nameView.textContent = data.peerName || 'مستخدم';
     if (avatarView) avatarView.textContent = (data.peerName || '?').charAt(0);
     
@@ -2783,23 +2787,37 @@ function initCallListener(uid) {
       if (navigator.vibrate) navigator.vibrate([500, 300, 500, 300, 500]);
       renderScreenUI('call');
     } else if (data.status === 'answered') {
-      if(ringAudio && !ringAudio.paused) ringAudio.pause();
+      if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
       if(acceptBtn) acceptBtn.style.display = 'none';
-      if(statusView) statusView.textContent = 'جاري التوصيل...';
-      startCallTimer();
-      if (data.role === 'caller') joinAgoraVoice(window.currentCallId);
-    } else if (data.status === 'ended') forceEndCallUI();
+      
+      if (data.role === 'caller' && !window.callTimerInt) {
+        startCallTimer();
+      }
+    } else if (data.status === 'ended') {
+      forceEndCallUI();
+    }
   });
 }
 
 async function startCall() {
-  if (!currentChat) return; currentCallPeer = currentChat.friendUid; window.currentCallId = [currentUser.uid, currentCallPeer].sort().join('_');
+  if (!currentChat) return; 
+  currentCallPeer = currentChat.friendUid; 
+  window.currentCallId = [currentUser.uid, currentCallPeer].sort().join('_');
+  
   const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('btn-accept-call'), ringAudio = document.getElementById('ringtone-audio');
-  if(nameView) nameView.textContent = currentChat.friendProfile.name; if(avatarView) avatarView.textContent = (currentChat.friendProfile.name || '?').charAt(0);
+  
+  if(nameView) nameView.textContent = currentChat.friendProfile.name; 
+  if(avatarView) avatarView.textContent = (currentChat.friendProfile.name || '?').charAt(0);
   if(statusView) { statusView.textContent = 'جاري الاتصال...'; statusView.style.color = 'var(--neon-cyan)'; }
   if(acceptBtn) acceptBtn.style.display = 'none';
-  if(ringAudio && ringAudio.paused) ringAudio.play().catch(e=>{});
+  
   renderScreenUI('call');
+  
+  // 🚀 المتصل يدخل غرفة الصوت فوراً (هذا يحل مشكلة كتم الصوت من المتصفح)
+  await joinAgoraVoice(window.currentCallId);
+
+  if(ringAudio && ringAudio.paused) ringAudio.play().catch(e=>{});
+
   await db.ref('calls/' + currentUser.uid).set({ status: 'calling', role: 'caller', peerUid: currentCallPeer, peerName: currentChat.friendProfile.name, chatId: window.currentCallId });
   await db.ref('calls/' + currentCallPeer).set({ status: 'incoming', role: 'callee', peerUid: currentUser.uid, peerName: myProfile.name, chatId: window.currentCallId });
 }
@@ -2807,21 +2825,39 @@ async function startCall() {
 async function acceptCall() {
   if (!currentCallPeer) return;
   const acceptBtn = document.getElementById('btn-accept-call'), statusView = document.getElementById('call-status-view'), ringAudio = document.getElementById('ringtone-audio');
-  if(ringAudio && !ringAudio.paused) ringAudio.pause(); if(acceptBtn) acceptBtn.style.display = 'none'; if(statusView) statusView.textContent = 'جاري التوصيل...';
-  await db.ref('calls/' + currentUser.uid).update({ status: 'answered' }); await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
-  startCallTimer(); joinAgoraVoice(window.currentCallId);
+  
+  if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
+  if(acceptBtn) acceptBtn.style.display = 'none'; 
+  if(statusView) statusView.textContent = 'جاري التوصيل...';
+  
+  // 🚀 المستقبل يدخل غرفة الصوت فوراً بمجرد كبسة الزر
+  await joinAgoraVoice(window.currentCallId);
+  
+  await db.ref('calls/' + currentUser.uid).update({ status: 'answered' }); 
+  await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
+  
+  startCallTimer(); 
 }
 
 function endCall() {
   if (currentCallPeer) db.ref('calls/' + currentCallPeer).update({ status: 'ended' });
-  db.ref('calls/' + currentUser.uid).remove(); setTimeout(() => forceEndCallUI(), 500);
+  db.ref('calls/' + currentUser.uid).remove(); 
+  setTimeout(() => forceEndCallUI(), 500);
 }
 
 function forceEndCallUI() {
   if (window.callTimerInt) { clearInterval(window.callTimerInt); window.callTimerInt = null; }
-  const ringAudio = document.getElementById('ringtone-audio'); if (ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
-  if (window.localCallTrack) { window.localCallTrack.close(); window.localCallTrack = null; }
-  if (window.rtcCallClient) { window.rtcCallClient.leave(); window.rtcCallClient = null; }
+  const ringAudio = document.getElementById('ringtone-audio'); 
+  if (ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
+  
+  if (window.localCallTrack) { 
+    window.localCallTrack.stop(); // تحرير المايكروفون ليتسكر نظامي
+    window.localCallTrack.close(); 
+    window.localCallTrack = null; 
+  }
+  if (window.rtcCallClient) { 
+    window.rtcCallClient.leave(); 
+  }
   window.currentCallId = null;
   if (document.getElementById('screen-call').classList.contains('active')) renderScreenUI('chat');
 }
@@ -2830,26 +2866,31 @@ function startCallTimer() {
   if (window.callTimerInt) clearInterval(window.callTimerInt); 
   const startTime = Date.now(), statusView = document.getElementById('call-status-view');
   if(statusView) statusView.style.color = 'var(--neon-green)';
-  window.callTimerInt = setInterval(() => { const sec = Math.floor((Date.now() - startTime) / 1000), m = Math.floor(sec / 60), s = sec % 60; if(statusView) statusView.textContent = `متصل: ${m}:${s<10?'0':''}${s}`; }, 1000);
+  window.callTimerInt = setInterval(() => { 
+    const sec = Math.floor((Date.now() - startTime) / 1000), m = Math.floor(sec / 60), s = sec % 60; 
+    if(statusView) statusView.textContent = `متصل: ${m}:${s<10?'0':''}${s}`; 
+  }, 1000);
 }
 
 async function joinAgoraVoice(channelName) {
-  if (!window.rtcCallClient) window.rtcCallClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
   try {
-    // تشغيل الاستماع للطرف التاني (قبل ما ندخل الغرفة) لنضمن ما يضيع الصوت
-    window.rtcCallClient.on("user-published", async (user, mediaType) => { 
-      await window.rtcCallClient.subscribe(user, mediaType); 
-      if (mediaType === "audio") user.audioTrack.play(); 
-    });
-
-    await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
-    window.localCallTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "speech_standard" });
-    await window.rtcCallClient.publish([window.localCallTrack]);
+    if (!window.rtcCallClient) {
+      window.rtcCallClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+      window.rtcCallClient.on("user-published", async (user, mediaType) => { 
+        await window.rtcCallClient.subscribe(user, mediaType); 
+        if (mediaType === "audio") user.audioTrack.play(); 
+      });
+    }
     
+    if (window.rtcCallClient.connectionState === "DISCONNECTED") {
+      await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
+      window.localCallTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "high_quality" });
+      await window.rtcCallClient.publish([window.localCallTrack]);
+    }
   } catch (e) { 
     console.error("Agora Error:", e);
-    showToast('تعذر الاتصال بالصوت', 'error'); 
-    forceEndCallUI(); 
+    showToast('خطأ بالصوت، تأكد من صلاحية المايك', 'error'); 
+    endCall(); 
   }
 }
 
