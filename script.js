@@ -2884,37 +2884,37 @@ async function joinAgoraVoice(channelName) {
     if (window.rtcCallClient.connectionState === "DISCONNECTED") {
       await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
       
-      // 1. تشغيل المايك مع تفعيل عزل الصدى الإجباري للمكالمات الحية
-      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+      // 1. إغلاق عزل الصدى والضجيج للحصول على جودة الاستوديو المطلوبة
+      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       window.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       
-      // 2. تطبيق نفس فلاتر الفويسات تماماً (EQ + Compressor)
+      // 2. تطبيق الفلاتر
       const source = window.callAudioCtx.createMediaStreamSource(window.callRawStream);
       const preGain = window.callAudioCtx.createGain(); 
-      preGain.gain.value = 1.5; // 🚀 رفعنا قوة التقاط المايك ليعطيك صوت عالي جداً
+      preGain.gain.value = 1.0; // قوة المايك الأساسية: 1
       
       const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
       const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
       const presenceEQ = window.callAudioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4;
       const compressor = window.callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
       
-      // 3. صدى استوديو ناعم مخصص للمكالمات
+      // 3. صدى الاستوديو
       function generateReverb(ctx) { const length = ctx.sampleRate * 2.0; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
       const convolver = window.callAudioCtx.createConvolver(); convolver.buffer = generateReverb(window.callAudioCtx);
       
       const dryGain = window.callAudioCtx.createGain(); 
-      dryGain.gain.value = 1.2; // 🚀 صوت أساسي قوي ومضخم (كان بالفويسات 0.6)
+      dryGain.gain.value = 1.0; 
       const wetGain = window.callAudioCtx.createGain(); 
-      wetGain.gain.value = 0.04; // 🚀 صدى خفيف لتجميل الصوت بدون ما يضرب تصفير مع الطرف التاني
+      wetGain.gain.value = 0.5; // كمية الصدى: 0.5
       
       const dest = window.callAudioCtx.createMediaStreamDestination();
       
-      // ربط جميع الفلاتر مع بعضها للنتيجة النهائية
+      // ربط جميع الفلاتر مع بعضها
       source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
       compressor.connect(dryGain); dryGain.connect(dest); 
       compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
       
-      // إرسال الصوت المُفلتر لـ Agora
+      // إرسال الصوت لـ Agora
       window.localCallTrack = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: dest.stream.getAudioTracks()[0], encoderConfig: "speech_standard" });
       await window.rtcCallClient.publish([window.localCallTrack]);
     }
