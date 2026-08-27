@@ -2851,25 +2851,24 @@ function forceEndCallUI() {
   if (ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
   
   if (window.localCallTrack) { 
-    window.localCallTrack.stop(); // تحرير المايكروفون ليتسكر نظامي
+    window.localCallTrack.stop(); 
     window.localCallTrack.close(); 
     window.localCallTrack = null; 
   }
   if (window.rtcCallClient) { 
     window.rtcCallClient.leave(); 
   }
+  // إغلاق فلاتر الصوت والمايكروفون المخصص لتنظيف الذاكرة
+  if (window.callRawStream) {
+    window.callRawStream.getTracks().forEach(t => t.stop());
+    window.callRawStream = null;
+  }
+  if (window.callAudioCtx && window.callAudioCtx.state !== 'closed') {
+    window.callAudioCtx.close();
+    window.callAudioCtx = null;
+  }
   window.currentCallId = null;
   if (document.getElementById('screen-call').classList.contains('active')) renderScreenUI('chat');
-}
-
-function startCallTimer() {
-  if (window.callTimerInt) clearInterval(window.callTimerInt); 
-  const startTime = Date.now(), statusView = document.getElementById('call-status-view');
-  if(statusView) statusView.style.color = 'var(--neon-green)';
-  window.callTimerInt = setInterval(() => { 
-    const sec = Math.floor((Date.now() - startTime) / 1000), m = Math.floor(sec / 60), s = sec % 60; 
-    if(statusView) statusView.textContent = `متصل: ${m}:${s<10?'0':''}${s}`; 
-  }, 1000);
 }
 
 async function joinAgoraVoice(channelName) {
@@ -2884,7 +2883,39 @@ async function joinAgoraVoice(channelName) {
     
     if (window.rtcCallClient.connectionState === "DISCONNECTED") {
       await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
-      window.localCallTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "high_quality" });
+      
+      // 1. تشغيل المايك مع تفعيل عزل الصدى الإجباري للمكالمات الحية
+      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+      window.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // 2. تطبيق نفس فلاتر الفويسات تماماً (EQ + Compressor)
+      const source = window.callAudioCtx.createMediaStreamSource(window.callRawStream);
+      const preGain = window.callAudioCtx.createGain(); 
+      preGain.gain.value = 1.5; // 🚀 رفعنا قوة التقاط المايك ليعطيك صوت عالي جداً
+      
+      const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
+      const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
+      const presenceEQ = window.callAudioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4;
+      const compressor = window.callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+      
+      // 3. صدى استوديو ناعم مخصص للمكالمات
+      function generateReverb(ctx) { const length = ctx.sampleRate * 2.0; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
+      const convolver = window.callAudioCtx.createConvolver(); convolver.buffer = generateReverb(window.callAudioCtx);
+      
+      const dryGain = window.callAudioCtx.createGain(); 
+      dryGain.gain.value = 1.2; // 🚀 صوت أساسي قوي ومضخم (كان بالفويسات 0.6)
+      const wetGain = window.callAudioCtx.createGain(); 
+      wetGain.gain.value = 0.04; // 🚀 صدى خفيف لتجميل الصوت بدون ما يضرب تصفير مع الطرف التاني
+      
+      const dest = window.callAudioCtx.createMediaStreamDestination();
+      
+      // ربط جميع الفلاتر مع بعضها للنتيجة النهائية
+      source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
+      compressor.connect(dryGain); dryGain.connect(dest); 
+      compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
+      
+      // إرسال الصوت المُفلتر لـ Agora
+      window.localCallTrack = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: dest.stream.getAudioTracks()[0], encoderConfig: "speech_standard" });
       await window.rtcCallClient.publish([window.localCallTrack]);
     }
   } catch (e) { 
