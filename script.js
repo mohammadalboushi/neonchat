@@ -2837,27 +2837,21 @@ async function joinAgoraVoice(channelName) {
   if(!rtcCallClient) rtcCallClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
   try {
     await rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
-    let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
-    if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
-    callRawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-    callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = callAudioCtx.createMediaStreamSource(callRawStream);
-    const preGain = callAudioCtx.createGain(); preGain.gain.value = 0.4;
-    const lowCutFilter = callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
-    const highCutFilter = callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
-    const presenceEQ = callAudioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4;
-    const compressor = callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -24; compressor.knee.value = 30; compressor.ratio.value = 5; compressor.attack.value = 0.005; compressor.release.value = 0.25;
-    function generateReverb(ctx) { const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
-    const convolver = callAudioCtx.createConvolver(); convolver.buffer = generateReverb(callAudioCtx);
-    const dryGain = callAudioCtx.createGain(); dryGain.gain.value = 0.85;
-    const wetGain = callAudioCtx.createGain(); wetGain.gain.value = (2 / 100) * 3; 
-    const dest = callAudioCtx.createMediaStreamDestination();
-    source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
-    compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
-    localCallTrack = AgoraRTC.createCustomAudioTrack({ mediaStreamTrack: dest.stream.getAudioTracks()[0], encoderConfig: "high_quality_stereo" });
+    
+    // استخدام المايكروفون الافتراضي من أجورا لضمان معالجة الصدى والعمل على جميع الجوالات
+    localCallTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "high_quality" });
+    
     await rtcCallClient.publish([localCallTrack]);
-    rtcCallClient.on("user-published", async (user, mediaType) => { await rtcCallClient.subscribe(user, mediaType); if (mediaType === "audio") user.audioTrack.play(); });
-  } catch (e) { showToast('تعذر الاتصال بالصوت', 'error'); forceEndCallUI(); }
+    
+    rtcCallClient.on("user-published", async (user, mediaType) => { 
+      await rtcCallClient.subscribe(user, mediaType); 
+      if (mediaType === "audio") user.audioTrack.play(); 
+    });
+  } catch (e) { 
+    console.error("Agora Error:", e);
+    showToast('تعذر الاتصال بالصوت', 'error'); 
+    forceEndCallUI(); 
+  }
 }
 
 /* ═══════════════════════════════════
