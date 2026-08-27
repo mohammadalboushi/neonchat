@@ -36,9 +36,13 @@ module.exports = async (req, res) => {
       title: title || 'رسالة جديدة',
       body: body || 'لديك رسالة جديدة',
     },
+    android: {
+      priority: 'high',
+    },
     webpush: {
       headers: {
-        Urgency: 'high'
+        Urgency: 'high',
+        TTL: '86400'
       },
       notification: {
         icon: icon || 'https://neonchat.mooo.com/icon.png',
