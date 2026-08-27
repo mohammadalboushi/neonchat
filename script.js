@@ -2765,12 +2765,13 @@ if(msgInputEl) {
    CALL SYSTEM & AGORA
 ═══════════════════════════════════ */
 const AGORA_APP_ID = "7ca23eb56dfd45f7a89e9fd2a03a40ca";
+
 function initCallListener(uid) {
   if (myCallListener) db.ref('calls/' + uid).off('value', myCallListener);
   myCallListener = db.ref('calls/' + uid).on('value', snap => {
     const data = snap.val();
     if (!data) { forceEndCallUI(); return; }
-    currentCallPeer = data.peerUid; currentCallId = data.chatId;
+    currentCallPeer = data.peerUid; window.currentCallId = data.chatId;
     const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('btn-accept-call'), ringAudio = document.getElementById('ringtone-audio');
     if (nameView) nameView.textContent = data.peerName || 'مستخدم';
     if (avatarView) avatarView.textContent = (data.peerName || '?').charAt(0);
@@ -2786,21 +2787,21 @@ function initCallListener(uid) {
       if(acceptBtn) acceptBtn.style.display = 'none';
       if(statusView) statusView.textContent = 'جاري التوصيل...';
       startCallTimer();
-      if (data.role === 'caller') joinAgoraVoice(currentCallId);
+      if (data.role === 'caller') joinAgoraVoice(window.currentCallId);
     } else if (data.status === 'ended') forceEndCallUI();
   });
 }
 
 async function startCall() {
-  if (!currentChat) return; currentCallPeer = currentChat.friendUid; currentCallId = [currentUser.uid, currentCallPeer].sort().join('_');
+  if (!currentChat) return; currentCallPeer = currentChat.friendUid; window.currentCallId = [currentUser.uid, currentCallPeer].sort().join('_');
   const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('btn-accept-call'), ringAudio = document.getElementById('ringtone-audio');
   if(nameView) nameView.textContent = currentChat.friendProfile.name; if(avatarView) avatarView.textContent = (currentChat.friendProfile.name || '?').charAt(0);
   if(statusView) { statusView.textContent = 'جاري الاتصال...'; statusView.style.color = 'var(--neon-cyan)'; }
   if(acceptBtn) acceptBtn.style.display = 'none';
   if(ringAudio && ringAudio.paused) ringAudio.play().catch(e=>{});
   renderScreenUI('call');
-  await db.ref('calls/' + currentUser.uid).set({ status: 'calling', role: 'caller', peerUid: currentCallPeer, peerName: currentChat.friendProfile.name, chatId: currentCallId });
-  await db.ref('calls/' + currentCallPeer).set({ status: 'incoming', role: 'callee', peerUid: currentUser.uid, peerName: myProfile.name, chatId: currentCallId });
+  await db.ref('calls/' + currentUser.uid).set({ status: 'calling', role: 'caller', peerUid: currentCallPeer, peerName: currentChat.friendProfile.name, chatId: window.currentCallId });
+  await db.ref('calls/' + currentCallPeer).set({ status: 'incoming', role: 'callee', peerUid: currentUser.uid, peerName: myProfile.name, chatId: window.currentCallId });
 }
 
 async function acceptCall() {
@@ -2808,7 +2809,7 @@ async function acceptCall() {
   const acceptBtn = document.getElementById('btn-accept-call'), statusView = document.getElementById('call-status-view'), ringAudio = document.getElementById('ringtone-audio');
   if(ringAudio && !ringAudio.paused) ringAudio.pause(); if(acceptBtn) acceptBtn.style.display = 'none'; if(statusView) statusView.textContent = 'جاري التوصيل...';
   await db.ref('calls/' + currentUser.uid).update({ status: 'answered' }); await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
-  startCallTimer(); joinAgoraVoice(currentCallId);
+  startCallTimer(); joinAgoraVoice(window.currentCallId);
 }
 
 function endCall() {
@@ -2817,36 +2818,34 @@ function endCall() {
 }
 
 function forceEndCallUI() {
-  clearInterval(callTimerInt); callTimerInt = null;
+  if (window.callTimerInt) { clearInterval(window.callTimerInt); window.callTimerInt = null; }
   const ringAudio = document.getElementById('ringtone-audio'); if (ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
-  if (localCallTrack) { localCallTrack.close(); localCallTrack = null; }
-  if (rtcCallClient) { rtcCallClient.leave(); rtcCallClient = null; }
-  if (callAudioCtx && callAudioCtx.state !== 'closed') { callAudioCtx.close(); callAudioCtx = null; }
-  if (callRawStream) { callRawStream.getTracks().forEach(t => t.stop()); callRawStream = null; }
-  currentCallId = null;
+  if (window.localCallTrack) { window.localCallTrack.close(); window.localCallTrack = null; }
+  if (window.rtcCallClient) { window.rtcCallClient.leave(); window.rtcCallClient = null; }
+  window.currentCallId = null;
   if (document.getElementById('screen-call').classList.contains('active')) renderScreenUI('chat');
 }
 
 function startCallTimer() {
-  clearInterval(callTimerInt); const startTime = Date.now(), statusView = document.getElementById('call-status-view');
+  if (window.callTimerInt) clearInterval(window.callTimerInt); 
+  const startTime = Date.now(), statusView = document.getElementById('call-status-view');
   if(statusView) statusView.style.color = 'var(--neon-green)';
-  callTimerInt = setInterval(() => { const sec = Math.floor((Date.now() - startTime) / 1000), m = Math.floor(sec / 60), s = sec % 60; if(statusView) statusView.textContent = `متصل: ${m}:${s<10?'0':''}${s}`; }, 1000);
+  window.callTimerInt = setInterval(() => { const sec = Math.floor((Date.now() - startTime) / 1000), m = Math.floor(sec / 60), s = sec % 60; if(statusView) statusView.textContent = `متصل: ${m}:${s<10?'0':''}${s}`; }, 1000);
 }
 
 async function joinAgoraVoice(channelName) {
-  if(!rtcCallClient) rtcCallClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+  if (!window.rtcCallClient) window.rtcCallClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
   try {
-    await rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
-    
-    // استخدام المايكروفون الافتراضي من أجورا لضمان معالجة الصدى والعمل على جميع الجوالات
-    localCallTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "high_quality" });
-    
-    await rtcCallClient.publish([localCallTrack]);
-    
-    rtcCallClient.on("user-published", async (user, mediaType) => { 
-      await rtcCallClient.subscribe(user, mediaType); 
+    // تشغيل الاستماع للطرف التاني (قبل ما ندخل الغرفة) لنضمن ما يضيع الصوت
+    window.rtcCallClient.on("user-published", async (user, mediaType) => { 
+      await window.rtcCallClient.subscribe(user, mediaType); 
       if (mediaType === "audio") user.audioTrack.play(); 
     });
+
+    await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
+    window.localCallTrack = await AgoraRTC.createMicrophoneAudioTrack({ encoderConfig: "speech_standard" });
+    await window.rtcCallClient.publish([window.localCallTrack]);
+    
   } catch (e) { 
     console.error("Agora Error:", e);
     showToast('تعذر الاتصال بالصوت', 'error'); 
