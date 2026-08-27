@@ -545,7 +545,7 @@ function renderChatsList(filter = '') {
     const liveData = getFriendData(data.friendUid, data);
     
     const initials = (liveData.name || '?').charAt(0);
-    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover;"/>` : `<div class="chat-avatar">${initials}</div>`;
+    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')"/>` : `<div class="chat-avatar">${initials}</div>`;
     
     // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
     const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
@@ -680,7 +680,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
-    avatarEl.outerHTML = `<img src="${friendProfile.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover;"/>`;
+    avatarEl.outerHTML = `<img src="${friendProfile.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
   } else {
     avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
   }
@@ -712,7 +712,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const avatarEl = document.getElementById('chat-header-avatar');
     if (avatarEl) {
       if (fData.photo) {
-        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover;"/>`;
+        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')"/>`;
       } else {
         avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(fData.name||'?').charAt(0)}</div>`;
       }
@@ -1683,9 +1683,31 @@ function handleMsgKey(e) { if (e.key === 'Enter' && !e.shiftKey) { return; } }
 async function sendTextMsg() {
   if (isRecording) { stopRecording(); return; }
   if (currentChat) { db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove(); clearTimeout(typingTimeout); }
-  const inp = document.getElementById('msg-input'), text = inp.value.trim();
-  if (!text || !currentChat) return;
-  inp.value = ''; autoResize(inp); inp.focus(); 
+  
+  const inp = document.getElementById('msg-input');
+  const text = inp.value.trim();
+
+  // فحص ذكي لحالة الكيبورد الحقيقية بالاعتماد على مساحة الشاشة (أدق بمليون مرة)
+  let isKbReallyOpen = false;
+  if (window.visualViewport) {
+    isKbReallyOpen = window.visualViewport.height < window.screen.height * 0.75;
+  } else {
+    isKbReallyOpen = window.innerHeight < window.screen.height * 0.75;
+  }
+
+  if (!text || !currentChat) {
+    if (isKbReallyOpen) inp.focus();
+    return;
+  }
+  
+  inp.value = ''; autoResize(inp); 
+  
+  if (isKbReallyOpen) {
+    inp.focus(); 
+  } else {
+    inp.blur(); // إجبار الكيبورد يضل مسكر
+  }
+
   if (editingMsgKey) { await db.ref('chats/' + currentChat.chatId + '/messages/' + editingMsgKey).update({ text, isEdited: true }); updateLastMsgAfterChange(); editingMsgKey = null; showToast('تم تعديل الرسالة', 'success'); return; }
   let replyData = null;
   if (replyingToMsg) { replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : '🎙️ صوت' }; cancelReply(); }
