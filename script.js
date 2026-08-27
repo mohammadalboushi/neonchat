@@ -2076,43 +2076,50 @@ function uploadMediaWithUI(file, type, extraData = null) {
 }
 
 document.getElementById('file-img-input').addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file || !currentChat) return;
-  e.target.value = '';
+  const files = e.target.files;
+  if (!files.length || !currentChat) return;
   
-  const fileName = file.name.toLowerCase();
-  const isImage = file.type.startsWith('image/');
-  const isVideo = file.type.startsWith('video/');
-  const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const fileName = file.name.toLowerCase();
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
 
-  if (isImage) {
-    uploadMediaWithUI(file, 'image');
-  } else if (isVideo) {
-    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    if (file.size > 100 * 1024 * 1024) { 
-      showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); 
-      return; 
+    if (isImage) {
+      uploadMediaWithUI(file, 'image');
+    } else if (isVideo) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      if (file.size > 100 * 1024 * 1024) { 
+        showToast('الفيديو كبير جداً! الحد الأقصى 100 ميغابايت', 'error'); 
+        continue; 
+      }
+      uploadLargeMediaWithXHR(file, fileSizeMB, 'video');
+    } else if (isAudio) {
+      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      if (file.size > 50 * 1024 * 1024) { 
+        showToast('الملف الصوتي كبير جداً! الحد الأقصى 50 ميغابايت', 'error'); 
+        continue; 
+      }
+      const tempAudio = new Audio(URL.createObjectURL(file));
+      tempAudio.onloadedmetadata = () => {
+        const m = Math.floor(tempAudio.duration / 60);
+        const s = Math.floor(tempAudio.duration % 60);
+        const durStr = `${m}:${s < 10 ? '0' : ''}${s}`;
+        uploadLargeMediaWithXHR(file, fileSizeMB, 'audio', durStr);
+      };
+      tempAudio.onerror = () => {
+        uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
+      };
+    } else {
+      showToast('نوع الملف غير مدعوم!', 'error');
     }
-    uploadLargeMediaWithXHR(file, fileSizeMB, 'video');
-  } else if (isAudio) {
-    const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    if (file.size > 50 * 1024 * 1024) { 
-      showToast('الملف الصوتي كبير جداً! الحد الأقصى 50 ميغابايت', 'error'); 
-      return; 
-    }
-    const tempAudio = new Audio(URL.createObjectURL(file));
-    tempAudio.onloadedmetadata = () => {
-      const m = Math.floor(tempAudio.duration / 60);
-      const s = Math.floor(tempAudio.duration % 60);
-      const durStr = `${m}:${s < 10 ? '0' : ''}${s}`;
-      uploadLargeMediaWithXHR(file, fileSizeMB, 'audio', durStr);
-    };
-    tempAudio.onerror = () => {
-      uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
-    };
-  } else {
-    showToast('نوع الملف غير مدعوم!', 'error');
+    
+    // تأخير 300 ميلي ثانية بين كل ملف كرمال يخف الضغط عالسيرفر وتنجح كلها
+    await new Promise(r => setTimeout(r, 300));
   }
+  
+  e.target.value = '';
 });
 
 /* ═══════════════════════════════════
@@ -2559,7 +2566,15 @@ let videoUpdateInt = null;
 
 function openVideoPlayer(url) {
   const overlay = document.getElementById('video-preview-overlay');
-  videoEl.src = url;
+  
+  // ضغط الفيديو وتجهيزه للبث السريع عبر سيرفرات كلاوديناري
+  let optimizedUrl = url;
+  if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
+    // استخدام f_mp4 بدلاً من f_auto لضمان دعم التقديم والتأخير (Seeking) 100% على الموبايل
+    optimizedUrl = optimizedUrl.replace('/upload/', '/upload/q_auto,vc_auto,f_mp4/');
+  }
+  
+  videoEl.src = optimizedUrl;
   overlay.classList.add('open');
   
   document.getElementById('video-loading-text').style.display = 'block';
@@ -2628,9 +2643,22 @@ function updateVideoControls() {
 
 function seekVideoClick(e) {
   const rect = document.getElementById('video-progress-container').getBoundingClientRect();
-  const clickX = e.clientX - rect.left;
-  const percent = clickX / rect.width;
-  if (videoEl.duration) videoEl.currentTime = percent * videoEl.duration;
+  
+  // دعم لمس الموبايل بدقة أعلى
+  let clientX = e.clientX;
+  if (e.touches && e.touches.length > 0) clientX = e.touches[0].clientX;
+  else if (e.changedTouches && e.changedTouches.length > 0) clientX = e.changedTouches[0].clientX;
+  if (clientX === undefined) return;
+  
+  let clickX = clientX - rect.left;
+  let percent = clickX / rect.width;
+  
+  if (percent < 0) percent = 0;
+  if (percent > 1) percent = 1;
+  
+  if (videoEl.duration && videoEl.duration !== Infinity && !isNaN(videoEl.duration)) {
+    videoEl.currentTime = percent * videoEl.duration;
+  }
 }
 
 function formatVideoTime(sec_num) {
