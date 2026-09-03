@@ -449,8 +449,8 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
   if (!file || !myProfile) return;
   e.target.value = ''; showToast('جاري رفع الصورة...');
   try {
-    const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', 'malaboushi_preset');
-    const res = await fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', { method: 'POST', body: formData });
+    const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', 'omarhweh1');
+    const res = await fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', { method: 'POST', body: formData });
     const data = await res.json();
     if (data.secure_url) {
       await db.ref('users/' + myProfile.uid).update({ photo: data.secure_url });
@@ -1468,10 +1468,10 @@ async function toggleRecording(isSinging = false) {
 
           const fd = new FormData();
           fd.append('file', blob);
-          fd.append('upload_preset', 'malaboushi_preset');
+          fd.append('upload_preset', 'omarhweh1');
 
           const xhr = new XMLHttpRequest();
-          xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+          xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
           xhr.timeout = 25000; // مهلة 25 ثانية قبل ما يعتبره فشل
 
           xhr.upload.onprogress = function(e) {
@@ -2058,11 +2058,11 @@ function uploadMediaWithUI(file, type, extraData = null) {
       `; 
     }
     
-    const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'malaboushi_preset');
+    const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'omarhweh1');
     
     const xhr = new XMLHttpRequest();
     // إجبار السيرفر يعالجها كصورة لعدم التعليق
-    xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/image/upload', true);
+    xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/image/upload', true);
     xhr.timeout = 25000; // مهلة 25 ثانية
     
     xhr.upload.onprogress = e => {
@@ -2239,10 +2239,10 @@ async function toggleRecording(isSinging = false) {
       
       const fd = new FormData();
       fd.append('file', blob);
-      fd.append('upload_preset', 'malaboushi_preset');
+      fd.append('upload_preset', 'omarhweh1');
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true);
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
       
       // 🚀 مهلة 30 ثانية لتفادي التعليق للأبد، إذا مارد السيرفر بيحذفه من الشاشة
       xhr.timeout = 30000;
@@ -2513,10 +2513,10 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
 
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('upload_preset', 'malaboushi_preset');
+      fd.append('upload_preset', 'omarhweh1');
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/dwqdzwgms/auto/upload', true); 
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true); 
       xhr.timeout = 180000; // 3 دقائق كاملة
 
       xhr.upload.onprogress = function(e) {
@@ -2708,7 +2708,7 @@ async function deleteExpiredVideo(chatId, msg) {
   if (msg.deleteToken) {
       const fd = new FormData();
       fd.append('token', msg.deleteToken);
-      fetch('https://api.cloudinary.com/v1_1/dwqdzwgms/delete_by_token', {
+      fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', {
          method: 'POST', body: fd
       }).catch(e => console.log('تعذر حذف الفيديو من كلاوديناري', e));
   }
