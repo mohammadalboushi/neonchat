@@ -734,10 +734,13 @@ async function openChat(chatId, friendUid, friendProfile = null) {
           const newEl = document.createElement('img');
           newEl.className = 'msg-friend-avatar';
           newEl.src = fData.photo;
-          newEl.style.cssText = commonStyle;
+          newEl.style.cssText = commonStyle + 'cursor:pointer;';
+          newEl.onclick = (e) => { e.stopPropagation(); window.previewImg(fData.photo); };
           el.replaceWith(newEl);
         } else {
           el.src = fData.photo;
+          el.style.cssText = commonStyle + 'cursor:pointer;';
+          el.onclick = (e) => { e.stopPropagation(); window.previewImg(fData.photo); };
         }
       } else {
         if (el.tagName === 'IMG') {
