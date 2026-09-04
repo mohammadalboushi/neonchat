@@ -449,12 +449,21 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
   if (!file || !myProfile) return;
   e.target.value = ''; showToast('جاري رفع الصورة...');
   try {
-    const formData = new FormData(); formData.append('file', file); formData.append('upload_preset', 'omarhweh1');
-    const res = await fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', { method: 'POST', body: formData });
-    const data = await res.json();
-    if (data.secure_url) {
-      await db.ref('users/' + myProfile.uid).update({ photo: data.secure_url });
-      myProfile.photo = data.secure_url; localStorage.setItem('myProfile', JSON.stringify(myProfile));
+    const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+    const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
+    const cleanName = `avatar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    
+    const res = await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY, 'Content-Type': file.type || 'image/jpeg' },
+        body: file
+    });
+    
+    if (res.ok) {
+      const finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+      await db.ref('users/' + myProfile.uid).update({ photo: finalUrl });
+      myProfile.photo = finalUrl; localStorage.setItem('myProfile', JSON.stringify(myProfile));
       updateHomeHeader(); populateProfile(); showToast('تم تحديث الصورة', 'success');
     } else throw new Error('تعذر الرفع');
   } catch (e) { showToast('فشل رفع الصورة', 'error'); }
@@ -1332,11 +1341,8 @@ function buildMsgEl(msg, isBackground = false) {
         }
     }
     } else if (msg.type === 'video') {
-    // نطلب من كلاوديناري صورة بحجم مناسب من أول فريم (so_0) لضمان السرعة وعدم الفشل
-    const thumbUrl = msg.url.replace('/upload/', '/upload/w_400,h_300,c_fill,so_0/').replace(/\.[^/.]+$/, ".jpg");
     const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
-    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container">
-        <img src="${thumbUrl}" class="msg-img" onerror="this.style.display='none';" style="pointer-events: auto;"/>
+    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" style="background:#050b12; border:1px solid var(--border-subtle);">
         <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
         ${fileSize}
       </div>${timeEl}${reactHtml}`;
@@ -2948,22 +2954,19 @@ async function deleteExpiredMedia(chatId, msg) {
   });
   
   // 2. حذف الملف من السيرفر لتفريغ المساحة
-  if (msg.type === 'image' && msg.url.includes('supabase.co')) {
-      // حذف الصور من سيرفر Supabase
+  if (msg.url && msg.url.includes('supabase.co')) {
+      // حذف الصور والفيديوهات من سيرفر Supabase
       const fileName = msg.url.split('/').pop();
       const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
       const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
       
       fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
           method: 'DELETE',
-          headers: {
-              'Authorization': `Bearer ${SUPA_KEY}`,
-              'apikey': SUPA_KEY
-          }
-      }).catch(e => console.log('تعذر مسح الصورة من Supabase', e));
+          headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY }
+      }).catch(e => console.log('تعذر مسح الملف من Supabase', e));
       
   } else if (msg.deleteToken) {
-      // حذف الفيديوهات والصوتيات من سيرفر Cloudinary
+      // للملفات القديمة أو المقاطع الصوتية على Cloudinary
       const fd = new FormData();
       fd.append('token', msg.deleteToken);
       fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', {
