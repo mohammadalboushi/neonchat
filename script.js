@@ -187,7 +187,7 @@ function openModal(title, text) {
   });
 }
 
-function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 100) + 'px'; }
+function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 150) + 'px'; }
 function escHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function formatDate(ts) {
@@ -1286,7 +1286,7 @@ function buildMsgEl(msg, isBackground = false) {
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
 
-  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || msg.isPending) return; e.preventDefault(); openMsgMenu(msg, isOut); });
+  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || msg.isPending) return; e.preventDefault(); clearTimeout(pressTimer); openMsgMenu(msg, isOut); });
 
   let ticks = '';
   if (isOut && !msg.isPending) {
@@ -3006,7 +3006,7 @@ if (window.visualViewport) {
 }
 
 document.body.addEventListener('touchmove', (e) => {
-  const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results');
+  const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results') || e.target.closest('#msg-input');
   if (!isScrollable) {
     e.preventDefault();
   }
