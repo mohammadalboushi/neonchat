@@ -131,12 +131,7 @@ window.addEventListener('popstate', e => {
   let isPopupOpen = false;
 
   if (imgOverlay && imgOverlay.classList.contains('open')) {
-    if (currentScale > 1) { 
-      currentScale = 1; imgTx = 0; imgTy = 0; 
-      document.getElementById('img-preview-el').style.transform = `translate(0px, 0px) scale(1)`; 
-      history.pushState({ overlay: 'image' }, '', ''); 
-    } 
-    else { closeImgPreview(); }
+    closeImgPreview();
     isPopupOpen = true;
   }
   
@@ -1193,7 +1188,11 @@ function buildMsgEl(msg, isBackground = false) {
   
   if (profile.photo) {
     avatarNode.src = profile.photo;
-    avatarNode.style.cssText = commonStyle;
+    avatarNode.style.cssText = commonStyle + 'cursor:pointer;';
+    avatarNode.onclick = (e) => {
+      e.stopPropagation();
+      window.previewImg(profile.photo);
+    };
   } else {
     avatarNode.textContent = (profile.name || '?').charAt(0);
     avatarNode.style.cssText = commonStyle + bgStyle + 'display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; color:white;';
