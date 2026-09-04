@@ -922,16 +922,17 @@ function attachMessages(chatId) {
   messagesListener = currentMessagesQuery.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
-    if ((msg.type === 'video' || msg.type === 'audio') && msg.timestamp) {
-      const EXPIRY_TIME = msg.type === 'video' ? (24 * 60 * 60 * 1000) : (60 * 60 * 1000);
+    if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image') && msg.timestamp) {
+      // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
+      const EXPIRY_TIME = (msg.type === 'video' || msg.type === 'image') ? (24 * 60 * 60 * 1000) : (60 * 60 * 1000);
       const age = Date.now() - msg.timestamp;
       
       if (age > EXPIRY_TIME) {
-        deleteExpiredVideo(chatId, msg);
+        deleteExpiredMedia(chatId, msg);
         return; 
       } else {
         setTimeout(() => {
-          deleteExpiredVideo(chatId, msg);
+          deleteExpiredMedia(chatId, msg);
         }, EXPIRY_TIME - age);
       }
     }
@@ -1302,8 +1303,34 @@ function buildMsgEl(msg, isBackground = false) {
     });
     bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
-    const displayUrl = (window.localImageCache && window.localImageCache[msg.url]) ? window.localImageCache[msg.url] : msg.url;
-    bubble.innerHTML = `${replyHtml}<img class="msg-img" src="${displayUrl}" onerror="this.onerror=null; this.src='${msg.url}';" style="pointer-events: auto;"/>${timeEl}${reactHtml}`;
+    const imgId = 'img_' + msg.key;
+    const isEncrypted = msg.url.includes('enc_img_') || msg.url.endsWith('.bin');
+    
+    if (window.localImageCache && window.localImageCache[msg.url]) {
+        bubble.innerHTML = `${replyHtml}<img id="${imgId}" class="msg-img" src="${window.localImageCache[msg.url]}" style="pointer-events: auto;" onclick="window.previewImg(this.src)"/>${timeEl}${reactHtml}`;
+    } else {
+        bubble.innerHTML = `${replyHtml}
+            <div id="loader_${imgId}" style="width:200px; height:150px; background:rgba(0,240,255,0.05); border-radius:12px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-subtle);">
+                <div style="width:24px; height:24px; border:2px solid var(--neon-cyan); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite;"></div>
+            </div>
+            <img id="${imgId}" class="msg-img" src="" style="display:none; pointer-events: auto;" onclick="window.previewImg(this.src)"/>
+            ${timeEl}${reactHtml}`;
+        
+        if (!msg.isPending) {
+            setTimeout(async () => {
+                const decryptedUrl = isEncrypted ? await decryptImageUrl(msg.url) : msg.url;
+                const imgEl = document.getElementById(imgId);
+                const loaderEl = document.getElementById(`loader_${imgId}`);
+                if (imgEl && loaderEl) {
+                    imgEl.src = decryptedUrl;
+                    imgEl.onload = () => {
+                        loaderEl.style.display = 'none';
+                        imgEl.style.display = 'block';
+                    };
+                }
+            }, 50);
+        }
+    }
     } else if (msg.type === 'video') {
     // نطلب من كلاوديناري صورة بحجم مناسب من أول فريم (so_0) لضمان السرعة وعدم الفشل
     const thumbUrl = msg.url.replace('/upload/', '/upload/w_400,h_300,c_fill,so_0/').replace(/\.[^/.]+$/, ".jpg");
@@ -1826,35 +1853,48 @@ function openMsgMenu(msg, isOut) {
   }
   if (msg.type === 'audio' || msg.type === 'voice' || msg.type === 'video' || msg.type === 'image') {
     const btnDownload = document.createElement('button'); btnDownload.className = 'msg-menu-btn'; btnDownload.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> ${msg.type === 'video' ? 'تنزيل الفيديو' : (msg.type === 'image' ? 'تنزيل الصورة' : 'تنزيل المقطع')}`;
-                            btnDownload.onclick = () => { 
-          showToast('جاري التنزيل...');
-          let dlUrl = msg.url;
-          let uniqueName = msg.type === 'video' ? `Video_${Date.now()}` : msg.type === 'image' ? `Image_${Date.now()}` : (msg.type === 'audio' ? `Song_${Date.now()}` : `Voice_${Date.now()}`);
-          
-          if (dlUrl.includes('cloudinary.com') && dlUrl.includes('/upload/')) {
-            // إجبار السيرفر يعطي الملف اسم فريد كرمال ما يستبدل القديم
-            dlUrl = dlUrl.replace('/upload/', `/upload/fl_attachment:${uniqueName}/`);
-            
-            // تحويل الصيغة فورياً عن طريق تغيير اللاحقة بالرابط
-            if (msg.type === 'voice' || msg.type === 'audio') {
-              dlUrl = dlUrl.replace(/\.[^/.]+$/, ".mp3");
-            } else if (msg.type === 'video') {
-              dlUrl = dlUrl.replace(/\.[^/.]+$/, ".mp4");
-            } else if (msg.type === 'image') {
-              dlUrl = dlUrl.replace(/\.[^/.]+$/, ".jpg");
+    btnDownload.onclick = async () => { 
+        showToast('جاري التجهيز للتنزيل...');
+        let dlUrl = msg.url;
+        
+        // إضافة الصيغ للاسم لتتعرف عليها استوديوهات الهواتف مباشرة
+        let uniqueName = msg.type === 'video' ? `Video_${Date.now()}.mp4` : msg.type === 'image' ? `Image_${Date.now()}.jpg` : (msg.type === 'audio' ? `Song_${Date.now()}.mp3` : `Voice_${Date.now()}.mp3`);
+        
+        if (dlUrl.includes('cloudinary.com') && dlUrl.includes('/upload/')) {
+            dlUrl = dlUrl.replace('/upload/', `/upload/fl_attachment:${uniqueName.split('.')[0]}/`);
+            if (msg.type === 'voice' || msg.type === 'audio') { dlUrl = dlUrl.replace(/\.[^/.]+$/, ".mp3"); } 
+            else if (msg.type === 'video') { dlUrl = dlUrl.replace(/\.[^/.]+$/, ".mp4"); } 
+            else if (msg.type === 'image') { dlUrl = dlUrl.replace(/\.[^/.]+$/, ".jpg"); }
+        } else if (msg.type === 'image' && (dlUrl.includes('enc_img_') || dlUrl.endsWith('.bin'))) {
+            // إذا كانت الصورة مشفرة، لا ننزل الطلاسم بل ننزل الصورة المفكوكة!
+            if (window.localImageCache && window.localImageCache[msg.url]) {
+                dlUrl = window.localImageCache[msg.url];
+            } else {
+                dlUrl = await decryptImageUrl(msg.url);
             }
-          }
-          
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = dlUrl;
-          a.download = uniqueName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          showToast('تم التنزيل بنجاح', 'success');
-          closeMsgMenu(); 
-        }; 
+        }
+        
+        // استخدام fetch لفرض التنزيل بدل الفتح بنافذة جديدة (تضمن حفظها كملف فعلي)
+        try {
+            const response = await fetch(dlUrl);
+            const blob = await response.blob();
+            const objectUrl = window.URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = objectUrl;
+            a.download = uniqueName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(objectUrl);
+            showToast('تم التنزيل بنجاح ✔️', 'success');
+        } catch (err) {
+            showToast('فشل التنزيل', 'error');
+        }
+        
+        closeMsgMenu(); 
+    }; 
     menu.appendChild(btnDownload);
   }
   if (isOut) {
@@ -1893,7 +1933,46 @@ function closeMsgMenu() { document.getElementById('msg-menu-overlay').classList.
 function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document.getElementById('msg-reply-preview').classList.add('active'); document.getElementById('msg-reply-text').textContent = 'رد على: ' + (msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ صوتية'); document.getElementById('msg-input').focus(); }
 function cancelReply() { replyingToMsg = null; document.getElementById('msg-reply-preview').classList.remove('active'); }
 function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
-function confirmDeleteMsg(msgKey) { openModal('حذف الرسالة', 'هل تريد حذف هذه الرسالة للجميع؟').then(ok => { if (ok && currentChat) { db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ isDeleted: true, text: null, url: null, type: 'deleted' }).then(() => { updateLastMsgAfterChange(); showToast('تم حذف الرسالة', 'success'); }); } }); }
+function confirmDeleteMsg(msgKey) {
+  openModal('حذف نهائي', 'هل تريد حذف الرسالة للجميع ومن السيرفر؟').then(async ok => {
+    if (ok && currentChat) {
+      try {
+        const msgRef = db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey);
+        const snap = await msgRef.once('value');
+        const msg = snap.val();
+
+        // 1. الحذف من واجهة الدردشة (فايربيز) للطرفين
+        await msgRef.update({ isDeleted: true, text: null, url: null, type: 'deleted' });
+        updateLastMsgAfterChange();
+        showToast('تم حذف الرسالة بنجاح', 'success');
+
+        // 2. التدمير المادي من السيرفر لتفريغ المساحة فوراً
+        if (msg && msg.url) {
+          if (msg.url.includes('supabase.co')) {
+            // حذف من Supabase
+            const fileName = msg.url.split('/').pop();
+            const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+            const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+            fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY }
+            }).catch(e => console.log('تعذر الحذف من Supabase'));
+            
+          } else if (msg.deleteToken) {
+            // حذف من كلاوديناري (للملفات القديمة أو الصوتيات)
+            const fd = new FormData(); 
+            fd.append('token', msg.deleteToken);
+            fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', { 
+              method: 'POST', body: fd 
+            }).catch(e => console.log('تعذر الحذف'));
+          }
+        }
+      } catch (e) {
+        showToast('حدث خطأ أثناء الحذف', 'error');
+      }
+    }
+  });
+}
 
 /* ═══════════════════════════════════
    IMAGE PREVIEW, ZOOM & PAN
@@ -2024,12 +2103,67 @@ imgEl.addEventListener('touchend', (e) => {
 });
 
 /* ═══════════════════════════════════
+   IMAGE ENCRYPTION ENGINE (AES-GCM)
+═══════════════════════════════════ */
+const SECRET_KEY_STR = 'NeonChat_Super_Secret_Key_123!'; 
+
+async function getEncryptionKey() {
+    const enc = new TextEncoder();
+    const keyMaterial = await window.crypto.subtle.importKey(
+        "raw",
+        enc.encode(SECRET_KEY_STR.padEnd(32, '0')),
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+    );
+    return keyMaterial;
+}
+
+async function encryptImageBlob(blob) {
+    const key = await getEncryptionKey();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const arrayBuffer = await blob.arrayBuffer();
+    const encryptedContent = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        arrayBuffer
+    );
+    return new Blob([iv, encryptedContent], { type: 'application/octet-stream' });
+}
+
+async function decryptImageUrl(encryptedUrl) {
+    if (window.localImageCache && window.localImageCache[encryptedUrl]) {
+        return window.localImageCache[encryptedUrl];
+    }
+    try {
+        const response = await fetch(encryptedUrl);
+        const encryptedBlob = await response.blob();
+        const arrayBuffer = await encryptedBlob.arrayBuffer();
+        const iv = new Uint8Array(arrayBuffer.slice(0, 12));
+        const data = arrayBuffer.slice(12);
+        const key = await getEncryptionKey();
+        const decryptedContent = await window.crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: iv },
+            key,
+            data
+        );
+        const decryptedBlob = new Blob([decryptedContent], { type: 'image/jpeg' });
+        const objectUrl = URL.createObjectURL(decryptedBlob);
+        if (window.localImageCache) window.localImageCache[encryptedUrl] = objectUrl;
+        return objectUrl;
+    } catch (e) {
+        console.error("خطأ في فك تشفير الصورة:", e);
+        return encryptedUrl;
+    }
+}
+
+/* ═══════════════════════════════════
    UNIVERSAL UPLOAD ENGINE
 ═══════════════════════════════════ */
 window.pendingUploads = {};
 window.lastUploadedUrl = null;
 
-function uploadMediaWithUI(file, type, extraData = null) {
+async function uploadMediaWithUI(file, type, extraData = null) {
   const tempId = 'temp_' + Date.now();
   const tempUrl = URL.createObjectURL(file);
   const area = document.getElementById('messages-area');
@@ -2046,7 +2180,35 @@ function uploadMediaWithUI(file, type, extraData = null) {
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
   }
 
-  const tryUpload = () => {
+  const compressImage = (imageFile) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(imageFile);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1280; 
+          const MAX_HEIGHT = 1280;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+          } else {
+            if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+          }
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob((blob) => { resolve(blob); }, 'image/jpeg', 0.6);
+        };
+      };
+    });
+  };
+
+  const tryUpload = async () => {
     const row = document.getElementById('row_' + tempId);
     if (row) { 
       const ov = row.querySelector('.pending-overlay'); 
@@ -2058,12 +2220,30 @@ function uploadMediaWithUI(file, type, extraData = null) {
       `; 
     }
     
-    const fd = new FormData(); fd.append('file', file); fd.append('upload_preset', 'omarhweh1');
-    
+    let finalFileToUpload = file;
+    if (type === 'image') {
+      const pctTxt = document.getElementById('pct_' + tempId);
+      if(pctTxt) pctTxt.textContent = '🔒';
+      
+      const compressedBlob = await compressImage(file);
+      finalFileToUpload = await encryptImageBlob(compressedBlob); 
+    }
+
     const xhr = new XMLHttpRequest();
-    // إجبار السيرفر يعالجها كصورة لعدم التعليق
-    xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/image/upload', true);
-    xhr.timeout = 25000; // مهلة 25 ثانية
+    const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+    const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+    
+    if (type === 'image') {
+      const cleanName = `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin`; 
+      xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
+      xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
+      xhr.setRequestHeader('apikey', SUPA_KEY);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream'); 
+    } else {
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
+    }
+    
+    xhr.timeout = 25000; 
     
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) {
@@ -2071,7 +2251,7 @@ function uploadMediaWithUI(file, type, extraData = null) {
         const bar = document.getElementById('bar_' + tempId);
         const pctTxt = document.getElementById('pct_' + tempId);
         if (bar) bar.style.width = percent + '%';
-        if (pctTxt) pctTxt.textContent = percent + '%';
+        if (pctTxt && pctTxt.textContent !== '🔒') pctTxt.textContent = percent + '%';
         if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
       }
     };
@@ -2084,13 +2264,25 @@ function uploadMediaWithUI(file, type, extraData = null) {
     };
 
     xhr.onload = async () => {
-      let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
-      if (xhr.status === 200 && data.secure_url) {
-        window.lastUploadedUrl = data.secure_url;
-        if (type === 'image' && window.localImageCache) window.localImageCache[data.secure_url] = tempUrl;
-        const currentRow = document.getElementById('row_' + tempId);
-        if (currentRow) currentRow.remove();
-        await pushMessage({ type: type, url: data.secure_url, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let finalUrl = '';
+        if (type === 'image') {
+          const cleanName = xhr.responseURL.split('/').pop();
+          finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+        } else {
+          let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
+          finalUrl = data.secure_url;
+        }
+
+        if (finalUrl) {
+          window.lastUploadedUrl = finalUrl;
+          if (type === 'image' && window.localImageCache) window.localImageCache[finalUrl] = tempUrl; 
+          const currentRow = document.getElementById('row_' + tempId);
+          if (currentRow) currentRow.remove();
+          await pushMessage({ type: type, url: finalUrl, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+        } else {
+          handleFail('فشل الرفع');
+        }
       } else {
         handleFail('فشل الرفع');
       }
@@ -2099,7 +2291,12 @@ function uploadMediaWithUI(file, type, extraData = null) {
     xhr.onerror = () => handleFail('خطأ اتصال');
     xhr.ontimeout = () => handleFail('انتهى الوقت');
     
-    xhr.send(fd);
+    if (type === 'image') {
+      xhr.send(finalFileToUpload);
+    } else {
+      const fd = new FormData(); fd.append('file', finalFileToUpload); fd.append('upload_preset', 'omarhweh1');
+      xhr.send(fd);
+    }
   };
   window.pendingUploads[tempId] = tryUpload;
   tryUpload();
@@ -2502,7 +2699,7 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
   const tryUpload = () => {
       const row = document.getElementById('row_' + tempId);
       if (row) {
-          const ov = row.querySelector('.pending-overlay'); 
+          const ov = row.querySelector('.pending-overlay');
           if (ov) ov.innerHTML = `
               <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
               <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
@@ -2511,13 +2708,23 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
           `;
       }
 
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('upload_preset', 'omarhweh1');
-
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true); 
-      xhr.timeout = 180000; // 3 دقائق كاملة
+      const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+      const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+
+      // توجيه الفيديوهات إلى Supabase، والصوتيات إلى Cloudinary
+      if (mediaType === 'video') {
+          const ext = file.name.includes('.') ? file.name.split('.').pop() : 'mp4';
+          const cleanName = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+          xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
+          xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
+          xhr.setRequestHeader('apikey', SUPA_KEY);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+      } else {
+          xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
+      }
+
+      xhr.timeout = 180000; // 3 دقائق كحد أقصى للرفع
 
       xhr.upload.onprogress = function(e) {
         if (e.lengthComputable) {
@@ -2536,57 +2743,66 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       };
 
       const handleFail = (msg) => {
-          if (row) { 
-            const ov = row.querySelector('.pending-overlay'); 
-            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>`; 
+          if (row) {
+            const ov = row.querySelector('.pending-overlay');
+            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>`;
           }
       };
 
       xhr.onload = async function() {
-        // فحص حالة الاستجابة بشكل دقيق
         if (xhr.status >= 200 && xhr.status < 300) {
-          let data = {};
-          try { data = JSON.parse(xhr.responseText); } catch(e) {}
+          let finalUrl = '';
+          let deleteToken = null;
 
-          if (data && data.secure_url) {
+          if (mediaType === 'video') {
+              // جلب رابط Supabase المباشر للفيديو
+              const cleanName = xhr.responseURL.split('/').pop();
+              finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+          } else {
+              let data = {};
+              try { data = JSON.parse(xhr.responseText); } catch(e) {}
+              if (data && data.secure_url) {
+                  finalUrl = data.secure_url;
+                  deleteToken = data.delete_token || null;
+              }
+          }
+
+          if (finalUrl) {
             const currentRow = document.getElementById('row_' + tempId);
             if (currentRow) currentRow.remove();
-            
-            const deleteToken = data.delete_token || null;
-            
-            await pushMessage({ 
-              type: mediaType, 
-              url: data.secure_url, 
-              size: fileSizeMB, 
+
+            await pushMessage({
+              type: mediaType,
+              url: finalUrl,
+              size: fileSizeMB,
               duration: extraDuration,
               deleteToken: deleteToken,
-              senderUid: currentUser.uid, 
-              timestamp: Date.now(), 
-              replyTo: tempMsg.replyTo 
+              senderUid: currentUser.uid,
+              timestamp: Date.now(),
+              replyTo: tempMsg.replyTo
             });
           } else {
             handleFail('استجابة فارغة من السيرفر');
           }
         } else {
-          let serverMsg = 'خطأ ' + xhr.status;
-          try {
-              let errJson = JSON.parse(xhr.responseText);
-              if (errJson && errJson.error && errJson.error.message) {
-                  serverMsg = errJson.error.message;
-              }
-          } catch(e) {
-              if (xhr.responseText) serverMsg = xhr.responseText.substring(0, 40);
-          }
-          handleFail(serverMsg);
+          handleFail('خطأ ' + xhr.status);
         }
       };
 
       xhr.onerror = function() { handleFail('مشكلة شبكة أو CORS'); };
       xhr.ontimeout = function() { handleFail('انتهى وقت الانتظار'); };
 
-      xhr.send(fd);
+      // طريقة إرسال الملف تختلف حسب السيرفر
+      if (mediaType === 'video') {
+          xhr.send(file);
+      } else {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('upload_preset', 'omarhweh1');
+          xhr.send(fd);
+      }
   };
-  
+
   window.pendingUploads[tempId] = tryUpload;
   tryUpload();
 }
@@ -2594,13 +2810,22 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
 let videoEl = document.getElementById('custom-video-el');
 let videoUpdateInt = null;
 
+// إضافة مستمعات أحداث ذكية لمعالجة التعليق والتحميل الفعلي من السيرفرات الخام
+videoEl.addEventListener('waiting', () => {
+  document.getElementById('video-loading-text').style.display = 'block';
+});
+videoEl.addEventListener('playing', () => {
+  document.getElementById('video-loading-text').style.display = 'none';
+});
+videoEl.addEventListener('canplay', () => {
+  document.getElementById('video-loading-text').style.display = 'none';
+});
+
 function openVideoPlayer(url) {
   const overlay = document.getElementById('video-preview-overlay');
   
-  // ضغط الفيديو وتجهيزه للبث السريع عبر سيرفرات كلاوديناري
   let optimizedUrl = url;
   if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
-    // استخدام f_mp4 بدلاً من f_auto لضمان دعم التقديم والتأخير (Seeking) 100% على الموبايل
     optimizedUrl = optimizedUrl.replace('/upload/', '/upload/q_auto,vc_auto,f_mp4/');
   }
   
@@ -2608,15 +2833,22 @@ function openVideoPlayer(url) {
   overlay.classList.add('open');
   
   document.getElementById('video-loading-text').style.display = 'block';
+  document.getElementById('video-buffer-percent').textContent = '';
+  
   videoEl.load();
   let playPromise = videoEl.play();
   if (playPromise !== undefined) {
-    playPromise.then(_ => { document.getElementById('video-loading-text').style.display = 'none'; })
-    .catch(error => { console.log("Auto-play prevented"); });
+    playPromise.then(_ => { 
+        // التشغيل نجح
+    }).catch(error => { 
+        console.log("Auto-play prevented"); 
+        document.getElementById('video-loading-text').style.display = 'none';
+    });
   }
 
   updateVideoControls();
-  videoUpdateInt = setInterval(updateVideoControls, 100);
+  // تقليل سرعة التحديث لتخفيف الضغط على معالج الهاتف أثناء فك التشفير
+  videoUpdateInt = setInterval(updateVideoControls, 250);
 
   try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
 }
@@ -2644,7 +2876,7 @@ function skipVideo(seconds) {
 }
 
 function updateVideoControls() {
-  if (!videoEl.duration) return;
+  if (!videoEl.duration || isNaN(videoEl.duration)) return;
   
   document.getElementById('video-time-current').textContent = formatVideoTime(videoEl.currentTime);
   document.getElementById('video-time-total').textContent = formatVideoTime(videoEl.duration);
@@ -2652,17 +2884,26 @@ function updateVideoControls() {
   const percent = (videoEl.currentTime / videoEl.duration) * 100;
   document.getElementById('video-progress-fill').style.width = percent + '%';
   
+  // إصلاح مشكلة حساب التحميل المسبق (Buffer) التي كانت تجمد الواجهة
   if (videoEl.buffered.length > 0) {
-    const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
-    const buffPercent = (bufferedEnd / videoEl.duration) * 100;
+    let buffPercent = 0;
+    // البحث عن النطاق المحمل الذي يقع فيه الوقت الحالي للمشاهدة
+    for (let i = 0; i < videoEl.buffered.length; i++) {
+        if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
+            buffPercent = (videoEl.buffered.end(i) / videoEl.duration) * 100;
+            break;
+        }
+    }
+    
+    if (buffPercent === 0) {
+       buffPercent = (videoEl.buffered.end(videoEl.buffered.length - 1) / videoEl.duration) * 100;
+    }
+
     document.getElementById('video-buffer-bar').style.width = buffPercent + '%';
     
     const loadingText = document.getElementById('video-loading-text');
-    if (buffPercent < 100 && videoEl.readyState < 4) {
-      loadingText.style.display = 'block';
-      document.getElementById('video-buffer-percent').textContent = Math.round(buffPercent) + '%';
-    } else {
-      loadingText.style.display = 'none';
+    if (loadingText.style.display === 'block') {
+        document.getElementById('video-buffer-percent').textContent = Math.round(buffPercent) + '%';
     }
   }
   
@@ -2698,19 +2939,36 @@ function formatVideoTime(sec_num) {
   return m + ':' + (s < 10 ? '0' : '') + s;
 }
 
-async function deleteExpiredVideo(chatId, msg) {
+async function deleteExpiredMedia(chatId, msg) {
   if (msg.isDeleted) return;
   
+  // 1. حذف الرسالة من الدردشة (Firebase)
   await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
      isDeleted: true, text: null, url: null, type: 'deleted'
   });
   
-  if (msg.deleteToken) {
+  // 2. حذف الملف من السيرفر لتفريغ المساحة
+  if (msg.type === 'image' && msg.url.includes('supabase.co')) {
+      // حذف الصور من سيرفر Supabase
+      const fileName = msg.url.split('/').pop();
+      const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+      const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+      
+      fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
+          method: 'DELETE',
+          headers: {
+              'Authorization': `Bearer ${SUPA_KEY}`,
+              'apikey': SUPA_KEY
+          }
+      }).catch(e => console.log('تعذر مسح الصورة من Supabase', e));
+      
+  } else if (msg.deleteToken) {
+      // حذف الفيديوهات والصوتيات من سيرفر Cloudinary
       const fd = new FormData();
       fd.append('token', msg.deleteToken);
       fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', {
          method: 'POST', body: fd
-      }).catch(e => console.log('تعذر حذف الفيديو من كلاوديناري', e));
+      }).catch(e => console.log('تعذر حذف الميديا من كلاوديناري', e));
   }
 }
 
