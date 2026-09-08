@@ -921,17 +921,25 @@ function attachMessages(chatId) {
       area.appendChild(fragment);
       area.scrollTop = area.scrollHeight;
       
-      if (liveMsgsCache.length > 0) {
-        lastMsgDate = tempLastDate;
-        oldestMsgKey = liveMsgsCache[0].key;
-        oldestMsgTimestamp = liveMsgsCache[0].timestamp;
-      }
-    } catch (e) {
-      liveMsgsCache = [];
-    }
-  }
+                        if (liveMsgsCache.length > 0) {
+                    lastMsgDate = tempLastDate;
+                    oldestMsgKey = liveMsgsCache[0].key;
+                    oldestMsgTimestamp = liveMsgsCache[0].timestamp;
+                  }
+                } catch (e) {
+                  liveMsgsCache = [];
+                }
+              }
 
-  messagesRef = db.ref('chats/' + chatId + '/messages');
+              // 🚀 عرض الرسائل المعلقة (الأوفلاين) مباشرة عند فتح المحادثة لتجنب اختفاء الفويسات
+              let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+              pending.filter(p => p.chatId === chatId).forEach(p => {
+                 const el = buildMsgEl(p.msg, true);
+                 el.id = 'row_' + p.key;
+                 area.appendChild(el);
+              });
+
+              messagesRef = db.ref('chats/' + chatId + '/messages');
   
   // 🚀 الحل الجذري: نلغي الاعتماد على startAt نهائياً لأنه يسبب اختفاء الرسائل لو توقيت الأجهزة مختلف
   currentMessagesQuery = messagesRef.orderByKey().limitToLast(100);
@@ -1251,7 +1259,9 @@ function buildMsgEl(msg, isBackground = false) {
   }
 
   const bubble = document.createElement('div');
-  bubble.className = 'msg-bubble'; bubble.id = 'msg-' + msg.key;
+  bubble.className = 'msg-bubble'; 
+  if (msg.type === 'image' || msg.type === 'video') bubble.classList.add('msg-bubble-media');
+  bubble.id = 'msg-' + msg.key;
   let replyIcon = document.createElement('div');
   replyIcon.innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2.5"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>`;
   replyIcon.style.cssText = `position:absolute; top:50%; margin-top:-11px; transform:scale(0); opacity:0; transition:all 0.2s ease-out; z-index:-1;`;
@@ -1415,7 +1425,7 @@ function buildMsgEl(msg, isBackground = false) {
   
   if (msg.isPending) {
     const overlay = document.createElement('div'); overlay.className = 'pending-overlay';
-    overlay.style.cssText = 'position:absolute; inset:0; background:rgba(0,0,0,0.6); border-radius:18px; display:flex; align-items:center; justify-content:center; z-index:10; flex-direction:column; gap:8px;';
+    overlay.style.cssText = 'position:absolute; inset:0; background:rgba(0,0,0,0.6); border-radius:inherit; display:flex; align-items:center; justify-content:center; z-index:10; flex-direction:column; gap:8px;';
     overlay.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`;
     bubble.style.overflow = 'hidden'; bubble.appendChild(overlay);
   }
@@ -1489,125 +1499,57 @@ async function toggleRecording(isSinging = false) {
     audioChunks = []; isRecordingCanceled = false;
     mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = async () => {
+        mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
-      const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
-      const blob = new Blob(localChunks, { type: actualMimeType });
+      const blob = new Blob(localChunks, { type: 'audio/webm' });
       const finalDuration = recordDurationStr;
       
-      // حماية صارمة: إذا الحجم صغير كتير أو المدة صفر بنلغي الإرسال لمنع الفقاعات الفاضية
+      // حماية صارمة
       if (blob.size < 3000 || finalDuration === '0:00') {
          showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
       }
-      
-      const tempId = 'temp-audio-' + Date.now();
-      const area = document.getElementById('messages-area');
-      if (area) {
-        const tempDiv = document.createElement('div');
-        tempDiv.className = 'msg-row out';
-        tempDiv.id = tempId;
-        tempDiv.innerHTML = `
-          <div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); width: 220px;">
-            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
-              <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
-              <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
-            </div>
-            <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
-              <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
-            </div>
-          </div>`;
-        area.appendChild(tempDiv);
-        area.scrollTop = area.scrollHeight;
-      }
 
-      await new Promise(r => setTimeout(r, 50));
-      
-      const tryUploadVoice = () => {
-          const el = document.getElementById(tempId);
-          if (el) {
-              // نرجع الفقاعة لشكلها الأصلي بحال كانت جاي من إعادة محاولة
-              const bubble = el.querySelector('.msg-bubble');
-              if (bubble) {
-                 bubble.innerHTML = `
-                  <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
-                    <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
-                    <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
-                  </div>
-                  <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
-                    <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
-                  </div>`;
-                 bubble.style.background = 'rgba(0, 240, 255, 0.05)';
-                 bubble.style.border = '1px dashed var(--neon-cyan)';
-              }
+      // 🚀 المعالجة الأوفلاين: تحويل المقطع لنص (Base64) لحفظه بالذاكرة حتى لو مافي نت
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = () => {
+          const base64Audio = reader.result;
+          const tempKey = 'pending_voice_' + Date.now();
+          
+          let replyData = null;
+          if (replyingToMsg) {
+            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+            cancelReply();
           }
 
-          const fd = new FormData();
-          fd.append('file', blob);
-          fd.append('upload_preset', 'omarhweh1');
-
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
-          xhr.timeout = 25000; // مهلة 25 ثانية قبل ما يعتبره فشل
-
-          xhr.upload.onprogress = function(e) {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              const bar = document.getElementById('voice_bar_' + tempId);
-              const pctTxt = document.getElementById('voice_pct_' + tempId);
-              if (bar) bar.style.width = percent + '%';
-              if (pctTxt) pctTxt.textContent = percent + '%';
-              if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
-            }
+          // إنشاء كائن الرسالة المعلقة
+          const tempMsg = {
+              key: tempKey, type: 'voice', url: base64Audio, duration: finalDuration,
+              senderUid: currentUser.uid, timestamp: Date.now(), isPending: true, replyTo: replyData
           };
 
-          const handleFail = (msg) => {
-             const row = document.getElementById(tempId);
-             if (row) {
-                const bubble = row.querySelector('.msg-bubble');
-                if (bubble) {
-                   bubble.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); width:100%;">${msg} 🔄</button>`;
-                   bubble.style.border = 'none';
-                   bubble.style.background = 'transparent';
-                }
-             }
-          };
+          // 1. تنزيل الفقاعة بالمحادثة فوراً
+          const area = document.getElementById('messages-area');
+          if (area) {
+              const el = buildMsgEl(tempMsg, false);
+              el.id = 'row_' + tempKey;
+              area.appendChild(el);
+              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
+          }
 
-          xhr.onload = async function() {
-            if (xhr.status === 200) {
-              let data = {};
-              try { data = JSON.parse(xhr.responseText); } catch(e) {}
-              if (data.secure_url) {
-                const tempEl = document.getElementById(tempId);
-                if (tempEl) tempEl.remove();
-                
-                let replyData = null;
-                if (replyingToMsg) {
-                  replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-                  cancelReply();
-                }
-                await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
-              } else {
-                handleFail('السيرفر رفض الملف');
-              }
-            } else {
-              handleFail('فشل الرفع');
-            }
-          };
+          // 2. حفظها بالذاكرة الدائمة (LocalStorage) لترتفع لحالها لما يرجع النت
+          let pendingQ = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+          pendingQ.push({ chatId: currentChat.chatId, friendUid: currentChat.friendUid, msg: tempMsg, key: tempKey, time: Date.now() });
+          localStorage.setItem('neon_pending_msgs', JSON.stringify(pendingQ));
 
-          xhr.onerror = function() { handleFail('خطأ اتصال بالشبكة'); };
-          xhr.ontimeout = function() { handleFail('انتهى الوقت، أعد المحاولة'); };
-
-          xhr.send(fd);
+          // 3. محاولة المزامنة والرفع الفوري
+          syncPendingMessages();
       };
-      
-      window.pendingUploads[tempId] = tryUploadVoice;
-      tryUploadVoice();
     };
-    
     mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
 
     if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
@@ -1794,36 +1736,77 @@ async function sendTextMsg() {
 }
 
 async function syncPendingMessages() {
+  if (window.isSyncingMsgs) return;
+  window.isSyncingMsgs = true;
+
   let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-  if (pending.length === 0) return;
+  if (pending.length === 0) { window.isSyncingMsgs = false; return; }
+  
   const now = Date.now();
   const validPending = [];
+  let hasChanges = false;
+  
   for (const p of pending) {
-    if (now - p.time > 86400000) continue; // مسح المعلق من أكتر من 24 ساعة
-    validPending.push(p);
+    if (now - p.time > 86400000) { hasChanges = true; continue; } // مسح المعلق من أكثر من 24 ساعة
     
-    // 🚀 توليد مفتاح وتوقيت جديد لضمان عدم رمي الرسالة في الماضي إذا طال انقطاع النت
-    const newRef = db.ref('chats/' + p.chatId + '/messages').push();
-    const trueTime = getTrueTime();
-    p.msg.timestamp = trueTime;
-    
-    newRef.set(p.msg).then(() => {
-       const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
-       db.ref().update({
+    // 🚀 المعالجة الذكية للمقاطع الصوتية المعلقة: الرفع لـ Supabase أولاً
+    if (p.msg.type === 'voice' && p.msg.url && p.msg.url.startsWith('data:audio')) {
+        try {
+            const res = await fetch(p.msg.url);
+            const blob = await res.blob();
+            const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+            const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+            const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
+            
+            const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY, 'Content-Type': blob.type || 'audio/webm' },
+                body: blob
+            });
+            
+            if (uploadRes.ok) {
+                p.msg.url = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+                hasChanges = true;
+            } else {
+                validPending.push(p); continue;
+            }
+        } catch (err) {
+            validPending.push(p); continue; // فشل الرفع لعدم وجود نت، نتركه للمرة القادمة
+        }
+    }
+
+    // 🚀 الآن نرسل الرسالة الجاهزة لفايربيس (سواء كانت نص، أو صوت مرفوع جاهز)
+    try {
+        delete p.msg.isPending; // إزالة حالة التعليق
+        const newRef = db.ref('chats/' + p.chatId + '/messages').push();
+        const trueTime = getTrueTime();
+        p.msg.timestamp = trueTime;
+        
+        await newRef.set(p.msg);
+        
+        const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
+        
+        await db.ref().update({
           [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
           [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
-       });
-       db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
-       
-       let currentPending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-       localStorage.setItem('neon_pending_msgs', JSON.stringify(currentPending.filter(item => item.key !== p.key)));
-       
-       // إخفاء الفقاعة القديمة من الشاشة لتجنب التكرار
-       const oldRow = document.getElementById('row_' + p.key) || document.getElementById('msg-' + p.key)?.closest('.msg-row');
-       if (oldRow) oldRow.remove();
-    }).catch(() => {});
+        });
+        
+        db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
+        
+        const oldRow = document.getElementById('row_' + p.key) || document.getElementById('msg-' + p.key)?.closest('.msg-row');
+        if (oldRow) oldRow.remove();
+        
+        hasChanges = true;
+    } catch (e) {
+        p.msg.isPending = true; // استرجاع حالة التعليق
+        validPending.push(p);
+    }
   }
-  if (validPending.length !== pending.length) localStorage.setItem('neon_pending_msgs', JSON.stringify(validPending));
+  
+  if (hasChanges || validPending.length !== pending.length) {
+     localStorage.setItem('neon_pending_msgs', JSON.stringify(validPending));
+  }
+  window.isSyncingMsgs = false;
 }
 
 window.addEventListener('online', syncPendingMessages);
@@ -2472,88 +2455,48 @@ async function toggleRecording(isSinging = false) {
       const blob = new Blob(localChunks, { type: 'audio/webm' });
       const finalDuration = recordDurationStr;
       
-      // حماية صارمة: إذا الحجم أقل من 3 كيلوبايت أو المدة صفر، بنلغي الإرسال فوراً
+      // حماية صارمة
       if (blob.size < 3000 || finalDuration === '0:00') {
+         showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
       }
-      
-      const tempId = 'temp-audio-' + Date.now();
-      const area = document.getElementById('messages-area');
-      if (area) {
-        const tempDiv = document.createElement('div');
-        tempDiv.className = 'msg-row out';
-        tempDiv.id = tempId;
-        tempDiv.innerHTML = `
-          <div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); width: 220px;">
-            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
-              <span>${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
-              <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
-            </div>
-            <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
-              <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
-            </div>
-          </div>`;
-        area.appendChild(tempDiv);
-        area.scrollTop = area.scrollHeight;
-      }
 
-      await new Promise(r => setTimeout(r, 50));
-      
-      const fd = new FormData();
-      fd.append('file', blob);
-      fd.append('upload_preset', 'omarhweh1');
-
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
-      
-      // 🚀 مهلة 30 ثانية لتفادي التعليق للأبد، إذا مارد السيرفر بيحذفه من الشاشة
-      xhr.timeout = 30000;
-
-      xhr.upload.onprogress = function(e) {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          const bar = document.getElementById('voice_bar_' + tempId);
-          const pctTxt = document.getElementById('voice_pct_' + tempId);
-          if (bar) bar.style.width = percent + '%';
-          if (pctTxt) pctTxt.textContent = percent + '%';
-        }
-      };
-
-      xhr.onload = async function() {
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
-
-        if (xhr.status === 200) {
-          let data = {};
-          try { data = JSON.parse(xhr.responseText); } catch(e) {}
-          if (data.secure_url) {
-            let replyData = null;
-            if (replyingToMsg) {
-              replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-              cancelReply();
-            }
-            await pushMessage({ type: 'voice', url: data.secure_url, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
-          } else {
-            showToast('فشل الرفع، سيرفر الصورة رفض الملف', 'error');
+      // 🚀 المعالجة الأوفلاين: تحويل المقطع لنص (Base64) لحفظه بالذاكرة حتى لو مافي نت
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = () => {
+          const base64Audio = reader.result;
+          const tempKey = 'pending_voice_' + Date.now();
+          
+          let replyData = null;
+          if (replyingToMsg) {
+            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+            cancelReply();
           }
-        } else {
-          showToast('فشل الرفع', 'error');
-        }
-      };
 
-      xhr.onerror = function() {
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
-        showToast('خطأ بالاتصال، تأكد من الشبكة', 'error');
-      };
-      
-      xhr.ontimeout = function() {
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
-        showToast('انتهى وقت الرفع (السيرفر لم يستجب)', 'error');
-      };
+          // إنشاء كائن الرسالة المعلقة
+          const tempMsg = {
+              key: tempKey, type: 'voice', url: base64Audio, duration: finalDuration,
+              senderUid: currentUser.uid, timestamp: Date.now(), isPending: true, replyTo: replyData
+          };
 
-      xhr.send(fd);
+          // 1. تنزيل الفقاعة بالمحادثة فوراً
+          const area = document.getElementById('messages-area');
+          if (area) {
+              const el = buildMsgEl(tempMsg, false);
+              el.id = 'row_' + tempKey;
+              area.appendChild(el);
+              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
+          }
+
+          // 2. حفظها بالذاكرة الدائمة (LocalStorage) لترتفع لحالها لما يرجع النت
+          let pendingQ = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+          pendingQ.push({ chatId: currentChat.chatId, friendUid: currentChat.friendUid, msg: tempMsg, key: tempKey, time: Date.now() });
+          localStorage.setItem('neon_pending_msgs', JSON.stringify(pendingQ));
+
+          // 3. محاولة المزامنة والرفع الفوري لـ Supabase
+          syncPendingMessages();
+      };
     };
     
     // 🚀 إزالة تقطيع 200 ميلي ثانية لتجنب تشوه رأس الملف WebM
@@ -2645,7 +2588,21 @@ function playVoice(btn, url, msgKey, isOut) {
     currentAudio.pause(); document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); clearInterval(audioUpdateInterval);
   }
-  currentAudioUrl = url; currentAudio = new Audio(url); currentAudio.preload = 'auto'; currentAudio.playbackRate = globalVoiceSpeed;
+  
+  currentAudioUrl = url; 
+  
+  // 🚀 السحر هون: إجبار كلاوديناري يعطينا الملف بصيغة MP3 قابلة للتقديم والتأخير
+  let optimizedUrl = url;
+  if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
+    if (!optimizedUrl.includes('f_mp3')) {
+       optimizedUrl = optimizedUrl.replace('/upload/', '/upload/f_mp3,q_auto/');
+    }
+  }
+  
+  currentAudio = new Audio(optimizedUrl); 
+  currentAudio.preload = 'auto'; 
+  currentAudio.playbackRate = globalVoiceSpeed;
+  
   btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
   currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
   currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
