@@ -1774,11 +1774,12 @@ async function syncPendingMessages() {
     // 🚀 الآن نرسل الرسالة الجاهزة لفايربيس (سواء كانت نص، أو صوت مرفوع جاهز)
     try {
         delete p.msg.isPending; // إزالة حالة التعليق
-        const newRef = db.ref('chats/' + p.chatId + '/messages').push();
-        // 🚀 إجبار الفايربيس أن يختم الرسالة المعلقة بتوقيت استلامه الفعلي الآن لتجنب أي تضارب
-        p.msg.timestamp = firebase.database.ServerValue.TIMESTAMP; 
         
-        await newRef.set(p.msg);
+        // 🚀 استخدام المفتاح الثابت المحفوظ سابقاً بدل توليد مفتاح جديد لمنع تكرار الرسالة نهائياً (Idempotent Operation)
+        const trueTime = getTrueTime();
+        p.msg.timestamp = trueTime; // إصلاح مشكلة Invalid Date
+        
+        await db.ref('chats/' + p.chatId + '/messages/' + p.key).set(p.msg);
         
         const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
         
@@ -2480,7 +2481,9 @@ async function toggleRecording(isSinging = false) {
       reader.readAsDataURL(blob);
       reader.onloadend = () => {
           const base64Audio = reader.result;
-          const tempKey = 'pending_voice_' + Date.now();
+          // 🚀 توليد مفتاح فايربيس حقيقي وثابت منذ البداية لمنع التكرار لو اشتغلت المزامنة ألف مرة
+          const tempRef = db.ref('chats/' + currentChat.chatId + '/messages').push();
+          const tempKey = tempRef.key;
           
           let replyData = null;
           if (replyingToMsg) {
@@ -2567,7 +2570,8 @@ function cancelVoiceRecord() { isRecordingCanceled = true; stopRecording(); }
 /* ═══════════════════════════════════
    VOICE PLAYBACK & PROGRESS
 ═══════════════════════════════════ */
-var currentAudio = null, currentAudioUrl = null, audioUpdateInterval = null;
+// 🚀 استبدال currentAudioUrl بـ currentAudioMsgKey لضمان عدم تداخل الملفات المكررة
+var currentAudio = null, currentAudioMsgKey = null, audioUpdateInterval = null;
 var globalVoiceSpeed = 1;
 
 function toggleVoiceSpeed(btn, msgKey) {
@@ -2594,18 +2598,34 @@ function playVoice(btn, url, msgKey, isOut) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
     const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
   }
-  if (currentAudio && currentAudioUrl === url) {
-    if (!currentAudio.paused) { currentAudio.pause(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; clearInterval(audioUpdateInterval); return; } 
-    else { currentAudio.play(); currentAudio.playbackRate = globalVoiceSpeed; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); return; }
+  
+  // 🚀 الفحص عبر مفتاح الرسالة وليس الرابط، لمنع تداخل تشغيل الرسائل المتشابهة
+  if (currentAudio && currentAudioMsgKey === msgKey) {
+    if (!currentAudio.paused) { 
+        currentAudio.pause(); 
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; 
+        clearInterval(audioUpdateInterval); 
+        return; 
+    } else { 
+        currentAudio.play(); 
+        currentAudio.playbackRate = globalVoiceSpeed; 
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+        startAudioProgress(msgKey); 
+        return; 
+    }
   }
+  
+  // إذا في صوت تاني شغال، وقفه ورجع أيقونته لزر التشغيل العادي
   if (currentAudio) {
-    currentAudio.pause(); document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
-    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); clearInterval(audioUpdateInterval);
+    currentAudio.pause(); 
+    document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
+    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
+    clearInterval(audioUpdateInterval);
   }
   
-  currentAudioUrl = url; 
+  currentAudioMsgKey = msgKey; 
   
-  // 🚀 السحر هون: إجبار كلاوديناري يعطينا الملف بصيغة MP3 قابلة للتقديم والتأخير
+  // 🚀 إجبار كلاوديناري يعطينا الملف بصيغة MP3 قابلة للتقديم والتأخير
   let optimizedUrl = url;
   if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
     if (!optimizedUrl.includes('f_mp3')) {
@@ -2639,7 +2659,7 @@ function playVoice(btn, url, msgKey, isOut) {
     let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
     while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
     let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
-    currentAudio = null; currentAudioUrl = null; clearInterval(audioUpdateInterval);
+    currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
     if (nextBtn) nextBtn.click();
   };
 }
