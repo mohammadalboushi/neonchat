@@ -975,6 +975,12 @@ function attachMessages(chatId) {
   messagesListener = currentMessagesQuery.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
+    // 🚀 تنظيف فوري لأي رسالة علقت بالداتا بيز بمفتاح خاطئ عشان ما تضل تطبع بآخر الشاشة
+    if (msg.key && (msg.key.startsWith('pending_') || msg.key.startsWith('temp_'))) {
+        db.ref('chats/' + chatId + '/messages/' + msg.key).remove();
+        return;
+    }
+
     if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image') && msg.timestamp) {
       // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
                       // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
@@ -1450,156 +1456,6 @@ function buildMsgEl(msg, isBackground = false) {
    لأنه كان يسبب تعارضاً مع دالة الرفع المخصصة
    للفيديوهات والمقاطع الصوتية الموجودة في الأسفل.
 ═══════════════════════════════════ */
-
-/* ═══════════════════════════════════
-   VOICE RECORDING
-═══════════════════════════════════ */
-async function toggleRecording(isSinging = false) {
-  if (isRecording) { stopRecording(); return; }
-  if (!navigator.mediaDevices) { showToast('المتصفح لا يدعم التسجيل', 'error'); return; }
-  try {
-    isSingingMode = isSinging; 
-    
-    // 🚀 السحر هون: إنشاء محرك الصوت وإيقاظه فوراً عند الضغطة قبل الانتظار
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume();
-    }
-
-    let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
-    if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
-    const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-    
-    const source = audioCtx.createMediaStreamSource(rawStream);
-    const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
-
-    const preGain = audioCtx.createGain(); preGain.gain.value = 0.5;
-    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
-    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
-    const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4; 
-    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
-
-    function generateReverb(ctx) {
-      const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
-      const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
-      for (let i = 0; i < length; i++) {
-        const decay = Math.pow(1 - i / length, 1.5); 
-        left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay;
-      }
-      return impulse;
-    }
-
-    const convolver = audioCtx.createConvolver(); convolver.buffer = generateReverb(audioCtx);
-    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6; 
-    const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
-    const dest = audioCtx.createMediaStreamDestination();
-
-    source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
-    compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
-
-    audioChunks = []; isRecordingCanceled = false;
-    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-        mediaRecorder.onstop = async () => {
-      rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
-      if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
-      
-      const localChunks = [...audioChunks];
-      const blob = new Blob(localChunks, { type: 'audio/webm' });
-      const finalDuration = recordDurationStr;
-      
-      // حماية صارمة
-      if (blob.size < 3000 || finalDuration === '0:00') {
-         showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
-         return;
-      }
-
-      // 🚀 المعالجة الأوفلاين: تحويل المقطع لنص (Base64) لحفظه بالذاكرة حتى لو مافي نت
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = () => {
-          const base64Audio = reader.result;
-          const tempKey = 'pending_voice_' + Date.now();
-          
-          let replyData = null;
-          if (replyingToMsg) {
-            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-            cancelReply();
-          }
-
-          // إنشاء كائن الرسالة المعلقة
-          const tempMsg = {
-              key: tempKey, type: 'voice', url: base64Audio, duration: finalDuration,
-              senderUid: currentUser.uid, timestamp: Date.now(), isPending: true, replyTo: replyData
-          };
-
-          // 1. تنزيل الفقاعة بالمحادثة فوراً
-          const area = document.getElementById('messages-area');
-          if (area) {
-              const el = buildMsgEl(tempMsg, false);
-              el.id = 'row_' + tempKey;
-              area.appendChild(el);
-              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
-          }
-
-          // 2. حفظها بالذاكرة الدائمة (LocalStorage) لترتفع لحالها لما يرجع النت
-          let pendingQ = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-          pendingQ.push({ chatId: currentChat.chatId, friendUid: currentChat.friendUid, msg: tempMsg, key: tempKey, time: Date.now() });
-          localStorage.setItem('neon_pending_msgs', JSON.stringify(pendingQ));
-
-          // 3. محاولة المزامنة والرفع الفوري
-          syncPendingMessages();
-      };
-    };
-    mediaRecorder.start(200); isRecording = true; recordStart = Date.now();
-
-    if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
-    else { document.getElementById('btn-voice').classList.add('recording'); document.getElementById('btn-music-voice').style.display = 'none'; }
-
-    document.getElementById('msg-input-wrap').style.display = 'none'; document.getElementById('btn-attach').style.display = 'none';
-    document.getElementById('btn-cancel-voice').style.display = 'flex'; document.getElementById('recording-indicator').style.display = 'flex';
-    
-    let canvas = document.getElementById('neon-visualizer');
-    if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'neon-visualizer'; canvas.width = 100; canvas.height = 25; canvas.style.marginLeft = '12px'; document.getElementById('recording-indicator').appendChild(canvas); }
-    canvas.style.display = 'block'; const canvasCtx = canvas.getContext('2d'); const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    function drawVisualizer() {
-      if (!isRecording) return;
-      requestAnimationFrame(drawVisualizer); analyser.getByteFrequencyData(dataArray); canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-      let x = 0; const barWidth = (canvas.width / analyser.frequencyBinCount) * 2;
-      for (let i = 0; i < analyser.frequencyBinCount; i++) {
-        const barHeight = (dataArray[i] / 255) * canvas.height;
-        canvasCtx.fillStyle = isSingingMode ? 'rgba(255, 0, 144, 0.9)' : 'rgba(0, 240, 255, 0.9)';
-        canvasCtx.shadowBlur = 6; canvasCtx.shadowColor = isSingingMode ? '#ff0090' : '#00f0ff';
-        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight); x += barWidth + 1.5;
-      }
-    }
-    drawVisualizer();
-
-    if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.set('recording'); recRef.onDisconnect().remove(); }
-    if (typeof recordTimerInt !== 'undefined') clearInterval(recordTimerInt);
-    recordDurationStr = '0:00'; const timerSpan = document.getElementById('rec-timer-text'); if (timerSpan) timerSpan.textContent = '0:00';
-    recordTimerInt = setInterval(() => {
-      const sec = Math.floor((Date.now() - recordStart) / 1000), m = Math.floor(sec / 60), s = sec % 60;
-      recordDurationStr = m + ':' + (s < 10 ? '0' : '') + s;
-      if (timerSpan) timerSpan.textContent = recordDurationStr;
-    }, 1000);
-  } catch (e) { showToast('تعذر الوصول للمايكروفون', 'error'); }
-}
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-  isRecording = false;
-  if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.remove(); recRef.onDisconnect().cancel(); }
-  document.getElementById('btn-voice').classList.remove('recording'); document.getElementById('btn-voice').style.display = 'flex';
-  const btnMusic = document.getElementById('btn-music-voice'); if (btnMusic) { btnMusic.classList.remove('recording'); btnMusic.style.display = 'flex'; }
-  document.getElementById('msg-input-wrap').style.display = 'block'; document.getElementById('btn-attach').style.display = 'flex';
-  document.getElementById('btn-cancel-voice').style.display = 'none'; document.getElementById('recording-indicator').style.display = 'none';
-  const canvas = document.getElementById('neon-visualizer'); if (canvas) canvas.style.display = 'none';
-  clearInterval(recordTimerInt);
-}
-
-function cancelVoiceRecord() { isRecordingCanceled = true; stopRecording(); }
 
 /* ═══════════════════════════════════
    VOICE PLAYBACK & PROGRESS
