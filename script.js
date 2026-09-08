@@ -1457,76 +1457,7 @@ function buildMsgEl(msg, isBackground = false) {
    للفيديوهات والمقاطع الصوتية الموجودة في الأسفل.
 ═══════════════════════════════════ */
 
-/* ═══════════════════════════════════
-   VOICE PLAYBACK & PROGRESS
-═══════════════════════════════════ */
-var currentAudio = null, currentAudioUrl = null, audioUpdateInterval = null;
-
-function playVoice(btn, url, msgKey, isOut) {
-  if (isOut === false && currentChat) {
-    db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
-    const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
-  }
-  if (currentAudio && currentAudioUrl === url) {
-    if (!currentAudio.paused) { currentAudio.pause(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; clearInterval(audioUpdateInterval); return; } 
-    else { currentAudio.play(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); return; }
-  }
-  if (currentAudio) {
-    currentAudio.pause(); document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
-    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); clearInterval(audioUpdateInterval);
-  }
-  currentAudioUrl = url; currentAudio = new Audio(url); currentAudio.preload = 'auto'; 
-  btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
-  currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
-  currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
-  
-  let playPromise = currentAudio.play();
-  if (playPromise !== undefined) playPromise.catch(e => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; });
-
-  currentAudio.onended = () => {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-    const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = '0%';
-    const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
-    let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
-    while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
-    let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
-    currentAudio = null; currentAudioUrl = null; clearInterval(audioUpdateInterval);
-    if (nextBtn) nextBtn.click();
-  };
-}
-
-function startAudioProgress(msgKey) {
-  clearInterval(audioUpdateInterval);
-  const durEl = document.getElementById('dur-' + msgKey);
-  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; if (origStr && origStr !== '🎵 أغنية') { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
-  audioUpdateInterval = setInterval(() => {
-    if (currentAudio && !currentAudio.paused) {
-      let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration;
-      if (totalDuration > 0) {
-        if (origStr === '🎵 أغنية' || origStr === '0:00') {
-          const totM = Math.floor(totalDuration / 60), totS = Math.floor(totalDuration % 60);
-          origStr = `${totM}:${totS < 10 ? '0' : ''}${totS}`;
-          if (durEl) durEl.setAttribute('data-orig', origStr);
-        }
-        let perc = (currentAudio.currentTime / totalDuration) * 100; if (perc > 100) perc = 100;
-        let fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = perc + '%';
-        if (durEl) { const curSec = Math.floor(currentAudio.currentTime), m = Math.floor(curSec / 60), s = curSec % 60; durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`; }
-      }
-    }
-  }, 30); 
-}
-
-function seekVoice(event, url, msgKey) {
-  if (!currentAudio || currentAudioUrl !== url) return;
-  const durEl = document.getElementById('dur-' + msgKey), origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; if (origStr && origStr !== '🎵 أغنية') { const parts = origStr.split(':'); if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); }
-  let totalDuration = currentAudio.duration; if (!totalDuration || totalDuration === Infinity) totalDuration = fallbackDuration; if (!totalDuration) return;
-  const rect = event.currentTarget.getBoundingClientRect(), clickX = rect.right - event.clientX; 
-  let perc = clickX / rect.width; if (perc < 0) perc = 0; if (perc > 1) perc = 1;
-  currentAudio.currentTime = totalDuration * perc;
-  const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = (perc * 100) + '%';
-}
+/* تم تنظيف دالة تشغيل الصوت القديمة من هنا لمنع التكرار */
 
 /* ═══════════════════════════════════
    SEND MESSAGES (TEXT), REACTION & MENU
