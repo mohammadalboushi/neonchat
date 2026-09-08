@@ -296,6 +296,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       initCallListener(user.uid); initFriendRequestsListener(user.uid); initFriendsListListener(user.uid); 
       initMicrophone(); 
       syncPendingMessages();
+      wakeUpCloudinary(); // 🚀 إرسال النبضة الخفية أول ما يشتغل التطبيق
       showScreen('home');
     } else {
       if (!navigator.onLine && localStorage.getItem('myProfile')) return; 
@@ -369,6 +370,7 @@ function setupPresence(uid) {
       myStatusRef.set('online');
       myStatusRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
       syncPendingMessages();
+      wakeUpCloudinary(); // 🚀 إنعاش كلاوديناري مع رجعة النت
     }
   });
 }
@@ -697,9 +699,24 @@ function detachMessages() {
   if (iAmBlockedRef && iAmBlockedListener) { iAmBlockedRef.off('value', iAmBlockedListener); iAmBlockedRef = null; iAmBlockedListener = null; }
 }
 
+// 🚀 نظام النبضة الخفية: لإبقاء كلاوديناري مستيقظاً ومنع تعليق أول تسجيل صوتي
+let lastCloudinaryWake = 0;
+function wakeUpCloudinary() {
+  const now = Date.now();
+  // نبعت النبضة مرة وحدة كل 5 دقايق عشان ما نعمل ضغط عالفاضي
+  if (now - lastCloudinaryWake < 300000) return; 
+  lastCloudinaryWake = now;
+  
+  const fd = new FormData();
+  fd.append('upload_preset', 'omarhweh1');
+  // نبعت طلب ناقص (بدون ملف) عن قصد.. السيرفر بيصحى، بيهيئ الاتصال، وبضل جاهز للتسجيل الحقيقي!
+  fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', { method: 'POST', body: fd }).catch(()=>{});
+}
+
 async function openChat(chatId, friendUid, friendProfile = null) {
   renderScreenUI('chat'); 
   detachMessages();
+  wakeUpCloudinary(); // 🚀 تسخين السيرفر أول ما تفتح المحادثة
 
   if (!friendProfile) {
     const snap = await db.ref('users/' + friendUid).once('value');
