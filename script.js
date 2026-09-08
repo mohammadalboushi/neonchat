@@ -1000,6 +1000,11 @@ function attachMessages(chatId) {
     }
 
     if (document.getElementById('msg-' + msg.key)) {
+      // 🚀 إصلاح اختفاء الرسالة: إذا كانت الرسالة موجودة مسبقاً كرسالة معلقة (أوفلاين)، نستبدلها بالنسخة الرسمية
+      const existingRow = document.getElementById('msg-' + msg.key).closest('.msg-row');
+      if (existingRow && existingRow.querySelector('.pending-overlay')) {
+         existingRow.replaceWith(buildMsgEl(msg, false));
+      }
       return; 
     }
 
@@ -1743,9 +1748,10 @@ async function syncPendingMessages() {
   let hasChanges = false;
   
   for (const p of pending) {
-    if (now - p.time > 86400000) { hasChanges = true; continue; } // مسح المعلق من أكثر من 24 ساعة
+    // 🚀 تقليل مدة الاحتفاظ بالرسائل المعلقة لـ 1 ساعة لقتل أي رسالة زومبي معطوبة تلقائياً وتنظيف جوالك
+    if (now - p.time > 3600000) { hasChanges = true; continue; } 
     
-    // 🚀 المعالجة الذكية للمقاطع الصوتية المعلقة: الرفع لـ Supabase أولاً
+    // الرفع لـ Supabase أولاً
     if (p.msg.type === 'voice' && p.msg.url && p.msg.url.startsWith('data:audio')) {
         try {
             const res = await fetch(p.msg.url);
@@ -1767,35 +1773,50 @@ async function syncPendingMessages() {
                 validPending.push(p); continue;
             }
         } catch (err) {
-            validPending.push(p); continue; // فشل الرفع لعدم وجود نت، نتركه للمرة القادمة
+            validPending.push(p); continue; 
         }
     }
 
-    // 🚀 الآن نرسل الرسالة الجاهزة لفايربيس (سواء كانت نص، أو صوت مرفوع جاهز)
+    // الإرسال لفايربيس
     try {
-        delete p.msg.isPending; // إزالة حالة التعليق
+        delete p.msg.isPending;
         
-        // 🚀 استخدام المفتاح الثابت المحفوظ سابقاً بدل توليد مفتاح جديد لمنع تكرار الرسالة نهائياً (Idempotent Operation)
+        const msgRef = db.ref('chats/' + p.chatId + '/messages/' + p.key);
+        const snapshot = await msgRef.once('value');
         const trueTime = getTrueTime();
-        p.msg.timestamp = trueTime; // إصلاح مشكلة Invalid Date
         
-        await db.ref('chats/' + p.chatId + '/messages/' + p.key).set(p.msg);
+        // 🚀 نمنع تحديث الوقت إذا كانت الرسالة واصلة مسبقاً، عشان ما تنطبع تحت كأنها جديدة!
+        if (!snapshot.exists()) {
+            p.msg.timestamp = trueTime; 
+            await msgRef.set(p.msg);
+        }
         
-        const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
+        // 🚀 عزلنا كود التحديثات الجانبية بـ try-catch خاص عشان لو فشل ما يرجع الرسالة للطابور
+        try {
+            const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
+            if (p.friendUid) {
+                await db.ref().update({
+                  [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
+                  [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
+                });
+                db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
+            }
+        } catch(metaErr) { console.error("تجاهل خطأ القائمة الجانبية", metaErr); }
         
-        await db.ref().update({
-          [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
-          [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
-        });
-        
-        db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
-        
-        const oldRow = document.getElementById('row_' + p.key) || document.getElementById('msg-' + p.key)?.closest('.msg-row');
-        if (oldRow) oldRow.remove();
+        // 🚀 الإصلاح الجذري: نلغي الحذف الأعمى للرسالة.
+        // فايربيز أصلاً بيحدث الرسالة وبيشيل شاشة التحميل لحاله (عن طريق messagesListener).
+        // هون بس بنتأكد إذا لسا فيها pending-overlay (بحال ما تحدثت لسبب ما) نستبدلها بالرسالة النظيفة.
+        const existingRow = document.getElementById('msg-' + p.key)?.closest('.msg-row');
+        if (existingRow && existingRow.querySelector('.pending-overlay')) {
+            existingRow.replaceWith(buildMsgEl(p.msg, false));
+        } else if (document.getElementById('row_' + p.key)) {
+            // تنظيف بحال علق الـ row المؤقت بدون msg id
+            document.getElementById('row_' + p.key).remove();
+        }
         
         hasChanges = true;
     } catch (e) {
-        p.msg.isPending = true; // استرجاع حالة التعليق
+        p.msg.isPending = true; 
         validPending.push(p);
     }
   }
@@ -2618,6 +2639,7 @@ function playVoice(btn, url, msgKey, isOut) {
   // إذا في صوت تاني شغال، وقفه ورجع أيقونته لزر التشغيل العادي
   if (currentAudio) {
     currentAudio.pause(); 
+    currentAudio.src = ''; // 🚀 إفراغ المصدر يقتل التحميل المعلق فوراً
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
     clearInterval(audioUpdateInterval);
@@ -2625,7 +2647,7 @@ function playVoice(btn, url, msgKey, isOut) {
   
   currentAudioMsgKey = msgKey; 
   
-  // 🚀 إجبار كلاوديناري يعطينا الملف بصيغة MP3 قابلة للتقديم والتأخير
+  // إجبار كلاوديناري يعطينا الملف بصيغة MP3 قابلة للتقديم والتأخير
   let optimizedUrl = url;
   if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
     if (!optimizedUrl.includes('f_mp3')) {
