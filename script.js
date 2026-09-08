@@ -272,12 +272,6 @@ async function initMicrophone() {
 window.localImageCache = {}; // 🚀 السحر هون: ذاكرة تخزين مؤقتة لمنع رجفة الصورة وإعادة تحميلها
 
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.log("Auth Error:", err)).finally(() => {
-  // 🚀 حماية إضافية: إخفاء اللودر إجبارياً بعد ثواني معدودة لو علق الاتصال لسبب ما
-  setTimeout(() => {
-    const loader = document.getElementById('loader-screen');
-    if (loader && !loader.classList.contains('hidden')) loader.classList.add('hidden');
-  }, 4000);
-
   auth.onAuthStateChanged(async user => {
     const loader = document.getElementById('loader-screen');
     if (loader) loader.classList.add('hidden');
