@@ -17,13 +17,9 @@ const messaging = firebase.messaging();
 const VERCEL_URL = 'https://neonchat-five.vercel.app';
 const VAPID_KEY = 'BLyGo78MotBcNontRvYa14hdbwWLxjJBJ4AWFIj35Ek125D-SO2445PpX1tNuSgBv5MPQSZhgPyzNynvVitg68I'; 
 
-// 🚀 مزامنة وقت الجوال مع سيرفر فايربيس لحل جميع مشاكل تضارب الوقت واختفاء الرسائل
-let globalServerOffset = 0;
-db.ref('.info/serverTimeOffset').on('value', snap => {
-  globalServerOffset = snap.val() || 0;
-});
+// 🚀 تم إزالة نظام مزامنة السيرفر الوهمي والعودة للاعتماد على توقيت الجهاز (Date.now) لضمان دقة الترتيب
 function getTrueTime() {
-  return Date.now() + globalServerOffset;
+  return Date.now();
 }
 
 let internalMicId = null; 
@@ -1779,8 +1775,8 @@ async function syncPendingMessages() {
     try {
         delete p.msg.isPending; // إزالة حالة التعليق
         const newRef = db.ref('chats/' + p.chatId + '/messages').push();
-        const trueTime = getTrueTime();
-        p.msg.timestamp = trueTime;
+        // 🚀 إجبار الفايربيس أن يختم الرسالة المعلقة بتوقيت استلامه الفعلي الآن لتجنب أي تضارب
+        p.msg.timestamp = firebase.database.ServerValue.TIMESTAMP; 
         
         await newRef.set(p.msg);
         
@@ -1834,18 +1830,36 @@ async function pushMessage(msg) {
   if (isBlockedByThem) { showToast('لا يمكنك إرسال رسالة لهذا المستخدم', 'error'); return; }
 
   const ref = db.ref('chats/' + chatId + '/messages').push(); 
+  msg.key = ref.key; // 🚀 تحديث المفتاح ليكون متطابق دائماً
   
-  // حفظ الرسالة فوراً في طابور الإرسال تحسباً لانقطاع النت أو خروجك
-  let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-  pending.push({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
-  localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
+  // 🚀 وضع الرسالة كمعلقة فقط إذا كان المتصفح أوفلاين فعلياً
+  if (!navigator.onLine) {
+      msg.isPending = true;
+      let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+      pending.push({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
+      localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
+      
+      // إضافتها للشاشة مباشرة كمعلقة ليراها المستخدم
+      const area = document.getElementById('messages-area');
+      if (area && !document.getElementById('row_' + ref.key)) {
+         const el = buildMsgEl(msg, false);
+         el.id = 'row_' + ref.key;
+         area.appendChild(el);
+         setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
+      }
+      return; // خروج لعدم وجود نت
+  }
 
-  // محاولة الإرسال للسيرفر
-  await ref.set(msg);
-  
-  // إذا وصلت للسيرفر بنجاح، احذفها من الطابور
-  pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-  localStorage.setItem('neon_pending_msgs', JSON.stringify(pending.filter(p => p.key !== ref.key)));
+  // محاولة الإرسال الفوري للسيرفر
+  try {
+      await ref.set(msg);
+  } catch(e) {
+      // إذا فشل الرفع لسبب ما، نعيدها للمعلقات
+      msg.isPending = true;
+      let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+      pending.push({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
+      localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
+  }
 
   const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
   await db.ref().update({
