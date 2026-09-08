@@ -17,6 +17,15 @@ const messaging = firebase.messaging();
 const VERCEL_URL = 'https://neonchat-five.vercel.app';
 const VAPID_KEY = 'BLyGo78MotBcNontRvYa14hdbwWLxjJBJ4AWFIj35Ek125D-SO2445PpX1tNuSgBv5MPQSZhgPyzNynvVitg68I'; 
 
+// 🚀 مزامنة وقت الجوال مع سيرفر فايربيس لحل جميع مشاكل تضارب الوقت واختفاء الرسائل
+let globalServerOffset = 0;
+db.ref('.info/serverTimeOffset').on('value', snap => {
+  globalServerOffset = snap.val() || 0;
+});
+function getTrueTime() {
+  return Date.now() + globalServerOffset;
+}
+
 let internalMicId = null; 
 let currentUser = null;
 let myProfile = null;
@@ -70,7 +79,7 @@ const msgReadObserver = new IntersectionObserver((entries, observer) => {
       }
     }
   });
-}, { threshold: 0.5 });
+}, { threshold: 0.1 });
 
 /* ═══════════════════════════════════
    BACKGROUND CANVAS (مُحسن للبطارية)
@@ -301,6 +310,7 @@ function setupPresence(uid) {
   const connectedRef = db.ref('.info/connected');
 
   let isConnected = false;
+  let lastHiddenTime = 0; // لضبط وقت الخروج من الشاشة
 
   // مراقبة اتصال الإنترنت من سيرفر فايربيس
   connectedRef.on('value', snap => {
@@ -316,14 +326,24 @@ function setupPresence(uid) {
     }
   });
 
-  // مراقبة الشاشة (نظامية)
+  // مراقبة الشاشة (نظامية) - مع إنعاش الاتصال الإجباري
   document.addEventListener('visibilitychange', () => {
-    if (isConnected && navigator.onLine) {
-      if (document.visibilityState === 'visible') {
+    if (document.visibilityState === 'visible') {
+      // إذا مر على الخروج من الشاشة أكثر من 3 ثواني، نعمل إنعاش للاتصال لقتل "الزومبي سوكيت"
+      if (Date.now() - lastHiddenTime > 3000) {
+        firebase.database().goOffline();
+        firebase.database().goOnline();
+      }
+      
+      if (isConnected && navigator.onLine) {
         myStatusRef.set('online');
         // إعادة ضبط أمر الانقطاع لضمان الدقة
         myStatusRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
-      } else {
+        syncPendingMessages(); // تأكيد إرسال أي رسايل كانت معلقة أثناء القفل
+      }
+    } else {
+      lastHiddenTime = Date.now();
+      if (isConnected && navigator.onLine) {
         myStatusRef.set(firebase.database.ServerValue.TIMESTAMP);
         if (currentChat && currentUser) {
           db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove();
@@ -341,9 +361,14 @@ function setupPresence(uid) {
   });
 
   window.addEventListener('online', () => {
+    // فور رجوع النت، اقطع الاتصال الوهمي واتصل من جديد فوراً
+    firebase.database().goOffline();
+    firebase.database().goOnline();
+    
     if (document.visibilityState === 'visible') {
       myStatusRef.set('online');
       myStatusRef.onDisconnect().set(firebase.database.ServerValue.TIMESTAMP);
+      syncPendingMessages();
     }
   });
 }
@@ -931,11 +956,13 @@ function attachMessages(chatId) {
     
     if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image') && msg.timestamp) {
       // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
-      const EXPIRY_TIME = (msg.type === 'video' || msg.type === 'image') ? (24 * 60 * 60 * 1000) : (60 * 60 * 1000);
-      const age = Date.now() - msg.timestamp;
-      
-      if (age > EXPIRY_TIME) {
-        deleteExpiredMedia(chatId, msg);
+                      // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
+                const EXPIRY_TIME = (msg.type === 'video' || msg.type === 'image') ? (24 * 60 * 60 * 1000) : (60 * 60 * 1000);
+                // 🚀 استخدام الوقت الحقيقي لحساب العمر ومنع التدمير الفوري إذا كان توقيت أحد الجوالين غير دقيق
+                const age = getTrueTime() - msg.timestamp;
+                
+                if (age > EXPIRY_TIME) {
+    deleteExpiredMedia(chatId, msg);
         return; 
       } else {
         setTimeout(() => {
@@ -1757,16 +1784,26 @@ async function syncPendingMessages() {
   for (const p of pending) {
     if (now - p.time > 86400000) continue; // مسح المعلق من أكتر من 24 ساعة
     validPending.push(p);
-    const msgRef = db.ref('chats/' + p.chatId + '/messages/' + p.key);
-    msgRef.set(p.msg).then(() => {
+    
+    // 🚀 توليد مفتاح وتوقيت جديد لضمان عدم رمي الرسالة في الماضي إذا طال انقطاع النت
+    const newRef = db.ref('chats/' + p.chatId + '/messages').push();
+    const trueTime = getTrueTime();
+    p.msg.timestamp = trueTime;
+    
+    newRef.set(p.msg).then(() => {
        const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
        db.ref().update({
-          [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: p.msg.timestamp,
-          [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: p.msg.timestamp
+          [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
+          [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
        });
        db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
+       
        let currentPending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
        localStorage.setItem('neon_pending_msgs', JSON.stringify(currentPending.filter(item => item.key !== p.key)));
+       
+       // إخفاء الفقاعة القديمة من الشاشة لتجنب التكرار
+       const oldRow = document.getElementById('row_' + p.key) || document.getElementById('msg-' + p.key)?.closest('.msg-row');
+       if (oldRow) oldRow.remove();
     }).catch(() => {});
   }
   if (validPending.length !== pending.length) localStorage.setItem('neon_pending_msgs', JSON.stringify(validPending));
@@ -1776,6 +1813,9 @@ window.addEventListener('online', syncPendingMessages);
 
 async function pushMessage(msg) {
   const { chatId, friendUid } = currentChat;
+  
+  // 🚀 توحيد التوقيت ليكون دقيق 100% مع السيرفر قبل الإرسال لمنع رمي الرسائل في الماضي
+  msg.timestamp = getTrueTime();
 
   // فحص الحظر السريع: الاعتماد على المتغيرات المحلية لتفادي تجميد إرسال الرسائل والصوت
   let isBlockedByMe = false, isBlockedByThem = false;
