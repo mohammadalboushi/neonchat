@@ -2566,7 +2566,9 @@ function startAudioProgress(msgKey) {
 }
 
 function seekVoice(event, url, msgKey) {
-  if (!currentAudio || currentAudioUrl !== url) return;
+  // 1. إصلاح الاعتماد على currentAudioMsgKey بدل currentAudioUrl القديم
+  if (!currentAudio || currentAudioMsgKey !== msgKey) return;
+  
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
   
@@ -2576,16 +2578,23 @@ function seekVoice(event, url, msgKey) {
     if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
   
+  // 2. ضمان الحصول على مده صحيحة (تجاهل الـ Infinity اللي بيجي من السيرفر أحياناً)
   let realDur = currentAudio.duration; 
   let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
   
   if (!totalDuration || totalDuration <= 0) return;
   
+  // 3. حساب الضغطة بناءً على اتجاه الموقع (RTL - من اليمين لليسار)
   const rect = event.currentTarget.getBoundingClientRect();
-  const clickX = rect.right - event.clientX; 
+  // إذا كانت نقطة البداية من اليسار لليمين (طبيعي) استخدم: event.clientX - rect.left
+  // لكن بموقعك عربي، الشريط بيعبي من اليمين لليسار فمنحسبها هيك:
+  let clickX = rect.right - event.clientX; 
   let perc = clickX / rect.width; 
-  if (perc < 0) perc = 0; if (perc > 1) perc = 1;
   
+  if (perc < 0) perc = 0; 
+  if (perc > 1) perc = 1;
+  
+  // 4. تطبيق الوقت الجديد بدقة
   currentAudio.currentTime = totalDuration * perc;
   const fill = document.getElementById('progress-' + msgKey); 
   if (fill) fill.style.width = (perc * 100) + '%';
