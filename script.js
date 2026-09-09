@@ -2453,7 +2453,9 @@ function toggleVoiceSpeed(btn, msgKey) {
   if (currentAudio) currentAudio.playbackRate = globalVoiceSpeed;
 }
 
-function playVoice(btn, url, msgKey, isOut) {
+window.voiceBlobCache = window.voiceBlobCache || {};
+
+async function playVoice(btn, url, msgKey, isOut) {
   if (isOut === false && currentChat) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
     const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
@@ -2483,20 +2485,34 @@ function playVoice(btn, url, msgKey, isOut) {
   }
   
   currentAudioMsgKey = msgKey; 
+  btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
   
-  // 🚀 الإصلاح الجذري لمشكلة التقديم والتأخير:
-  // تنظيف الرابط من أي إضافات بتشوه الملف وتمنع التقديم والتأخير
   let optimizedUrl = url;
   if (optimizedUrl.includes('cloudinary.com')) {
-     // إزالة أي إضافات معقدة من الرابط ताकि السيرفر يبعت الملف الخام ويسمح للمتصفح يقدم ويأخر براحته
      optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
   }
+
+  // 🚀 جلب المقطع وتخزينه كـ Blob كامل في الذاكرة لضمان التسبيق الفوري بدون الرجوع للصفر
+  let playSrc = optimizedUrl;
+  try {
+    if (window.voiceBlobCache[optimizedUrl]) {
+      playSrc = window.voiceBlobCache[optimizedUrl];
+    } else {
+      const res = await fetch(optimizedUrl);
+      const blob = await res.blob();
+      playSrc = URL.createObjectURL(blob);
+      window.voiceBlobCache[optimizedUrl] = playSrc;
+    }
+  } catch (e) {
+    playSrc = optimizedUrl;
+  }
+
+  if (currentAudioMsgKey !== msgKey) return;
   
-  currentAudio = new Audio(optimizedUrl); 
+  currentAudio = new Audio(playSrc); 
   currentAudio.preload = 'auto'; 
   currentAudio.playbackRate = globalVoiceSpeed;
   
-  btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
   currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
   currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
   
@@ -2566,7 +2582,6 @@ function startAudioProgress(msgKey) {
 }
 
 function seekVoice(event, url, msgKey) {
-  // 1. إصلاح الاعتماد على currentAudioMsgKey بدل currentAudioUrl القديم
   if (!currentAudio || currentAudioMsgKey !== msgKey) return;
   
   const durEl = document.getElementById('dur-' + msgKey);
@@ -2578,26 +2593,38 @@ function seekVoice(event, url, msgKey) {
     if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
   
-  // 2. ضمان الحصول على مده صحيحة (تجاهل الـ Infinity اللي بيجي من السيرفر أحياناً)
   let realDur = currentAudio.duration; 
   let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
   
   if (!totalDuration || totalDuration <= 0) return;
   
-  // 3. حساب الضغطة بناءً على اتجاه الموقع (RTL - من اليمين لليسار)
   const rect = event.currentTarget.getBoundingClientRect();
-  // إذا كانت نقطة البداية من اليسار لليمين (طبيعي) استخدم: event.clientX - rect.left
-  // لكن بموقعك عربي، الشريط بيعبي من اليمين لليسار فمنحسبها هيك:
-  let clickX = rect.right - event.clientX; 
+  
+  // التقاط دقيق لإحداثيات الضغط سواء عبر الماوس أو لمس الشاشة
+  let clientX = event.clientX;
+  if (clientX === undefined && event.touches && event.touches.length > 0) {
+    clientX = event.touches[0].clientX;
+  } else if (clientX === undefined && event.changedTouches && event.changedTouches.length > 0) {
+    clientX = event.changedTouches[0].clientX;
+  }
+  if (clientX === undefined) return;
+  
+  let clickX = rect.right - clientX; 
   let perc = clickX / rect.width; 
   
   if (perc < 0) perc = 0; 
   if (perc > 1) perc = 1;
   
-  // 4. تطبيق الوقت الجديد بدقة
-  currentAudio.currentTime = totalDuration * perc;
+  const targetTime = totalDuration * perc;
+  currentAudio.currentTime = targetTime;
+
   const fill = document.getElementById('progress-' + msgKey); 
   if (fill) fill.style.width = (perc * 100) + '%';
+
+  const curSec = Math.floor(targetTime);
+  const m = Math.floor(curSec / 60);
+  const s = curSec % 60;
+  if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
 }
 
 /* ═══════════════════════════════════
