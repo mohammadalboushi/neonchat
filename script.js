@@ -326,11 +326,7 @@ function setupPresence(uid) {
   // مراقبة الشاشة (نظامية) - مع إنعاش الاتصال الإجباري
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      // إذا مر على الخروج من الشاشة أكثر من 3 ثواني، نعمل إنعاش للاتصال لقتل "الزومبي سوكيت"
-      if (Date.now() - lastHiddenTime > 3000) {
-        firebase.database().goOffline();
-        firebase.database().goOnline();
-      }
+      // تم إزالة الإنعاش الإجباري لمنع تعليق الفايربيز لمدة دقيقة
       
       if (isConnected && navigator.onLine) {
         myStatusRef.set('online');
@@ -358,9 +354,7 @@ function setupPresence(uid) {
   });
 
   window.addEventListener('online', () => {
-    // فور رجوع النت، اقطع الاتصال الوهمي واتصل من جديد فوراً
-    firebase.database().goOffline();
-    firebase.database().goOnline();
+    // تم إزالة القطع والوصل الإجباري
     
     if (document.visibilityState === 'visible') {
       myStatusRef.set('online');
@@ -2220,9 +2214,6 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
   e.target.value = '';
 });
 
-/* ═══════════════════════════════════
-   VOICE RECORDING
-═══════════════════════════════════ */
 async function toggleRecording(isSinging = false) {
   if (isRecording) { stopRecording(); return; }
   if (!navigator.mediaDevices) { showToast('المتصفح لا يدعم التسجيل', 'error'); return; }
@@ -2233,7 +2224,6 @@ async function toggleRecording(isSinging = false) {
     const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     
     // 🚀 السحر هون: نعطي المايك والمتصفح 300 ميلي ثانية لـ "يسخن" قبل ما نبدأ نعالج الصوت
-    // هاد بيمنع إرسال ملفات WebM معطوبة بالثواني الأولى وبيعالج مشكلة التعليق على 100%
     await new Promise(r => setTimeout(r, 300));
     
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2267,7 +2257,6 @@ async function toggleRecording(isSinging = false) {
     compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
 
     audioChunks = []; isRecordingCanceled = false;
-    // رجعنا الجودة لـ 256000 ليرجع الصوت نقي ومفتوح متل قبل
     mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
     mediaRecorder.onstop = async () => {
@@ -2275,56 +2264,120 @@ async function toggleRecording(isSinging = false) {
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
-      const blob = new Blob(localChunks, { type: 'audio/webm' });
+      const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+      const blob = new Blob(localChunks, { type: actualMimeType });
       const finalDuration = recordDurationStr;
       
-      // حماية صارمة
       if (blob.size < 3000 || finalDuration === '0:00') {
          showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
       }
+      
+      const tempId = 'temp-audio-' + Date.now();
+      const area = document.getElementById('messages-area');
+      if (area) {
+        const tempDiv = document.createElement('div');
+        tempDiv.className = 'msg-row out';
+        tempDiv.id = tempId;
+        tempDiv.innerHTML = `
+          <div class="msg-bubble" style="background:rgba(0, 240, 255, 0.05); border:1px dashed var(--neon-cyan); color:var(--text-secondary); width: 220px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
+              <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
+              <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
+            </div>
+            <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
+              <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+            </div>
+          </div>`;
+        area.appendChild(tempDiv);
+        area.scrollTop = area.scrollHeight;
+      }
 
-      // 🚀 المعالجة الأوفلاين: تحويل المقطع لنص (Base64) لحفظه بالذاكرة حتى لو مافي نت
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = () => {
-          const base64Audio = reader.result;
-          // 🚀 توليد مفتاح فايربيس حقيقي وثابت منذ البداية لمنع التكرار لو اشتغلت المزامنة ألف مرة
-          const tempRef = db.ref('chats/' + currentChat.chatId + '/messages').push();
-          const tempKey = tempRef.key;
+      await new Promise(r => setTimeout(r, 50));
+      
+      // 🚀 دالة الرفع إلى Supabase (لضمان سرعة واستقرار المقاطع الطويلة بمهلة 5 دقائق)
+      const tryUploadVoice = () => {
+          const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+          const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+          const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
+
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
+          xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
+          xhr.setRequestHeader('apikey', SUPA_KEY);
+          xhr.setRequestHeader('Content-Type', blob.type || 'audio/webm');
           
-          let replyData = null;
-          if (replyingToMsg) {
-            replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-            cancelReply();
-          }
+          // 🚀 مهلة 5 دقائق للمقاطع الطويلة
+          xhr.timeout = 300000;
 
-          // إنشاء كائن الرسالة المعلقة
-          const tempMsg = {
-              key: tempKey, type: 'voice', url: base64Audio, duration: finalDuration,
-              senderUid: currentUser.uid, timestamp: Date.now(), isPending: true, replyTo: replyData
+          xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              const bar = document.getElementById('voice_bar_' + tempId);
+              const pctTxt = document.getElementById('voice_pct_' + tempId);
+              if (bar) bar.style.width = percent + '%';
+              if (pctTxt) pctTxt.textContent = percent + '%';
+            }
           };
 
-          // 1. تنزيل الفقاعة بالمحادثة فوراً
-          const area = document.getElementById('messages-area');
-          if (area) {
-              const el = buildMsgEl(tempMsg, false);
-              el.id = 'row_' + tempKey;
-              area.appendChild(el);
-              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
-          }
+          const handleFail = (msg) => {
+             const row = document.getElementById(tempId);
+             if (row) {
+                const bubble = row.querySelector('.msg-bubble');
+                if (bubble) {
+                   bubble.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); width:100%; border:none;">${msg} 🔄</button>`;
+                   bubble.style.border = 'none';
+                   bubble.style.background = 'transparent';
+                }
+             }
+          };
 
-          // 2. حفظها بالذاكرة الدائمة (LocalStorage) لترتفع لحالها لما يرجع النت
-          let pendingQ = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-          pendingQ.push({ chatId: currentChat.chatId, friendUid: currentChat.friendUid, msg: tempMsg, key: tempKey, time: Date.now() });
-          localStorage.setItem('neon_pending_msgs', JSON.stringify(pendingQ));
+          xhr.onload = async function() {
+            const tempEl = document.getElementById(tempId);
+            if (tempEl) tempEl.remove();
 
-          // 3. محاولة المزامنة والرفع الفوري لـ Supabase
-          syncPendingMessages();
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+              let replyData = null;
+              if (replyingToMsg) {
+                replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+                cancelReply();
+              }
+              await pushMessage({ type: 'voice', url: finalUrl, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+            } else {
+              handleFail('فشل الرفع');
+            }
+          };
+
+          xhr.onerror = function() { handleFail('خطأ بالاتصال، تأكد من الشبكة'); };
+          xhr.ontimeout = function() { handleFail('انتهى وقت الرفع (مقطع طويل جداً)'); };
+
+          xhr.send(blob);
       };
+      
+      window.pendingUploads[tempId] = () => {
+         const row = document.getElementById(tempId);
+         if (row) {
+            const bubble = row.querySelector('.msg-bubble');
+            if (bubble) {
+               bubble.innerHTML = `
+                <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
+                  <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
+                  <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
+                </div>
+                <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
+                  <div id="voice_bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+                </div>`;
+               bubble.style.background = 'rgba(0, 240, 255, 0.05)';
+               bubble.style.border = '1px dashed var(--neon-cyan)';
+            }
+         }
+         tryUploadVoice();
+      };
+      
+      tryUploadVoice();
     };
     
-    // 🚀 إزالة تقطيع 200 ميلي ثانية لتجنب تشوه رأس الملف WebM
     mediaRecorder.start(); isRecording = true; recordStart = Date.now();
 
     if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
@@ -2360,7 +2413,6 @@ async function toggleRecording(isSinging = false) {
     }, 1000);
   } catch (e) { showToast('تعذر الوصول للمايكروفون', 'error'); }
 }
-
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
   isRecording = false;
@@ -2407,7 +2459,6 @@ function playVoice(btn, url, msgKey, isOut) {
     const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
   }
   
-  // 🚀 الفحص عبر مفتاح الرسالة وليس الرابط، لمنع تداخل تشغيل الرسائل المتشابهة
   if (currentAudio && currentAudioMsgKey === msgKey) {
     if (!currentAudio.paused) { 
         currentAudio.pause(); 
@@ -2423,10 +2474,9 @@ function playVoice(btn, url, msgKey, isOut) {
     }
   }
   
-  // إذا في صوت تاني شغال، وقفه ورجع أيقونته لزر التشغيل العادي
   if (currentAudio) {
     currentAudio.pause(); 
-    currentAudio.src = ''; // 🚀 إفراغ المصدر يقتل التحميل المعلق فوراً
+    currentAudio.src = ''; 
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
     clearInterval(audioUpdateInterval);
@@ -2434,12 +2484,12 @@ function playVoice(btn, url, msgKey, isOut) {
   
   currentAudioMsgKey = msgKey; 
   
-  // إجبار كلاوديناري يعطينا الملف بصيغة MP3 قابلة للتقديم والتأخير
+  // 🚀 الإصلاح الجذري لمشكلة التقديم والتأخير:
+  // تنظيف الرابط من أي إضافات بتشوه الملف وتمنع التقديم والتأخير
   let optimizedUrl = url;
-  if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
-    if (!optimizedUrl.includes('f_mp3')) {
-       optimizedUrl = optimizedUrl.replace('/upload/', '/upload/f_mp3,q_auto/');
-    }
+  if (optimizedUrl.includes('cloudinary.com')) {
+     // إزالة أي إضافات معقدة من الرابط ताकि السيرفر يبعت الملف الخام ويسمح للمتصفح يقدم ويأخر براحته
+     optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
   }
   
   currentAudio = new Audio(optimizedUrl); 
