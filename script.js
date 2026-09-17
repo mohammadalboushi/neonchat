@@ -975,21 +975,20 @@ function attachMessages(chatId) {
         return;
     }
 
-    if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image') && msg.timestamp) {
-      // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
-                      // الصور والفيديو 24 ساعة، الصوت ساعة واحدة
-                const EXPIRY_TIME = (msg.type === 'video' || msg.type === 'image') ? (24 * 60 * 60 * 1000) : (60 * 60 * 1000);
-                // 🚀 استخدام الوقت الحقيقي لحساب العمر ومنع التدمير الفوري إذا كان توقيت أحد الجوالين غير دقيق
+    if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image' || msg.type === 'voice') && msg.timestamp) {
+                // توقيت الحذف: 24 ساعة بالتمام والكمال لجميع الوسائط (فيديو، صورة، صوتيات، ريكوردات)
+                const EXPIRY_TIME = 24 * 60 * 60 * 1000; 
+                // 🚀 استخدام الوقت الحقيقي لحساب العمر ومنع التدمير الفوري
                 const age = getTrueTime() - msg.timestamp;
                 
                 if (age > EXPIRY_TIME) {
-    deleteExpiredMedia(chatId, msg);
-        return; 
-      } else {
-        setTimeout(() => {
-          deleteExpiredMedia(chatId, msg);
-        }, EXPIRY_TIME - age);
-      }
+                    deleteExpiredMedia(chatId, msg);
+                    return; 
+                } else {
+                    setTimeout(() => {
+                        deleteExpiredMedia(chatId, msg);
+                    }, EXPIRY_TIME - age);
+                }
     }
 
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
@@ -2891,32 +2890,35 @@ function formatVideoTime(sec_num) {
 }
 
 async function deleteExpiredMedia(chatId, msg) {
-  if (msg.isDeleted) return;
-  
-  // 1. حذف الرسالة من الدردشة (Firebase)
-  await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
-     isDeleted: true, text: null, url: null, type: 'deleted'
-  });
-  
-  // 2. حذف الملف من السيرفر لتفريغ المساحة
-  if (msg.url && msg.url.includes('supabase.co')) {
-      // حذف الصور والفيديوهات من سيرفر Supabase
-      const fileName = msg.url.split('/').pop();
+  // 1. نحتفظ بالرابط واسم الملف قبل ما نلمس الفايربيز عشان ما يضيع
+  const fileUrl = msg.url;
+
+  // 2. الهجوم على السيرفر الفيزيائي أولاً (Supabase) وتدمير الملف
+  if (fileUrl && fileUrl.includes('supabase.co')) {
+      const fileName = fileUrl.split('/').pop();
       const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
       const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
       
-      fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY }
-      }).catch(e => console.log('تعذر مسح الملف من Supabase', e));
+      try {
+          await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY }
+          });
+      } catch(e) { console.log('خطأ بالحذف من سوبابيز'); }
       
   } else if (msg.deleteToken) {
-      // للملفات القديمة أو المقاطع الصوتية على Cloudinary
       const fd = new FormData();
       fd.append('token', msg.deleteToken);
       fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', {
          method: 'POST', body: fd
-      }).catch(e => console.log('تعذر حذف الميديا من كلاوديناري', e));
+      }).catch(e => console.log('تعذر الحذف'));
+  }
+
+  // 3. بعد ما طيّرنا الملف من السيرفر، منمسحه من الدردشة (Firebase) للطرفين
+  if (!msg.isDeleted) {
+      await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
+         isDeleted: true, text: null, url: null, type: 'deleted'
+      });
   }
 }
 
