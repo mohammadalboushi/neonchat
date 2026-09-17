@@ -461,19 +461,20 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
   if (!file || !myProfile) return;
   e.target.value = ''; showToast('جاري رفع الصورة...');
   try {
-    const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-    const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
-    const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
-    const cleanName = `avatar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('upload_preset', 'omarhweh1');
     
-    const res = await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, {
+    const res = await fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY, 'Content-Type': file.type || 'image/jpeg' },
-        body: file
+        body: fd
     });
     
     if (res.ok) {
-      const finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+      const data = await res.json();
+      // 🚀 سحر كلاوديناري: قص الصورة لمربع 150x150 وضغطها لأقصى حد لتسريع التطبيق
+      const finalUrl = data.secure_url.replace('/upload/', '/upload/w_150,h_150,c_fill,q_auto,f_auto/');
+      
       await db.ref('users/' + myProfile.uid).update({ photo: finalUrl });
       myProfile.photo = finalUrl; localStorage.setItem('myProfile', JSON.stringify(myProfile));
       updateHomeHeader(); populateProfile(); showToast('تم تحديث الصورة', 'success');
