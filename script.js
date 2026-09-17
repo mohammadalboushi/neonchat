@@ -427,7 +427,7 @@ function updateHomeHeader() {
   document.getElementById('home-subtitle').textContent = 'مرحباً، ' + myProfile.name.split(' ')[0];
   document.getElementById('my-id-badge').textContent = myProfile.uniqueId;
   const av = document.getElementById('home-avatar');
-  if (myProfile.photo) av.outerHTML = `<img class="home-avatar" src="${myProfile.photo}" onclick="showScreen('profile')" id="home-avatar"/>`;
+  if (myProfile.photo) av.outerHTML = `<img class="home-avatar" src="${myProfile.photo}" onclick="showScreen('profile')" id="home-avatar" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\' onclick=\\'showScreen(\\&quot;profile\\&quot;)\\'>${myProfile.name.charAt(0)}</div>'"/>`;
   else { av.className = 'home-avatar-placeholder'; av.textContent = myProfile.name.charAt(0); }
 }
 
@@ -567,7 +567,7 @@ function renderChatsList(filter = '') {
     const liveData = getFriendData(data.friendUid, data);
     
     const initials = (liveData.name || '?').charAt(0);
-    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')"/>` : `<div class="chat-avatar">${initials}</div>`;
+    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
     
     // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
     const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
@@ -670,7 +670,7 @@ function initFriendsListListener(uid) {
     if (document.getElementById('friend-card-' + friendUid)) return;
     const card = document.createElement('div'); card.className = 'search-result-card'; card.id = 'friend-card-' + friendUid;
     card.style.cssText = `padding:12px 16px; margin-bottom:8px; display:${myBlockedUsers[friendUid] ? 'none' : 'flex'}; align-items:center;`;
-    card.innerHTML = `<div class="search-result-avatar" style="width:40px;height:40px;font-size:15px;">${fData.photo ? `<img src="${fData.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;"/>` : (fData.name || '?').charAt(0)}</div><div class="search-result-info" style="flex:1; margin-right:12px;"><div class="search-result-name" id="friend-name-text-${friendUid}" style="font-size:16px;margin-bottom:0;">${escHtml(fData.name)}</div></div><button class="btn-primary" style="width:auto;padding:8px 16px;font-size:13px;" onclick="startChat('${friendUid}')">مراسلة</button>`;
+    card.innerHTML = `<div class="search-result-avatar" style="width:40px;height:40px;font-size:15px;">${fData.photo ? `<img src="${fData.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;" onerror="this.outerHTML='${(fData.name || '?').charAt(0)}'"/>` : (fData.name || '?').charAt(0)}</div><div class="search-result-info" style="flex:1; margin-right:12px;"><div class="search-result-name" id="friend-name-text-${friendUid}" style="font-size:16px;margin-bottom:0;">${escHtml(fData.name)}</div></div><button class="btn-primary" style="width:auto;padding:8px 16px;font-size:13px;" onclick="startChat('${friendUid}')">مراسلة</button>`;
     container.appendChild(card);
   });
 }
@@ -749,7 +749,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const avatarEl = document.getElementById('chat-header-avatar');
     if (avatarEl) {
       if (fData.photo) {
-        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')"/>`;
+        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
       } else {
         avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(fData.name||'?').charAt(0)}</div>`;
       }
@@ -1248,6 +1248,13 @@ function buildMsgEl(msg, isBackground = false) {
     avatarNode.onclick = (e) => {
       e.stopPropagation();
       window.previewImg(profile.photo);
+    };
+    avatarNode.onerror = function() {
+      const fallback = document.createElement('div');
+      fallback.className = this.className;
+      fallback.textContent = (profile.name || '?').charAt(0);
+      fallback.style.cssText = commonStyle + bgStyle + 'display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; color:white;';
+      this.replaceWith(fallback);
     };
   } else {
     avatarNode.textContent = (profile.name || '?').charAt(0);
@@ -1846,7 +1853,14 @@ let currentScale = 1; let imgTx = 0, imgTy = 0; let imgStartX = 0, imgStartY = 0
 
 window.previewImg = function(url) {
   const img = document.getElementById('img-preview-el');
-  img.src = url;
+  
+  // معالجة الرابط: إذا كانت الصورة من كلاوديناري ومصغرة، نطلب النسخة الأصلية عالية الدقة
+  let highResUrl = url;
+  if (highResUrl.includes('cloudinary.com') && highResUrl.includes('w_150,h_150,c_fill')) {
+    highResUrl = highResUrl.replace('w_150,h_150,c_fill,q_auto,f_auto/', 'q_auto,f_auto/');
+  }
+  
+  img.src = highResUrl;
   currentScale = 1; imgTx = 0; imgTy = 0;
   img.style.transform = `translate(0px, 0px) scale(1)`;
   document.getElementById('img-preview-overlay').classList.add('open');
