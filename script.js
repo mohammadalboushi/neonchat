@@ -393,11 +393,14 @@ async function generateUniqueId() {
 
 function cleanupListeners() {
   if (currentUser) {
-    if (chatsListener) db.ref('userChats/' + currentUser.uid).off('value', chatsListener);
+    if (chatsListener) {
+      db.ref('userChats/' + currentUser.uid).off('child_added', chatsListener);
+      db.ref('userChats/' + currentUser.uid).off('child_changed', chatsListener);
+    }
     if (friendRequestsListener) db.ref('friendRequests/' + currentUser.uid).off('value', friendRequestsListener);
     if (friendsListListener) db.ref('friendsList/' + currentUser.uid).off();
     if (myCallListener) db.ref('calls/' + currentUser.uid).off('value', myCallListener);
-    Object.keys(presenceListeners).forEach(fUid => db.ref('users/' + fUid).off('value', presenceListeners[fUid]));
+    Object.keys(presenceListeners).forEach(fUid => db.ref('users/' + fUid + '/status').off('value', presenceListeners[fUid]));
     presenceListeners = {};
     if (typeof blockedByThemListeners !== 'undefined') {
       Object.keys(blockedByThemListeners).forEach(fUid => db.ref('blockedUsers/' + fUid + '/' + currentUser.uid).off('value', blockedByThemListeners[fUid]));
@@ -508,37 +511,52 @@ function loadChats() {
       }
     });
   }
-  if (chatsListener) db.ref('userChats/' + currentUser.uid).off('value', chatsListener);
-  chatsListener = db.ref('userChats/' + currentUser.uid).orderByChild('updatedAt').on('value', snap => {
-    chatsData = {}; let hasNew = false;
-    if (snap.exists()) {
-      snap.forEach(c => {
-        const d = c.val(); chatsData[c.key] = d;
-        if (!isFirstChatsLoad && d.unread > (lastUnreads[c.key] || 0)) hasNew = true;
-        lastUnreads[c.key] = d.unread;
-        
-        if (!presenceListeners[d.friendUid]) {
-          presenceListeners[d.friendUid] = db.ref('users/' + d.friendUid).on('value', sSnap => {
-            const fData = sSnap.val() || {};
-            friendsStatus[d.friendUid] = fData.status;
-            friendsLiveProfiles[d.friendUid] = fData;
+  
+  if (chatsListener) {
+    db.ref('userChats/' + currentUser.uid).off('child_added', chatsListener);
+    db.ref('userChats/' + currentUser.uid).off('child_changed', chatsListener);
+  }
+  
+  chatsListener = snap => {
+    const d = snap.val();
+    chatsData[snap.key] = d;
+    let hasNew = false;
+    
+    if (!isFirstChatsLoad && d.unread > (lastUnreads[snap.key] || 0)) hasNew = true;
+    lastUnreads[snap.key] = d.unread;
+    
+    if (!presenceListeners[d.friendUid]) {
+      // استعلام موفر للبيانات: مراقبة حالة الاتصال فقط
+      presenceListeners[d.friendUid] = db.ref('users/' + d.friendUid + '/status').on('value', sSnap => {
+        friendsStatus[d.friendUid] = sSnap.val();
+        renderChatsList();
+      });
+      
+      // جلب بيانات الحساب (الاسم والصورة) مرة واحدة فقط وتخزينها
+      db.ref('users/' + d.friendUid).once('value').then(userSnap => {
+         if (userSnap.exists()) {
+            friendsLiveProfiles[d.friendUid] = userSnap.val();
             renderChatsList();
-          });
-        }
-        
-        // 🚀 السحر هون: الاستماع إذا هاد الشخص حظرني عشان أخفي صورته وحالته بالرئيسية
-        if (!blockedByThemListeners[d.friendUid]) {
-          blockedByThemListeners[d.friendUid] = db.ref('blockedUsers/' + d.friendUid + '/' + currentUser.uid).on('value', bSnap => {
-            blockedByThemStatus[d.friendUid] = bSnap.exists();
-            renderChatsList();
-          });
-        }
+         }
       });
     }
+    
+    // 🚀 السحر هون: الاستماع إذا هاد الشخص حظرني عشان أخفي صورته وحالته بالرئيسية
+    if (!blockedByThemListeners[d.friendUid]) {
+      blockedByThemListeners[d.friendUid] = db.ref('blockedUsers/' + d.friendUid + '/' + currentUser.uid).on('value', bSnap => {
+        blockedByThemStatus[d.friendUid] = bSnap.exists();
+        renderChatsList();
+      });
+    }
+    
     renderChatsList();
     if (hasNew && !document.getElementById('screen-chat').classList.contains('active') && navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    setTimeout(() => isFirstChatsLoad = false, 1000);
-  });
+  };
+
+  db.ref('userChats/' + currentUser.uid).on('child_added', chatsListener);
+  db.ref('userChats/' + currentUser.uid).on('child_changed', chatsListener);
+  
+  setTimeout(() => isFirstChatsLoad = false, 1000);
 }
 
 function renderChatsList(filter = '') {
