@@ -274,10 +274,9 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
     if (user) {
       currentUser = user;
       try { await ensureUserProfile(user); } catch(e) {}
-            setupPresence(user.uid);
+      setupPresence(user.uid);
       
       try {
-        // 1. معالجة "حالة السباق": طلب الإذن وانتظار المستخدم حتى يوافق
         let currentPermission = Notification.permission;
         if (currentPermission === 'default') {
           currentPermission = await Notification.requestPermission();
@@ -290,11 +289,9 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
             await db.ref('users/' + user.uid + '/fcmToken').set(token);
           }
         } else {
-          // كشف إذا كان المتصفح يمنع الإشعارات من الإعدادات
           showToast('تنبيه: المتصفح يمنع ظهور الإشعارات', 'error');
         }
 
-        // 2. هندسة ذكية للإشعارات أثناء فتح التطبيق (Foreground)
         messaging.onMessage((payload) => {
           if (currentChat && currentChat.friendProfile && payload.notification.title === currentChat.friendProfile.name) {
             return;
@@ -304,29 +301,17 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
         });
 
       } catch (err) { 
-        // 🚀 3. كشف الخطأ المعمق والواضح للمبرمج
         showToast('خطأ التنبيهات: ' + err.message, 'error');
-        alert('تفاصيل الخطأ المخفي: ' + err.message); // إشعار إجباري لكشف الخطأ مهما حدث
+        alert('تفاصيل الخطأ المخفي: ' + err.message);
         console.error('FCM Error:', err);
       }
-        // 🚀 2. هندسة ذكية للإشعارات أثناء فتح التطبيق (Foreground)
-        messaging.onMessage((payload) => {
-          // إذا كنا داخل المحادثة مع نفس الشخص الذي أرسل الإشعار، نتجاهله كي لا نزعج المستخدم
-          if (currentChat && currentChat.friendProfile && payload.notification.title === currentChat.friendProfile.name) {
-            return;
-          }
-          // خلاف ذلك، نصدر اهتزازاً ونعرض إشعاراً منبثقاً
-          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-          showToast(`📩 رسالة من ${payload.notification.title}`, 'info');
-        });
-
-      } catch (err) { 
-        console.error('FCM Error:', err);
-      }
-      initCallListener(user.uid); initFriendRequestsListener(user.uid); initFriendsListListener(user.uid); 
+      
+      initCallListener(user.uid); 
+      initFriendRequestsListener(user.uid); 
+      initFriendsListListener(user.uid); 
       initMicrophone(); 
       syncPendingMessages();
-      wakeUpCloudinary(); // 🚀 إرسال النبضة الخفية أول ما يشتغل التطبيق
+      wakeUpCloudinary(); 
       showScreen('home');
     } else {
       if (!navigator.onLine && localStorage.getItem('myProfile')) return; 
