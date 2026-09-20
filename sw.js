@@ -14,11 +14,21 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// تم إزالة توليد الإشعارات اليدوي من هنا 
-// لأن فايربيز يقوم بعرض الإشعارات تلقائياً بناءً على البيانات المرسلة من ملف send.js
+// 🚀 الحل الجذري: إجبار المتصفح على عرض الإشعار برمجياً لتخطي قيود الأندرويد
+messaging.onBackgroundMessage(function(payload) {
+  const notificationTitle = payload.notification?.title || 'إشعار جديد';
+  const notificationOptions = {
+    body: payload.notification?.body || 'لديك رسالة جديدة',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    dir: 'rtl',
+    vibrate: [300, 100, 300]
+  };
+  return self.registration.showNotification(notificationTitle, notificationOptions);
+});
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-11'; 
+const CACHE_NAME = 'app-cache-12'; 
 const ASSETS = [
   './',
   './index.html',
