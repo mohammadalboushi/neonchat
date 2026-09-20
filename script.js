@@ -288,7 +288,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
             if (newToken) await db.ref('users/' + user.uid + '/fcmToken').set(newToken);
           } catch (e) {}
         });
-      } catch (err) {}
+      } catch (err) { showToast('خطأ توليد التوكن: ' + err.message, 'error'); }
       initCallListener(user.uid); initFriendRequestsListener(user.uid); initFriendsListListener(user.uid); 
       initMicrophone(); 
       syncPendingMessages();
@@ -1722,9 +1722,10 @@ async function pushMessage(msg) {
           try {
             const friendSnap = await db.ref('users/' + friendUid).once('value');
             if (friendSnap.exists() && friendSnap.val().fcmToken) {
-              fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) });
+              fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
+              .then(async res => { const data = await res.json(); if(!data.success) showToast('خطأ السيرفر: ' + data.error, 'error'); });
             }
-          } catch (err) {}
+          } catch (err) { showToast('خطأ إرسال: ' + err.message, 'error'); }
       }
     }
 function toggleReaction(msgKey) {
