@@ -14,8 +14,8 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
 const messaging = firebase.messaging();
-const VERCEL_URL = 'https://neonchat.mooo.com';
-const VAPID_KEY = 'BAA7mBWLUrhDWeJjsQ93bbMlQHvopsK6plk8HytUIhK-YlnXS6q_UmCaPlZEhGiIlGdZjafykR-O_dWgEVCQBwM'; 
+const VERCEL_URL = 'https://neonchat-five.vercel.app';
+const VAPID_KEY = 'BIw1xmx0-Ovc7CQi3ts8pbouqDiImR09FPEGP8k8I9wF2iZrvNoC9V5X68sOfuXoQOSW2WepXqvI0A4qiSDXHBQ'; 
 
 // 🚀 تم إزالة نظام مزامنة السيرفر الوهمي والعودة للاعتماد على توقيت الجهاز (Date.now) لضمان دقة الترتيب
 function getTrueTime() {
