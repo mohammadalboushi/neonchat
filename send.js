@@ -31,7 +31,7 @@ module.exports = async (req, res) => {
   if (!token) return res.status(400).json({ error: 'Token is required' });
 
   // 🚀 النطاق الجديد للتطبيق لضمان التوجيه الصحيح عند ضغط الإشعار
-  const baseUrl = 'https://neonchat-five.vercel.app';
+  const baseUrl = 'https://neonchat.mooo.com';
 
   const message = {
     token: token,
