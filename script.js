@@ -276,34 +276,37 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       try { await ensureUserProfile(user); } catch(e) {}
       setupPresence(user.uid);
       
-      try {
-        let currentPermission = Notification.permission;
-        if (currentPermission === 'default') {
-          currentPermission = await Notification.requestPermission();
-        }
-        
-        if (currentPermission === 'granted') {
-          const swReg = await navigator.serviceWorker.register('./sw.js?v=7');
-          const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-          if (token) {
-            await db.ref('users/' + user.uid + '/fcmToken').set(token);
+      // حماية معمارية: منع انهيار التطبيق إذا كان المتصفح لا يدعم الإشعارات
+      if ('Notification' in window && 'serviceWorker' in navigator) {
+        try {
+          let currentPermission = Notification.permission;
+          if (currentPermission === 'default') {
+            currentPermission = await Notification.requestPermission();
           }
-        } else {
-          showToast('تنبيه: المتصفح يمنع ظهور الإشعارات', 'error');
-        }
-
-        messaging.onMessage((payload) => {
-          if (currentChat && currentChat.friendProfile && payload.notification.title === currentChat.friendProfile.name) {
-            return;
+          
+          if (currentPermission === 'granted') {
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=7');
+            const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+            if (token) {
+              await db.ref('users/' + user.uid + '/fcmToken').set(token);
+            }
+          } else {
+            showToast('تنبيه: المتصفح يمنع ظهور الإشعارات', 'error');
           }
-          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-          showToast(`📩 رسالة من ${payload.notification.title}`, 'info');
-        });
 
-      } catch (err) { 
-        showToast('خطأ التنبيهات: ' + err.message, 'error');
-        alert('تفاصيل الخطأ المخفي: ' + err.message);
-        console.error('FCM Error:', err);
+          messaging.onMessage((payload) => {
+            if (currentChat && currentChat.friendProfile && payload.notification.title === currentChat.friendProfile.name) {
+              return;
+            }
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            showToast(`📩 رسالة من ${payload.notification.title}`, 'info');
+          });
+
+        } catch (err) { 
+          console.error('FCM Error:', err);
+        }
+      } else {
+        console.log('ميزة الإشعارات غير مدعومة في هذا المتصفح، سيستمر التطبيق بالعمل كدردشة فقط.');
       }
       
       initCallListener(user.uid); 
@@ -3429,8 +3432,15 @@ function unblockUser(bUid, btnEl) {
 }
 
 // 🚀 دالة الاختبار اليدوية المباشرة
+// 🚀 دالة الاختبار اليدوية المباشرة
 async function testNotificationsManually() {
   if (!currentUser) { showToast('يجب تسجيل الدخول أولاً', 'error'); return; }
+  
+  // حماية معمارية: التحقق من دعم المتصفح قبل استدعاء أي كائن غير موجود
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    showToast('عذراً، متصفحك الحالي لا يدعم ميزة الإشعارات.', 'error');
+    return;
+  }
   
   try {
     showToast('جاري طلب الإذن من المتصفح...', 'info');
@@ -3447,9 +3457,6 @@ async function testNotificationsManually() {
       if (token) {
         await db.ref('users/' + currentUser.uid + '/fcmToken').set(token);
         showToast('نجاح! تم تفعيل الإشعارات', 'success');
-        
-        // إظهار التوكن في نافذة لنسخه بسهولة
-        prompt('انسخ هذا التوكن لتجربة الإرسال من Firebase Console:', token);
       } else {
         showToast('لم يقم فايربيس بإرجاع التوكن', 'error');
       }
@@ -3458,6 +3465,6 @@ async function testNotificationsManually() {
     }
   } catch (err) {
     showToast('خطأ: ' + err.message, 'error');
-    alert('تفاصيل الخطأ:\n' + err.message);
+    console.error('FCM Error:', err);
   }
 }

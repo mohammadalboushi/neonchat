@@ -28,7 +28,7 @@ messaging.onBackgroundMessage(function(payload) {
 });
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-15'; 
+const CACHE_NAME = 'app-cache-1'; 
 const ASSETS = [
   './',
   './index.html',
