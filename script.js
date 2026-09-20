@@ -2,13 +2,13 @@
    FIREBASE INIT & GLOBAL STATE
 ═══════════════════════════════════ */
 const firebaseConfig = {
-  apiKey: "AIzaSyBB_U4C880PW4GxZd8FALv8yBSiP2mNeBY",
-  authDomain: "malaboushi.firebaseapp.com",
-  databaseURL: "https://malaboushi-default-rtdb.firebaseio.com/",
-  projectId: "malaboushi",
-  storageBucket: "malaboushi.firebasestorage.app",
-  messagingSenderId: "110336819350",
-  appId: "1:110336819350:web:2b1b0488e72b811f0602b7"
+  apiKey: "AIzaSyCZH225ITSw_JGx8Faq8nxxgzb49SBqrk8",
+  authDomain: "neonchat-2df05.firebaseapp.com",
+  databaseURL: "https://neonchat-2df05-default-rtdb.firebaseio.com",
+  projectId: "neonchat-2df05",
+  storageBucket: "neonchat-2df05.firebasestorage.app",
+  messagingSenderId: "275702671868",
+  appId: "1:275702671868:web:e4235a6991b3ae22276a79"
 };
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
@@ -535,7 +535,17 @@ function loadChats() {
       // جلب بيانات الحساب (الاسم والصورة) مرة واحدة فقط وتخزينها
       db.ref('users/' + d.friendUid).once('value').then(userSnap => {
          if (userSnap.exists()) {
-            friendsLiveProfiles[d.friendUid] = userSnap.val();
+            const liveData = userSnap.val();
+            friendsLiveProfiles[d.friendUid] = liveData;
+            
+            // 🚀 السطر السحري: تحديث الاسم والصورة في الذاكرة الدائمة لمنع الرمشة
+            if (liveData.name !== d.friendName || liveData.photo !== d.friendPhoto) {
+                db.ref('userChats/' + currentUser.uid + '/' + snap.key).update({ 
+                    friendName: liveData.name, 
+                    friendPhoto: liveData.photo || '' 
+                });
+            }
+            
             renderChatsList();
          }
       });
@@ -951,7 +961,7 @@ function attachMessages(chatId) {
               messagesRef = db.ref('chats/' + chatId + '/messages');
   
   // 🚀 الحل الجذري: نلغي الاعتماد على startAt نهائياً لأنه يسبب اختفاء الرسائل لو توقيت الأجهزة مختلف
-  currentMessagesQuery = messagesRef.orderByKey().limitToLast(100);
+  currentMessagesQuery = messagesRef.orderByKey().limitToLast(50);
   
   if (liveMsgsCache.length > 0) {
     // التحديث الصامت: جلب حالة آخر 50 رسالة وتحديث المؤشرات بدون إعادة بناء الواجهة
@@ -1162,7 +1172,7 @@ function attachMessages(chatId) {
     }
   });
 
-  msgChangedListener = messagesRef.on('child_changed', snap => {
+  msgChangedListener = currentMessagesQuery.on('child_changed', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
     const idx = liveMsgsCache.findIndex(m => m.key === msg.key);
