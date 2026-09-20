@@ -5,6 +5,7 @@ if (!admin.apps.length) {
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      // معالجة الرموز لضمان قراءتها بشكل سليم من Vercel
       privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
     })
   });
@@ -29,6 +30,9 @@ module.exports = async (req, res) => {
 
   if (!token) return res.status(400).json({ error: 'Token is required' });
 
+  // 🚀 النطاق الجديد للتطبيق لضمان التوجيه الصحيح عند ضغط الإشعار
+  const baseUrl = 'https://neonchat.mooo.com';
+
   const message = {
     token: token,
     notification: {
@@ -44,13 +48,14 @@ module.exports = async (req, res) => {
         TTL: '86400'
       },
       notification: {
-        icon: icon || 'https://neonchat.mooo.com/icon.png',
+        // دمج الرابط الأساسي مع مسار الأيقونة لضمان ظهورها في كل المتصفحات
+        icon: icon ? `${baseUrl}/${icon}` : `${baseUrl}/icon-192.png`,
         dir: 'rtl',
         requireInteraction: true,
         vibrate: [300, 100, 300]
       },
       fcmOptions: {
-        link: url || 'https://neonchat.mooo.com/'
+        link: url || baseUrl
       }
     }
   };
