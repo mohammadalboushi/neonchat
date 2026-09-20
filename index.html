@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+  <title>نيون شات — NeonChat</title>
+  
+  <meta name="description" content="تطبيق دردشة عصري">
+  <meta name="theme-color" content="#020408">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <canvas id="bg-canvas"></canvas>
+
+  <div id="loader-screen">
+    <div class="loader-logo">
+      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+        <path d="M18 4C10.268 4 4 10.268 4 18c0 2.4.597 4.662 1.65 6.647L4 32l7.52-1.63A13.93 13.93 0 0 0 18 32c7.732 0 14-6.268 14-14S25.732 4 18 4z" fill="url(#g1)" opacity=".9"></path>
+        <defs>
+          <linearGradient id="g1" x1="4" y1="4" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#00f0ff"></stop>
+            <stop offset="1" stop-color="#a020f0"></stop>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="loader-ring"></div>
+    <div class="loader-text">جاري التحميل…</div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <div id="img-preview-overlay">
+    <div onclick="history.back()" style="position:absolute; top:20px; left:20px; width:40px; height:40px; background:rgba(0,0,0,0.5); border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; cursor:pointer; z-index:10; border:1px solid var(--border-subtle); backdrop-filter:blur(4px);">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </div>
+    <img id="img-preview-el" src="" alt="">
+  </div>
+
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-title" id="modal-title">تأكيد</div>
+      <div class="modal-text" id="modal-text"></div>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-cancel" id="modal-cancel">إلغاء</button>
+        <button class="btn-modal btn-modal-ok" id="modal-ok">تأكيد</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="msg-menu-overlay" id="msg-menu-overlay" onclick="if(event.target===this)closeMsgMenu()">
+    <div class="msg-menu" id="msg-menu"></div>
+  </div>
+
+  <div id="video-preview-overlay">
+    <div class="video-overlay-header">
+      <div onclick="closeVideoPlayer()" class="btn-video-close">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </div>
+      <div id="video-loading-text" style="color:var(--neon-cyan); font-size:12px; display:none;">جاري التحميل... <span id="video-buffer-percent">0%</span></div>
+    </div>
+    
+    <video id="custom-video-el" playsinline></video>
+    
+    <div class="video-controls">
+      <div class="video-progress-container" id="video-progress-container" onclick="seekVideoClick(event)">
+        <div class="video-progress-buffer" id="video-buffer-bar"></div>
+        <div class="video-progress-fill" id="video-progress-fill"></div>
+      </div>
+      <div class="video-controls-buttons">
+        <span id="video-time-current" style="font-size:12px; font-family:var(--font-en); min-width:40px;">0:00</span>
+        
+        <div style="display:flex; gap:20px; align-items:center;">
+          <button class="btn-video-ctrl" onclick="skipVideo(-10)" title="إرجاع 10 ثواني">
+             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 17l-5-5 5-5"/><path d="M18 17l-5-5 5-5"/></svg>
+          </button>
+          
+          <button class="btn-video-ctrl play-pause" id="btn-video-play" onclick="toggleVideoPlay()">
+             <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </button>
+          
+          <button class="btn-video-ctrl" onclick="skipVideo(10)" title="تقديم 10 ثواني">
+             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg>
+          </button>
+        </div>
+
+        <span id="video-time-total" style="font-size:12px; font-family:var(--font-en); min-width:40px; text-align:left;">0:00</span>
+      </div>
+    </div>
+  </div>
+
+    <input type="file" id="file-img-input" accept="image/*,video/*,audio/*" multiple style="display:none;">
+  <input type="file" id="file-avatar-input" accept="image/*" style="display:none;">
+  <audio id="remote-audio-el" autoplay playsinline style="display:none;"></audio>
+  <audio id="ringtone-audio" loop src="https://actions.google.com/sounds/v1/alarms/phone_ringing.ogg" style="display:none;"></audio>
+
+  <div id="app">
+
+    <div class="screen" id="screen-login">
+      <div class="login-logo">
+        <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 4C10.268 4 4 10.268 4 18c0 2.4.597 4.662 1.65 6.647L4 32l7.52-1.63A13.93 13.93 0 0 0 18 32c7.732 0 14-6.268 14-14S25.732 4 18 4z" fill="url(#lg1)"></path>
+          <circle cx="12" cy="18" r="1.8" fill="white"></circle>
+          <circle cx="18" cy="18" r="1.8" fill="white"></circle>
+          <circle cx="24" cy="18" r="1.8" fill="white"></circle>
+          <defs>
+            <linearGradient id="lg1" x1="4" y1="4" x2="32" y2="32">
+              <stop stop-color="#00f0ff"></stop>
+              <stop offset="1" stop-color="#a020f0"></stop>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="login-title">NeonChat</div>
+      <div class="login-subtitle">تواصل بأسلوب المستقبل<br>مشفر · سريع · أنيق</div>
+      
+      <div class="glass-card">
+        <div class="custom-auth-form" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+          <input type="text" id="login-email" class="text-input" placeholder="اسم المستخدم أو الإيميل" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
+          <input type="password" id="login-pass" class="text-input" placeholder="كلمة المرور" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
+          <input type="password" id="login-pass-confirm" class="text-input" placeholder="تأكيد كلمة المرور (عند الإنشاء فقط)" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
+          
+          <div style="display:flex; gap:10px; margin-top: 4px;">
+            <button class="btn-primary" id="btn-custom-login" style="flex:1; padding:12px; font-size: 14px;">دخول</button>
+            <button class="btn-primary" id="btn-custom-signup" style="flex:1; padding:12px; font-size: 14px; background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink)); box-shadow: 0 4px 20px rgba(160, 32, 240, 0.35);">إنشاء حساب</button>
+          </div>
+          
+          <div style="text-align:center; margin-top: 8px;">
+            <a href="#" id="btn-forgot-pass" style="color: var(--text-secondary); font-size: 13px; text-decoration: none; transition: color 0.2s;">هل نسيت كلمة المرور؟</a>
+          </div>
+        </div>
+
+        <div class="login-features">
+          <div class="login-feature">
+            <div class="login-feature-icon">🔒</div>
+            <span>تشفير كامل لرسائلك</span>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">⚡</div>
+            <span>رسائل فورية في الوقت الحقيقي</span>
+          </div>
+          <div class="login-feature">
+            <div class="login-feature-icon">🎙️</div>
+            <span>رسائل صوتية ومرئية</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-home">
+      <header class="app-header home-header" style="gap: 6px; padding: 0 10px;">
+        <div id="home-avatar" class="home-avatar-placeholder" onclick="showScreen('profile')" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">أ</div>
+        <div class="header-title" style="font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            المحادثات 
+            <span style="font-size: 9px; background: rgba(0, 240, 255, 0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan); padding: 2px 4px; border-radius: 4px; font-family: var(--font-en); font-weight: bold; line-height: 1;">v1.0.12</span>
+          </div>
+          <div class="header-subtitle" id="home-subtitle" style="font-size: 11px;">مرحباً!</div>
+        </div>
+        <div class="my-id-badge" id="my-id-badge" onclick="copyMyId()" style="font-size: 11px; padding: 2px 4px; letter-spacing: 0; flex-shrink: 0;">------</div>
+
+        <div style="display:flex; gap:4px; flex-shrink: 0;">
+          <button class="btn-icon" onclick="confirmLogout()" title="تسجيل الخروج" style="width:34px; height:34px; color:var(--neon-pink); border-color:rgba(255,0,144,0.3);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+          </button>
+          <button class="btn-icon" onclick="showScreen('add-friend')" title="إضافة صديق" style="width:34px; height:34px;">
+            <span class="badge-req" id="home-req-badge" style="display:none; transform: scale(0.8); top: -4px; right: -4px;">0</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5c-1.1 0-2 .9-2 2v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+          </button>
+          <button class="btn-icon" onclick="showScreen('my-friends')" title="قائمة الأصدقاء" style="width:34px; height:34px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="search-bar">
+        <input type="search" class="search-input" placeholder="ابحث في المحادثات…" id="chats-search" oninput="filterChats(this.value)">
+        <span class="search-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </span>
+      </div>
+
+      <div class="chats-list" id="chats-list">
+        <div class="empty-state" id="chats-empty">
+          <div class="empty-state-icon">💬</div>
+          <div class="empty-state-text">لا توجد محادثات بعد.<br>أضف صديقاً وابدأ المحادثة!</div>
+        </div>
+      </div>
+
+      <button class="fab" onclick="showScreen('add-friend')" title="محادثة جديدة">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="screen" id="screen-chat">
+      <header class="app-header chat-header">
+        <button class="btn-icon" onclick="showScreen('home')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="chat-header-avatar" id="chat-header-avatar">أ</div>
+        <div class="chat-header-info">
+          <div class="chat-header-name" id="chat-header-name">…</div>
+          <div class="chat-header-status" id="chat-header-status">جاري التحقق...</div>
+        </div>
+                        <button class="btn-icon" onclick="toggleChatSearch()" title="بحث" style="width:28px; height:28px; color:var(--neon-cyan); border-color:var(--border-subtle); margin-left:0px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+        <button class="btn-icon" id="theme-toggle-btn" onclick="toggleTheme()" title="تبديل المظهر" style="width:28px; height:28px; color:var(--neon-purple); border-color:var(--border-subtle); margin-left:0px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+        </button>
+        <button class="btn-icon" onclick="startCall()" title="اتصال" style="width:28px; height:28px; color:var(--neon-green); border-color:rgba(0,255,136,0.3);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+          </svg>
+        </button>
+      </header>
+
+      <div id="chat-search-bar" style="display:none; padding:8px 12px; background:rgba(0,0,0,0.6); border-bottom:1px solid var(--border-glow); align-items:center; gap:8px; z-index:5;">
+        <input type="text" id="chat-search-input" placeholder="ابحث في المحادثة..." class="search-input" style="flex:1;" oninput="searchInChat(this.value)">
+        <button class="btn-icon" onclick="nextSearchResult()" style="width:32px; height:32px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="18 15 12 9 6 15"></polyline>
+          </svg></button>
+        <button class="btn-icon" onclick="prevSearchResult()" style="width:32px; height:32px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg></button>
+        <button class="btn-icon" onclick="toggleChatSearch()" style="width:32px; height:32px; color:var(--text-muted);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg></button>
+      </div>
+
+      <div class="messages-area" id="messages-area"></div>
+
+      <div class="msg-reply-preview" id="msg-reply-preview">
+        <div id="msg-reply-text" style="flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding-left:10px;">الرد على...</div>
+        <div class="msg-reply-close" onclick="cancelReply()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </div>
+      </div>
+
+      <div class="input-bar">
+        <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-img-input').click()" title="إرسال وسائط">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+        </button>
+
+        <button class="btn-attach" id="btn-cancel-voice" onclick="cancelVoiceRecord()" title="إلغاء التسجيل" style="display:none; color:var(--neon-pink); border-color:var(--neon-pink); background:rgba(255,0,144,0.1);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+
+        <div class="msg-input-wrap" id="msg-input-wrap">
+          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)"></textarea>
+        </div>
+
+        <div id="recording-indicator" style="display:none; flex:1; text-align:center; color:var(--neon-pink); font-weight:bold; font-size:14px;">
+          🔴 <span id="rec-timer-text">0:00</span>
+        </div>
+
+        <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path>
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+    <line x1="12" y1="19" x2="12" y2="23"></line>
+    <line x1="8" y1="23" x2="16" y2="23"></line>
+  </svg>
+  
+</button>
+
+<button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 18V5l12-2v13"></path>
+    <circle cx="6" cy="18" r="3"></circle>
+    <circle cx="18" cy="16" r="3"></circle>
+  </svg>
+</button>
+
+        <button class="btn-send" id="btn-send" onclick="sendTextMsg();">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-add-friend">
+      <header class="app-header">
+        <button class="btn-icon" onclick="showScreen('home')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="header-title">إضافة صديق</div>
+      </header>
+      <div class="add-friend-body">
+        <div>
+          <div class="field-label">أدخل رقم ID الخاص بصديقك (6 أرقام)</div>
+          <input type="tel" class="text-input" id="friend-id-input" placeholder="000000" maxlength="6" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <button class="btn-primary" id="btn-search-friend" onclick="searchFriend()">بحث</button>
+        <div id="search-result-area"></div>
+
+        <div class="neon-line" style="margin: 20px 0;"></div>
+        <div class="field-label">طلبات الصداقة الواردة</div>
+        <div id="friend-requests-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-my-friends">
+      <header class="app-header">
+        <button class="btn-icon" onclick="showScreen('home')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="header-title">قائمة الأصدقاء</div>
+        <button class="btn-icon" onclick="showScreen('blocked-users')" title="قائمة المحظورين" style="width:34px; height:34px; margin-right:auto; color:var(--neon-pink); border-color:rgba(255,0,144,0.3); background:rgba(255,0,144,0.06);">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+          </svg>
+        </button>
+      </header>
+      <div class="add-friend-body" style="padding-top: 10px;">
+        <div id="my-friends-container" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-blocked-users">
+      <header class="app-header">
+        <button class="btn-icon" onclick="showScreen('my-friends')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="header-title">قائمة المحظورين</div>
+      </header>
+      <div class="add-friend-body" style="padding-top: 10px;">
+        <div id="blocked-users-container" style="display:flex; flex-direction:column; gap:10px;"></div>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-profile">
+      <header class="app-header">
+        <button class="btn-icon" onclick="showScreen('home')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <div class="header-title">الإعدادات</div>
+      </header>
+      <div class="profile-body">
+        <div class="profile-avatar-wrap" onclick="document.getElementById('file-avatar-input').click()" style="cursor:pointer" title="تغيير الصورة">
+          <div class="profile-avatar" id="profile-avatar">أ</div>
+          <div style="position:absolute; bottom:0; right:0; background:var(--bg-surface); border-radius:50%; padding:6px; border:1px solid var(--neon-cyan); box-shadow: var(--shadow-neon);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+        </div>
+
+        <div style="width:100%; display:flex; gap:8px;">
+          <input type="text" class="text-input" id="profile-name-input" placeholder="اسمك" style="letter-spacing:normal; text-align:center; font-family:var(--font-ar); font-size:16px; font-weight:700;">
+          <button class="btn-icon" onclick="saveProfileName()" style="width:52px; background:linear-gradient(135deg, var(--neon-cyan), var(--neon-blue)); color:var(--bg-void); flex-shrink:0;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <div class="profile-id-card">
+          <div class="profile-id-label">رقم التعريف الخاص بك</div>
+          <div class="profile-id-value" id="profile-id-value">------</div>
+          <div class="profile-id-hint">شارك هذا الرقم مع أصدقائك كي يجدوك</div>
+        </div>
+        <button class="btn-primary" onclick="copyMyId()">📋 نسخ رقم الـ ID</button>
+        <button class="btn-primary" onclick="testNotificationsManually()" style="background: var(--neon-green); margin-top: 10px; margin-bottom: 10px; color: var(--bg-void);">🔔 تفعيل واختبار الإشعارات</button>
+        <button class="btn-danger" onclick="confirmLogout()">تسجيل الخروج</button>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-call" style="background:var(--bg-void); z-index:500; justify-content:center; align-items:center; text-align:center;">
+      <div id="call-avatar-view" class="call-pulse">أ</div>
+      <div id="call-name-view" style="font-size:26px; font-weight:700; margin-bottom:8px;">الاسم</div>
+      <div id="call-status-view" style="font-size:16px; color:var(--neon-cyan); margin-bottom:60px;">جاري الاتصال...</div>
+      <div style="display:flex; gap:40px; justify-content:center;" id="call-actions">
+        <button class="call-btn btn-red" onclick="endCall()">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path>
+            <line x1="23" y1="1" x2="1" y2="23"></line>
+          </svg>
+        </button>
+        <button class="call-btn btn-green" id="btn-accept-call" onclick="acceptCall()" style="display:none;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+  </div> <script src="script.js?v=12"></script>
+
+  <script>
+    if('serviceWorker' in navigator){
+      window.addEventListener('load',()=>{
+        navigator.serviceWorker.register('sw.js?v=12')
+          .then(r=>console.log('SW registered:',r.scope))
+          .catch(e=>console.error('SW registration failed:',e));
+      });
+    }
+  </script>
+</body>
+</html>
