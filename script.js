@@ -749,11 +749,11 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   statusEl.textContent = 'جاري التحقق...';
   statusEl.style.color = 'var(--text-muted)';
 
-  friendStatusRef = db.ref('users/' + friendUid);
+  friendStatusRef = db.ref('users/' + friendUid + '/status');
   
   let isBlockedByThem = false;
   let blockTimestamp = null;
-  let realFriendData = {};
+  let realFriendData = { ...friendProfile };
 
   function updateChatHeaderUI() {
     const fData = { ...realFriendData };
@@ -848,9 +848,9 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   });
 
   friendStatusListener = friendStatusRef.on('value', snap => {
-    realFriendData = snap.val() || {};
-    updateChatHeaderUI();
-  });
+  realFriendData.status = snap.val();
+  updateChatHeaderUI();
+});
 
   typingRef = db.ref('chats/' + chatId + '/typing/' + friendUid);
   typingListener = typingRef.on('value', snap => {
