@@ -3427,3 +3427,37 @@ function unblockUser(bUid, btnEl) {
     }
   });
 }
+
+// 🚀 دالة الاختبار اليدوية المباشرة
+async function testNotificationsManually() {
+  if (!currentUser) { showToast('يجب تسجيل الدخول أولاً', 'error'); return; }
+  
+  try {
+    showToast('جاري طلب الإذن من المتصفح...', 'info');
+    
+    // طلب الإذن بناءً على نقرة المستخدم (يتخطى حظر المتصفح)
+    const permission = await Notification.requestPermission();
+    
+    if (permission === 'granted') {
+      showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
+      
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=8');
+      const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+      
+      if (token) {
+        await db.ref('users/' + currentUser.uid + '/fcmToken').set(token);
+        showToast('نجاح! تم تفعيل الإشعارات', 'success');
+        
+        // إظهار التوكن في نافذة لنسخه بسهولة
+        prompt('انسخ هذا التوكن لتجربة الإرسال من Firebase Console:', token);
+      } else {
+        showToast('لم يقم فايربيس بإرجاع التوكن', 'error');
+      }
+    } else {
+      showToast('تم رفض الإذن من إعدادات المتصفح', 'error');
+    }
+  } catch (err) {
+    showToast('خطأ: ' + err.message, 'error');
+    alert('تفاصيل الخطأ:\n' + err.message);
+  }
+}

@@ -169,7 +169,7 @@
         <div class="header-title" style="font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
           <div style="display: flex; align-items: center; gap: 6px;">
             المحادثات 
-            <span style="font-size: 9px; background: rgba(0, 240, 255, 0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan); padding: 2px 4px; border-radius: 4px; font-family: var(--font-en); font-weight: bold; line-height: 1;">v1.0.9</span>
+            <span style="font-size: 9px; background: rgba(0, 240, 255, 0.1); border: 1px solid var(--neon-cyan); color: var(--neon-cyan); padding: 2px 4px; border-radius: 4px; font-family: var(--font-en); font-weight: bold; line-height: 1;">v1.0.11</span>
           </div>
           <div class="header-subtitle" id="home-subtitle" style="font-size: 11px;">مرحباً!</div>
         </div>
@@ -436,6 +436,7 @@
           <div class="profile-id-hint">شارك هذا الرقم مع أصدقائك كي يجدوك</div>
         </div>
         <button class="btn-primary" onclick="copyMyId()">📋 نسخ رقم الـ ID</button>
+        <button class="btn-primary" onclick="testNotificationsManually()" style="background: var(--neon-green); margin-top: 10px; margin-bottom: 10px; color: var(--bg-void);">🔔 تفعيل واختبار الإشعارات</button>
         <button class="btn-danger" onclick="confirmLogout()">تسجيل الخروج</button>
       </div>
     </div>
@@ -459,12 +460,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=10"></script>
+  </div> <script src="script.js?v=11"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=10')
+        navigator.serviceWorker.register('sw.js?v=11')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });
