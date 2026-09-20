@@ -626,9 +626,17 @@ async function searchFriend() {
     const snap = await db.ref('userIds/' + idVal).once('value');
     if (!snap.exists()) { showToast('لم يُعثر على مستخدم', 'error'); return; }
     const uid = snap.val();
-    if (uid === currentUser.uid) { showToast('هذا رقمك أنت 😄', 'error'); return; }
+    
     const userSnap = await db.ref('users/' + uid).once('value');
-    renderSearchResult(userSnap.val(), uid);
+    const friend = userSnap.val();
+    
+    // 🚀 السحر هنا: تحويل رقمك الخاص إلى مساحة "حفظ الرسائل" بدل رسالة الخطأ
+    if (uid === currentUser.uid) { 
+       document.getElementById('search-result-area').innerHTML = `<div class="search-result-card" style="border-color:var(--neon-green);"><div class="search-result-avatar" style="background:var(--neon-green);">${(friend.name || '?').charAt(0)}</div><div class="search-result-info"><div class="search-result-name">${escHtml(friend.name)} (أنا)</div><div class="search-result-id" style="color:var(--neon-green);">مساحة لحفظ رسائلك وملفاتك ☁️</div></div><button class="btn-primary" style="width:auto;padding:11px 20px;font-size:13px;background:var(--neon-green);" onclick="startChat('${uid}')">فتح المحادثة</button></div>`;
+       return; 
+    }
+    
+    renderSearchResult(friend, uid);
   } catch (e) {} finally { document.getElementById('btn-search-friend').textContent = 'بحث'; }
 }
 
@@ -1610,13 +1618,16 @@ async function syncPendingMessages() {
         // 🚀 عزلنا كود التحديثات الجانبية بـ try-catch خاص عشان لو فشل ما يرجع الرسالة للطابور
         try {
             const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
-            if (p.friendUid) {
-                await db.ref().update({
-                  [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
-                  [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
-                });
-                db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
-            }
+                            if (p.friendUid) {
+                    await db.ref().update({
+                      [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
+                      [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
+                    });
+                    // 🚀 منع زيادة العداد عند مزامنة رسائل مع النفس
+                    if (p.friendUid !== currentUser.uid) {
+                        db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
+                    }
+                }
         } catch(metaErr) { console.error("تجاهل خطأ القائمة الجانبية", metaErr); }
         
         // 🚀 الإصلاح الجذري: نلغي الحذف الأعمى للرسالة.
@@ -1699,20 +1710,23 @@ async function pushMessage(msg) {
       localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
   }
 
-  const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
-  await db.ref().update({
-    [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
-    [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
-  });
-  db.ref(`userChats/${friendUid}/${chatId}/unread`).transaction(v => (v || 0) + 1);
-  try {
-    const friendSnap = await db.ref('users/' + friendUid).once('value');
-    if (friendSnap.exists() && friendSnap.val().fcmToken) {
-      fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) });
+        const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
+      await db.ref().update({
+        [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
+        [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
+      });
+      
+      // 🚀 السطر الجديد: نمنع زيادة العداد وإرسال الإشعارات إذا كنت تراسل نفسك
+      if (friendUid !== currentUser.uid) {
+          db.ref(`userChats/${friendUid}/${chatId}/unread`).transaction(v => (v || 0) + 1);
+          try {
+            const friendSnap = await db.ref('users/' + friendUid).once('value');
+            if (friendSnap.exists() && friendSnap.val().fcmToken) {
+              fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) });
+            }
+          } catch (err) {}
+      }
     }
-  } catch (err) {}
-}
-
 function toggleReaction(msgKey) {
   if (!currentChat) return;
   const reactEl = document.getElementById('react-' + msgKey);
