@@ -1,12 +1,15 @@
 const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
+  let pk = process.env.FIREBASE_PRIVATE_KEY || '';
+  // تنظيف المفتاح من أي علامات تنصيص إضافية قد يضعها Vercel ومعالجة الفواصل بدقة
+  pk = pk.replace(/(^"|"$)/g, '').replace(/\\n/g, '\n');
+
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // معالجة الرموز لضمان قراءتها بشكل سليم من Vercel
-      privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
+      privateKey: pk,
     })
   });
 }
