@@ -276,19 +276,13 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       try { await ensureUserProfile(user); } catch(e) {}
       if ('Notification' in window && Notification.permission !== 'granted' && Notification.permission !== 'denied') Notification.requestPermission();
       setupPresence(user.uid);
-      try {
-        const swReg = await navigator.serviceWorker.register('./sw.js');
+            try {
+        const swReg = await navigator.serviceWorker.register('./sw.js?v=7');
         const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
         if (token) await db.ref('users/' + user.uid + '/fcmToken').set(token);
-        
-        // تحديث التوكن تلقائياً بصمت إذا تغير بالخلفية لضمان استمرار وصول الإشعارات
-        messaging.onTokenRefresh(async () => {
-          try {
-            const newToken = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-            if (newToken) await db.ref('users/' + user.uid + '/fcmToken').set(newToken);
-          } catch (e) {}
-        });
-      } catch (err) { showToast('خطأ توليد التوكن: ' + err.message, 'error'); }
+      } catch (err) { 
+        showToast('خطأ توليد التوكن: ' + err.message, 'error'); 
+      }
       initCallListener(user.uid); initFriendRequestsListener(user.uid); initFriendsListListener(user.uid); 
       initMicrophone(); 
       syncPendingMessages();
