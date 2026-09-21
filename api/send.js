@@ -16,7 +16,14 @@ if (!admin.apps.length) {
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  
+  // حماية أمنية حرجة: تقييد الوصول لمنع الهجمات الخارجية وإرسال إشعارات عشوائية
+  const allowedOrigins = ['https://neonchat.mooo.com', 'http://localhost:2435', 'http://localhost:5500'];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
 
@@ -47,7 +54,7 @@ module.exports = async (req, res) => {
     },
     webpush: {
       headers: {
-        Urgency: 'high',
+        urgency: 'high',
         TTL: '86400'
       },
       notification: {
