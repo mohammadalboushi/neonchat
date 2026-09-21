@@ -14,21 +14,11 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// 🚀 الحل الجذري: إجبار المتصفح على عرض الإشعار برمجياً لتخطي قيود الأندرويد
-messaging.onBackgroundMessage(function(payload) {
-  const notificationTitle = payload.notification?.title || 'إشعار جديد';
-  const notificationOptions = {
-    body: payload.notification?.body || 'لديك رسالة جديدة',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    dir: 'rtl',
-    vibrate: [300, 100, 300]
-  };
-  return self.registration.showNotification(notificationTitle, notificationOptions);
-});
+// تم إزالة onBackgroundMessage لمنع تكرار الإشعارات
+// مكتبة Firebase ستقوم الآن بعرض الإشعار الافتراضي بشكل تلقائي ومثالي بناءً على إعدادات Vercel
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-1'; 
+const CACHE_NAME = 'app-cache-2'; 
 const ASSETS = [
   './',
   './index.html',
