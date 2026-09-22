@@ -796,6 +796,15 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     friendProfile = snap.val();
   }
   currentChat = { chatId, friendUid, friendProfile };
+  // 🚀 جلب الملف الخام من قاعدة البيانات وعرضه فوراً
+  getWallpaperDB().then(db => {
+    const tx = db.transaction('wallpapers', 'readonly');
+    const req = tx.objectStore('wallpapers').get(chatId);
+    req.onsuccess = () => {
+      if (req.result) applyChatWallpaper(URL.createObjectURL(req.result));
+      else applyChatWallpaper(null);
+    };
+  }).catch(() => applyChatWallpaper(null));
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
@@ -1407,38 +1416,44 @@ function buildMsgEl(msg, isBackground = false) {
     }
   }, { passive: true });
 
-  bubble.addEventListener('touchend', e => {
-    if (e.target.tagName === 'A') return;
+            bubble.addEventListener('touchend', e => {
+            if (e.target.tagName === 'A') return;
 
-    if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { 
-      e.target.style.opacity = '1'; 
-    }
-    
-    clearTimeout(pressTimer);
-    bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
-    replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
-    bubble.hasVibrated = false;
+            if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
+              e.target.style.opacity = '1'; 
+            }
+            
+            clearTimeout(pressTimer);
+            bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
+            replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
+            bubble.hasVibrated = false;
 
-    if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
-      prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
-        } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
-      singleTapTimer = setTimeout(() => {
-        const vidContainer = e.target.closest('.video-thumb-container');
-        if (vidContainer) {
-          if (vidContainer.getAttribute('data-cached') === 'true') {
-             openVideoPlayer(msg.url);
-          } else {
-             downloadVideoLocally(msg, vidContainer);
-          }
-        } else if (e.target.tagName === 'IMG') {
-          window.previewImg(e.target.src);
-        }
-      }, 250);
-    }
-    isSwiping = false; touchStartX = 0; touchStartY = 0;
-  });
+            if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
+              prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
+                } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
+              singleTapTimer = setTimeout(() => {
+                const vidContainer = e.target.closest('.video-thumb-container');
+                if (vidContainer) {
+                  if (vidContainer.getAttribute('data-cached') === 'true') {
+                     openVideoPlayer(msg.url);
+                  } else {
+                     downloadVideoLocally(msg, vidContainer);
+                  }
+                } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
+                  window.previewImg(e.target.src);
+                }
+              }, 250);
+            }
+            isSwiping = false; touchStartX = 0; touchStartY = 0;
+          });
 
-  bubble.addEventListener('contextmenu', e => { if (e.target.tagName === 'A' || msg.isPending) return; e.preventDefault(); clearTimeout(pressTimer); openMsgMenu(msg, isOut); });
+          // منع قائمة جوجل الافتراضية نهائياً لجميع العناصر بما فيها الروابط
+          bubble.addEventListener('contextmenu', e => { 
+            if (msg.isPending) return; 
+            e.preventDefault(); 
+            clearTimeout(pressTimer); 
+            openMsgMenu(msg, isOut); 
+          });
 
   let ticks = '';
   if (isOut && !msg.isPending) {
@@ -1454,14 +1469,24 @@ function buildMsgEl(msg, isBackground = false) {
   if (msg.replyTo) { replyHtml = `<div onclick="scrollToMessage('${msg.replyTo.key}')" style="cursor:pointer;"><div class="reply-badge">↩ رد على رسالة</div><div style="background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;margin-bottom:6px;border-right:2px solid var(--neon-cyan);font-size:12px;opacity:0.8;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escHtml(msg.replyTo.text)}</div></div>`; }
 
   if (msg.type === 'text') {
+    let extractedUrl = null;
     let safeText = escHtml(msg.text).replace(/(https?:\/\/[^\s]+)/g, function(url) {
+      if (!extractedUrl) extractedUrl = url; // التقاط أول رابط للمعاينة
       if (url.includes('instagram.com')) {
         let intentUrl = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=https;end;';
         return `<a href="${intentUrl}" target="_top" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">${url}</a>`;
       }
       return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline; word-break: break-all;">${url}</a>`;
     });
-    bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${timeEl}${reactHtml}`;
+    
+    let previewHtml = '';
+    if (extractedUrl) {
+      const previewId = 'link-prev-' + msg.key;
+      previewHtml = `<div id="${previewId}" class="link-preview-container"><div class="link-preview-loader">جاري جلب التفاصيل... ⏳</div></div>`;
+      setTimeout(() => buildLinkPreviewUI(extractedUrl, previewId), 50);
+    }
+
+    bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${previewHtml}${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
     const imgId = 'img_' + msg.key;
     const isEncrypted = msg.url.includes('enc_img_') || msg.url.endsWith('.bin');
@@ -3650,5 +3675,338 @@ async function testNotificationsManually() {
   } catch (err) {
     showToast('خطأ: ' + err.message, 'error');
     console.error('FCM Error:', err);
+  }
+}
+/* ═══════════════════════════════════
+   CHAT SETTINGS MENU & CUSTOM WALLPAPER
+═══════════════════════════════════ */
+async function openChatSettingsMenu() {
+  const menu = document.getElementById('msg-menu');
+  
+  let friendId = '------';
+  if (currentChat && currentChat.friendUid) {
+     if (currentChat.friendProfile && currentChat.friendProfile.uniqueId) {
+        friendId = currentChat.friendProfile.uniqueId;
+     } else {
+        try {
+           const snap = await db.ref('users/' + currentChat.friendUid + '/uniqueId').once('value');
+           if (snap.exists()) {
+              friendId = snap.val();
+              if (!currentChat.friendProfile) currentChat.friendProfile = {};
+              currentChat.friendProfile.uniqueId = friendId;
+           }
+        } catch(e) {}
+     }
+  }
+
+  menu.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:10px;">
+      <div style="font-size:13px; font-weight:bold; color:var(--text-secondary); flex:1; text-align:right;">إعدادات</div>
+      <div style="flex:1; text-align:center; font-family:var(--font-en); font-size:12px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; background:rgba(0,240,255,0.05); border:1px dashed var(--border-subtle); padding:2px 0; border-radius:6px; cursor:pointer;" onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" title="نسخ الـ ID">${friendId}</div>
+      <div style="flex:1; text-align:left;"><span style="font-size: 10px; background: rgba(160, 32, 240, 0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 6px; border-radius: 4px; font-family: var(--font-en); font-weight: bold;">v1.0.5</span></div>
+    </div>
+    
+    <button class="msg-menu-btn" onclick="toggleChatSearch(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <span>بحث في هذه المحادثة</span>
+    </button>
+    
+    <button class="msg-menu-btn" onclick="toggleTheme(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-purple)" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+      <span>تغيير الوضع الداكن</span>
+    </button>
+    
+    <button class="msg-menu-btn" onclick="document.getElementById('chat-wallpaper-input').click(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-blue)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"></polyline></svg>
+      <span>تغيير خلفية المحادثة</span>
+      <div onclick="removeChatWallpaper(event)" title="حذف الخلفية" style="margin-right:auto; background:rgba(255,0,144,0.1); color:var(--neon-pink); border:1px solid var(--neon-pink); border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></div>
+    </button>
+    
+    <button class="msg-menu-btn danger" onclick="clearCurrentChatHistory(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px; margin-top:8px; border-top:1px solid var(--border-subtle); border-radius:0;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+      <span>مسح محتوى الدردشة</span>
+    </button>
+    
+    <button class="msg-menu-btn danger" onclick="blockCurrentUser(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      <span>حظر هذا الشخص</span>
+    </button>
+
+    <button class="msg-menu-btn" onclick="clearAppCache(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px; margin-top:8px; border-top:1px solid var(--border-subtle); border-radius:0;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-green)" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><polyline points="21 3 21 8 16 8"></polyline></svg>
+      <span style="color:var(--text-primary);">تنظيف كاش التطبيق</span>
+    </button>
+  `;
+  document.getElementById('msg-menu-overlay').classList.add('open');
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+// توجيه الأوامر للمحادثة المفتوحة حالياً
+function clearCurrentChatHistory() { if(currentChat) clearChatHistory(currentChat.chatId); }
+function blockCurrentUser() { if(currentChat) blockUser(currentChat.friendUid); }
+
+// محرك ضغط وتطبيق الخلفيات المخصصة
+/* 🚀 محرك قاعدة بيانات IndexedDB لحفظ الخلفيات بالدقة الأصلية الخام 100% */
+function getWallpaperDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("NeonChatDB", 1);
+    req.onupgradeneeded = (e) => {
+      if (!e.target.result.objectStoreNames.contains('wallpapers')) {
+        e.target.result.createObjectStore('wallpapers');
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+document.getElementById('chat-wallpaper-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file || !currentChat) return;
+  e.target.value = '';
+  showToast('جاري تطبيق الخلفية الأصلية...');
+
+  try {
+    // 🚀 حفظ "الملف الخام" مباشرة في IndexedDB بدون أي ضغط أو تحويل
+    const db = await getWallpaperDB();
+    const tx = db.transaction('wallpapers', 'readwrite');
+    tx.objectStore('wallpapers').put(file, currentChat.chatId);
+    
+    tx.oncomplete = () => {
+      const objectUrl = URL.createObjectURL(file);
+      applyChatWallpaper(objectUrl);
+      showToast('تم تغيير خلفية المحادثة ✨', 'success');
+    };
+  } catch(err) {
+    showToast('حدث خطأ في حفظ الصورة', 'error');
+  }
+});
+
+function applyChatWallpaper(imgUrl) {
+  const chatScreen = document.getElementById('screen-chat');
+  
+  let bgLayer = document.getElementById('chat-fixed-bg-layer');
+  if (!bgLayer) {
+    bgLayer = document.createElement('div');
+    bgLayer.id = 'chat-fixed-bg-layer';
+    const screenW = window.screen.width;
+    const screenH = window.screen.height;
+    bgLayer.style.cssText = `position: absolute; top: 0; left: 0; width: ${screenW}px; height: ${screenH}px; z-index: -1; background-size: cover; background-position: center; pointer-events: none;`;
+    chatScreen.prepend(bgLayer);
+  }
+
+  if (imgUrl) {
+     const isLight = document.body.classList.contains('light-theme');
+     const overlay = isLight ? 'rgba(255, 255, 255, 0.4)' : 'rgba(7, 13, 20, 0.4)';
+     
+     bgLayer.style.backgroundImage = `linear-gradient(${overlay}, ${overlay}), url(${imgUrl})`;
+     chatScreen.style.setProperty('background', 'transparent', 'important');
+  } else {
+     bgLayer.style.backgroundImage = 'none';
+     chatScreen.style.removeProperty('background');
+  }
+}
+
+async function removeChatWallpaper(e) {
+  e.stopPropagation(); 
+  if (!currentChat) return;
+  
+  const chatId = currentChat.chatId;
+
+  // 1. 🧹 تنظيف الكاش القديم من LocalStorage (لتحرير مساحة الـ 5 ميجابايت)
+  localStorage.removeItem('wp_' + chatId);
+
+  // 2. 🗑️ حذف الصورة الخام عالية الدقة من قاعدة بيانات IndexedDB
+  try {
+    const db = await getWallpaperDB();
+    const tx = db.transaction('wallpapers', 'readwrite');
+    tx.objectStore('wallpapers').delete(chatId);
+    
+    tx.oncomplete = () => {
+      applyChatWallpaper(null);
+      showToast('تم استعادة الخلفية وتنظيف الذاكرة 🧹', 'success');
+      closeMsgMenu();
+    };
+  } catch(err) {
+    // كإجراء احتياطي في حال فشل الاتصال بقاعدة البيانات، نزيل الخلفية من الواجهة على الأقل
+    applyChatWallpaper(null);
+    closeMsgMenu();
+  }
+}
+
+async function clearAppCache() {
+  // استخدام نافذة المودال الزجاجية الخاصة بتطبيقك بدل رسالة المتصفح المعفنة
+  const ok = await openModal('تنظيف الكاش العميق', 'هل أنت متأكد من تنظيف الذاكرة المؤقتة؟ سيتم تفريغ المساحة المحجوزة دون حذف محادثاتك أو تسجيل خروجك.');
+  if (!ok) return;
+
+  showToast('جاري التنظيف العميق...', 'info');
+
+  try {
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map(name => caches.delete(name)));
+    }
+
+    indexedDB.deleteDatabase('NeonChatDB');
+
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('wp_')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
+    showToast('تم تنظيف ذاكرة التطبيق بنجاح ✨', 'success');
+    
+    setTimeout(() => {
+      window.location.reload(true);
+    }, 1500);
+
+  } catch (err) {
+    showToast('حدث خطأ أثناء تنظيف الذاكرة', 'error');
+  }
+}
+
+/* ═══════════════════════════════════
+   LINK PREVIEW ENGINE
+═══════════════════════════════════ */
+// تحميل الكاش من الذاكرة لتسريع عرض الروابط المكررة
+window.linkPreviewCache = JSON.parse(localStorage.getItem('neon_link_previews') || '{}');
+
+async function buildLinkPreviewUI(url, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  let pressTimer;
+  let isDragging = false;
+  
+  const copyAction = (e) => {
+    if(e) { e.preventDefault(); e.stopPropagation(); }
+    navigator.clipboard.writeText(url).then(() => showToast('تم نسخ الرابط بنجاح 🔗', 'success'));
+  };
+
+  container.addEventListener('touchstart', (e) => {
+    isDragging = false;
+    pressTimer = setTimeout(() => { isDragging = true; copyAction(); }, 600);
+  }, {passive: true});
+  
+  container.addEventListener('touchmove', (e) => { 
+    isDragging = true; 
+    clearTimeout(pressTimer); 
+  }, {passive: true});
+  
+  container.addEventListener('touchend', (e) => { 
+    clearTimeout(pressTimer); 
+  });
+  
+  container.addEventListener('contextmenu', copyAction);
+  
+  container.addEventListener('click', (e) => {
+    if (!isDragging) window.open(url, '_blank');
+  });
+
+  try {
+    let data = window.linkPreviewCache[url];
+    
+    if (!data) {
+      const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+      
+      if (ytMatch && ytMatch[1]) {
+        // جلب عنوان يوتيوب الحقيقي باستخدام oEmbed الرسمي المجاني
+        try {
+          const ytRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+          if (ytRes.ok) {
+            const ytJson = await ytRes.json();
+            data = {
+              title: ytJson.title,
+              desc: ytJson.author_name, // اسم القناة
+              image: ytJson.thumbnail_url || `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`,
+              domain: 'youtube.com'
+            };
+          } else {
+            throw new Error('yt fallback');
+          }
+        } catch (ytErr) {
+          data = {
+            title: 'فيديو يوتيوب',
+            desc: url,
+            image: `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`,
+            domain: 'youtube.com'
+          };
+        }
+      } else {
+        try {
+          const res1 = await fetch(`https://api.dub.co/metatags?url=${encodeURIComponent(url)}`);
+          if (!res1.ok) throw new Error('Dub.co failed');
+          const json1 = await res1.json();
+          
+          data = {
+            title: json1.title || 'رابط خارجي',
+            desc: json1.description || '',
+            image: json1.image || '',
+            domain: new URL(url).hostname
+          };
+        } catch (err1) {
+          try {
+            const res2 = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
+            const json2 = await res2.json();
+            
+            if (json2.status === 'success' && json2.data) {
+              data = {
+                title: json2.data.title || 'رابط خارجي',
+                desc: json2.data.description || '',
+                image: json2.data.image?.url || '',
+                domain: json2.data.publisher || new URL(url).hostname
+              };
+            } else {
+              throw new Error('APIs failed');
+            }
+          } catch (err2) {
+            // كاسط بروكسي أخير مخصص للانستغرام يسحب كود الصفحة ويستخرج العنوان
+            const igMatch = url.match(/instagram\.com/i);
+            if (igMatch) {
+              const proxyRes = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+              const proxyJson = await proxyRes.json();
+              const html = proxyJson.contents;
+              const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
+              
+              if (titleMatch && titleMatch[1]) {
+                let cleanTitle = titleMatch[1].replace('Instagram', '').trim();
+                if(cleanTitle.startsWith('- ')) cleanTitle = cleanTitle.substring(2);
+                
+                data = {
+                  title: cleanTitle || 'منشور إنستغرام',
+                  desc: 'اضغط للمشاهدة على انستغرام',
+                  image: '', 
+                  domain: 'instagram.com'
+                };
+              } else {
+                throw new Error('Scrape failed');
+              }
+            } else {
+              throw new Error('All failed');
+            }
+          }
+        }
+      }
+      if(data) {
+        window.linkPreviewCache[url] = data;
+        localStorage.setItem('neon_link_previews', JSON.stringify(window.linkPreviewCache));
+      }
+    }
+
+    const imgHtml = data.image ? `<img src="${data.image}" class="link-preview-image" loading="lazy" onerror="this.style.display='none'" />` : '';
+    container.innerHTML = `
+      ${imgHtml}
+      <div class="link-preview-info">
+        <div class="link-preview-title">${escHtml(data.title)}</div>
+        ${data.desc ? `<div class="link-preview-desc">${escHtml(data.desc)}</div>` : ''}
+        <div class="link-preview-domain">${escHtml(data.domain)}</div>
+      </div>
+    `;
+  } catch (err) {
+    container.style.display = 'none'; 
   }
 }

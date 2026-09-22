@@ -1804,3 +1804,75 @@ body.light-theme .input-bar {
 .video-meta-badge { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.7); padding: 2px 6px; border-radius: 6px; font-size: 10px; font-family: var(--font-en); color: white; border: 1px solid var(--border-subtle); backdrop-filter: blur(2px); }
 .upload-progress-wrapper { width: 100%; background: rgba(0,0,0,0.3); border-radius: 6px; height: 6px; overflow: hidden; margin-top: 8px; border: 1px solid var(--border-subtle); }
 .upload-progress-bar { height: 100%; background: var(--neon-cyan); width: 0%; box-shadow: 0 0 8px var(--neon-cyan); transition: width 0.2s; }
+
+/* ═══════════════════════════════════════════════
+   LINK PREVIEWS
+═══════════════════════════════════════════════ */
+.link-preview-container {
+  margin-top: 8px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.link-preview-container:active {
+  transform: scale(0.98);
+  background: rgba(0, 240, 255, 0.08);
+}
+.link-preview-image {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.link-preview-info {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.link-preview-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.link-preview-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.link-preview-domain {
+  font-size: 10px;
+  color: var(--neon-cyan);
+  font-family: var(--font-en);
+  margin-top: 2px;
+}
+.link-preview-loader {
+  padding: 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.light-theme .link-preview-container {
+  background: rgba(0, 128, 255, 0.05);
+}
+
+/* منع ظهور قائمة جوجل الافتراضية عند الضغط المطول على الروابط */
+.msg-bubble a {
+  -webkit-touch-callout: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
