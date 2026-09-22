@@ -18,7 +18,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
   
   // حماية أمنية حرجة: تقييد الوصول لمنع الهجمات الخارجية وإرسال إشعارات عشوائية
-  const allowedOrigins = ['https://neonchat.mooo.com', 'http://localhost:2435', 'http://localhost:5500'];
+  const allowedOrigins = ['https://neonchat.mooo.com', 'https://mohammadalboushi.github.io', 'http://localhost:2435', 'http://localhost:5500'];
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
