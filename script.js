@@ -1,21 +1,42 @@
 /* ═══════════════════════════════════
    FIREBASE INIT & GLOBAL STATE
 ═══════════════════════════════════ */
-const firebaseConfig = {
-  apiKey: "AIzaSyCZH225ITSw_JGx8Faq8nxxgzb49SBqrk8",
-  authDomain: "neonchat-2df05.firebaseapp.com",
-  databaseURL: "https://neonchat-2df05-default-rtdb.firebaseio.com",
-  projectId: "neonchat-2df05",
-  storageBucket: "neonchat-2df05.firebasestorage.app",
-  messagingSenderId: "275702671868",
-  appId: "1:275702671868:web:e4235a6991b3ae22276a79"
-};
+let firebaseConfig;
+let VERCEL_URL;
+let VAPID_KEY;
+
+if (window.location.hostname === "neonchat.mooo.com") {
+  // إعدادات مشروع NeonChat الأساسي
+  firebaseConfig = {
+    apiKey: "AIzaSyCZH225ITSw_JGx8Faq8nxxgzb49SBqrk8",
+    authDomain: "neonchat-2df05.firebaseapp.com",
+    databaseURL: "https://neonchat-2df05-default-rtdb.firebaseio.com",
+    projectId: "neonchat-2df05",
+    storageBucket: "neonchat-2df05.firebasestorage.app",
+    messagingSenderId: "275702671868",
+    appId: "1:275702671868:web:e4235a6991b3ae22276a79"
+  };
+  VERCEL_URL = 'https://neonchat-five.vercel.app';
+  VAPID_KEY = 'BIw1xmx0-Ovc7CQi3ts8pbouqDiImR09FPEGP8k8I9wF2iZrvNoC9V5X68sOfuXoQOSW2WepXqvI0A4qiSDXHBQ';
+} else {
+  // إعدادات مشروع Malboushi الثاني
+  firebaseConfig = {
+    apiKey: "AIzaSyBB_U4C880PW4GxZd8FALv8yBSiP2mNeBY",
+    authDomain: "malaboushi.firebaseapp.com",
+    databaseURL: "https://malaboushi-default-rtdb.firebaseio.com/",
+    projectId: "malaboushi",
+    storageBucket: "malaboushi.firebasestorage.app",
+    messagingSenderId: "110336819350",
+    appId: "1:110336819350:web:2b1b0488e72b811f0602b7"
+  };
+  VERCEL_URL = 'https://neonchat-malboushi.vercel.app';
+  VAPID_KEY = 'BLyGo78MotBcNontRvYa14hdbwWLxjJBJ4AWFIj35Ek125D-SO2445PpX1tNuSgBv5MPQSZhgPyzNynvVitg68I';
+}
+
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.database();
 const messaging = firebase.messaging();
-const VERCEL_URL = 'https://neonchat-five.vercel.app';
-const VAPID_KEY = 'BIw1xmx0-Ovc7CQi3ts8pbouqDiImR09FPEGP8k8I9wF2iZrvNoC9V5X68sOfuXoQOSW2WepXqvI0A4qiSDXHBQ'; 
 
 // 🚀 تم إزالة نظام مزامنة السيرفر الوهمي والعودة للاعتماد على توقيت الجهاز (Date.now) لضمان دقة الترتيب
 function getTrueTime() {

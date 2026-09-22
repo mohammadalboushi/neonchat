@@ -7,7 +7,16 @@
   
   <meta name="description" content="تطبيق دردشة عصري">
   <meta name="theme-color" content="#020408">
-  <link rel="manifest" href="manifest.json">
+  <script>
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    if (window.location.hostname === "neonchat.mooo.com") {
+      manifestLink.href = "manifest.json";
+    } else {
+      manifestLink.href = "manifest2.json";
+    }
+    document.head.appendChild(manifestLink);
+  </script>
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="apple-touch-icon" href="icon-192.png">
 
