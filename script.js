@@ -162,7 +162,10 @@ window.addEventListener('popstate', e => {
   }
   
   if (videoOverlay && videoOverlay.classList.contains('open')) {
-    closeVideoPlayer();
+    if (!videoOverlay.classList.contains('floating')) {
+       minimizeVideoPlayer(); // 🚀 زر الرجوع يصغر الفيديو ولا يغلقه
+       history.pushState({ screen: currentActiveScreen }, '', ''); // استعادة المسار لمنع الخروج من التطبيق
+    }
     isPopupOpen = true;
   }
   
@@ -1418,10 +1421,15 @@ function buildMsgEl(msg, isBackground = false) {
 
     if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
       prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
-    } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
+        } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
       singleTapTimer = setTimeout(() => {
-        if (e.target.closest('.video-thumb-container')) {
-          openVideoPlayer(msg.url);
+        const vidContainer = e.target.closest('.video-thumb-container');
+        if (vidContainer) {
+          if (vidContainer.getAttribute('data-cached') === 'true') {
+             openVideoPlayer(msg.url);
+          } else {
+             downloadVideoLocally(msg, vidContainer);
+          }
         } else if (e.target.tagName === 'IMG') {
           window.previewImg(e.target.src);
         }
@@ -1483,12 +1491,33 @@ function buildMsgEl(msg, isBackground = false) {
             }, 50);
         }
     }
-    } else if (msg.type === 'video') {
+  } else if (msg.type === 'video') {
     const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
-    bubble.innerHTML = `${replyHtml}<div class="video-thumb-container" style="background:#050b12; border:1px solid var(--border-subtle);">
-        <div class="video-play-icon" style="pointer-events: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
+    bubble.innerHTML = `${replyHtml}<div id="vid-container-${msg.key}" class="video-thumb-container" style="background:#050b12; border:1px solid var(--border-subtle);">
+        <div id="vid-ui-${msg.key}" class="video-play-icon" style="pointer-events:none; background:rgba(0,0,0,0.7); z-index:2;">
+           <div style="width:24px; height:24px; border:2px solid var(--neon-cyan); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite;"></div>
+        </div>
+        <div id="vid-progress-${msg.key}" style="position:absolute; bottom:0; left:0; height:4px; background:var(--neon-cyan); width:0%; transition:width 0.2s; z-index:2;"></div>
         ${fileSize}
       </div>${timeEl}${reactHtml}`;
+
+    if (!msg.isPending && 'caches' in window) {
+      setTimeout(() => {
+        caches.open('media-cache').then(cache => {
+          cache.match(msg.url).then(cached => {
+            const uiEl = document.getElementById(`vid-ui-${msg.key}`);
+            const containerEl = document.getElementById(`vid-container-${msg.key}`);
+            if (cached) {
+              if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+              if (containerEl) containerEl.setAttribute('data-cached', 'true');
+            } else {
+              if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+              if (containerEl) containerEl.setAttribute('data-cached', 'false');
+            }
+          });
+        });
+      }, 50);
+    }
   } else if (msg.type === 'audio') {
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
@@ -2760,21 +2789,8 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       }
 
       const xhr = new XMLHttpRequest();
-      const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-      const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
-
-      // توجيه الفيديوهات إلى Supabase، والصوتيات إلى Cloudinary
-      if (mediaType === 'video') {
-          const ext = file.name.includes('.') ? file.name.split('.').pop() : 'mp4';
-          const cleanName = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
-          xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
-          xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
-          xhr.setRequestHeader('apikey', SUPA_KEY);
-          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
-      } else {
-          xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
-      }
-
+      // توجيه الفيديوهات والأغاني إلى Cloudinary للحفاظ على مساحة Supabase
+      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
       xhr.timeout = 180000; // 3 دقائق كحد أقصى للرفع
 
       xhr.upload.onprogress = function(e) {
@@ -2800,22 +2816,17 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
           }
       };
 
-      xhr.onload = async function() {
+                  xhr.onload = async function() {
         if (xhr.status >= 200 && xhr.status < 300) {
           let finalUrl = '';
           let deleteToken = null;
-
-          if (mediaType === 'video') {
-              // جلب رابط Supabase المباشر للفيديو
-              const cleanName = xhr.responseURL.split('/').pop();
-              finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
-          } else {
-              let data = {};
-              try { data = JSON.parse(xhr.responseText); } catch(e) {}
-              if (data && data.secure_url) {
-                  finalUrl = data.secure_url;
-                  deleteToken = data.delete_token || null;
-              }
+          let data = {};
+          
+          try { data = JSON.parse(xhr.responseText); } catch(e) {}
+          
+          if (data && data.secure_url) {
+              finalUrl = data.secure_url;
+              deleteToken = data.delete_token || null;
           }
 
           if (finalUrl) {
@@ -2843,15 +2854,10 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       xhr.onerror = function() { handleFail('مشكلة شبكة أو CORS'); };
       xhr.ontimeout = function() { handleFail('انتهى وقت الانتظار'); };
 
-      // طريقة إرسال الملف تختلف حسب السيرفر
-      if (mediaType === 'video') {
-          xhr.send(file);
-      } else {
-          const fd = new FormData();
-          fd.append('file', file);
-          fd.append('upload_preset', 'omarhweh1');
-          xhr.send(fd);
-      }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', 'omarhweh1');
+      xhr.send(fd);
   };
 
   window.pendingUploads[tempId] = tryUpload;
@@ -2861,100 +2867,217 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
 let videoEl = document.getElementById('custom-video-el');
 let videoUpdateInt = null;
 
-// إضافة مستمعات أحداث ذكية لمعالجة التعليق والتحميل الفعلي من السيرفرات الخام
-videoEl.addEventListener('waiting', () => {
-  document.getElementById('video-loading-text').style.display = 'block';
-});
-videoEl.addEventListener('playing', () => {
-  document.getElementById('video-loading-text').style.display = 'none';
-});
-videoEl.addEventListener('canplay', () => {
-  document.getElementById('video-loading-text').style.display = 'none';
-});
+videoEl.addEventListener('waiting', () => { document.getElementById('video-center-loader').style.display = 'flex'; });
+videoEl.addEventListener('playing', () => { document.getElementById('video-center-loader').style.display = 'none'; });
+videoEl.addEventListener('canplay', () => { document.getElementById('video-center-loader').style.display = 'none'; });
+
+window.activeVidDownloads = {};
+function downloadVideoLocally(msg, containerEl) {
+  const url = msg.url;
+  const msgKey = msg.key;
+
+  if (window.activeVidDownloads[msgKey]) {
+    window.activeVidDownloads[msgKey].abort(); delete window.activeVidDownloads[msgKey];
+    const uiEl = document.getElementById(`vid-ui-${msgKey}`), progEl = document.getElementById(`vid-progress-${msgKey}`);
+    if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+    if (progEl) progEl.style.width = '0%'; return;
+  }
+
+  const uiEl = document.getElementById(`vid-ui-${msgKey}`), progEl = document.getElementById(`vid-progress-${msgKey}`);
+  if (uiEl) uiEl.innerHTML = `<div style="font-size:10px; font-weight:bold; font-family:var(--font-ar); color:white; text-align:center;" id="vid-pct-${msgKey}">معالجة..</div>`;
+
+  const xhr = new XMLHttpRequest();
+  let secureUrl = url;
+  if (secureUrl.includes('cloudinary.com') && !secureUrl.includes('fl_attachment')) secureUrl = secureUrl.replace('/upload/', '/upload/fl_attachment/');
+  xhr.open('GET', secureUrl, true); xhr.responseType = 'blob';
+  
+  let estimatedTotal = 0; if (msg.size) estimatedTotal = parseFloat(msg.size) * 1024 * 1024;
+
+  xhr.onprogress = function(e) {
+    let percent = 0;
+    if (e.lengthComputable) percent = Math.round((e.loaded / e.total) * 100);
+    else if (estimatedTotal > 0) { percent = Math.round((e.loaded / estimatedTotal) * 100); if (percent > 100) percent = 100; }
+
+    if (percent > 0) {
+      if (progEl) progEl.style.width = percent + '%';
+      const pctEl = document.getElementById(`vid-pct-${msgKey}`); if (pctEl) { pctEl.style.fontFamily = 'var(--font-en)'; pctEl.textContent = percent + '%'; }
+    } else if (e.loaded > 0) {
+      const pctEl = document.getElementById(`vid-pct-${msgKey}`); if (pctEl) { pctEl.style.fontFamily = 'var(--font-en)'; pctEl.textContent = (e.loaded / (1024 * 1024)).toFixed(1) + 'M'; }
+    }
+  };
+
+  xhr.onload = function() {
+    delete window.activeVidDownloads[msgKey];
+    if (xhr.status >= 200 && xhr.status < 300) {
+      caches.open('media-cache').then(cache => {
+        cache.put(url, new Response(xhr.response)).then(() => {
+          if (containerEl) containerEl.setAttribute('data-cached', 'true');
+          if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+          if (progEl) progEl.style.width = '100%'; setTimeout(() => { if (progEl) progEl.style.opacity = '0'; }, 500);
+        }).catch(err => { showToast('لا مساحة كافية بالهاتف', 'error'); if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`; if (progEl) progEl.style.width = '0%'; });
+      });
+    } else { showToast('خطأ بالتحميل (' + xhr.status + ')', 'error'); }
+  };
+  xhr.onerror = function() { delete window.activeVidDownloads[msgKey]; showToast('مشكلة بالإنترنت', 'error'); };
+  window.activeVidDownloads[msgKey] = xhr; xhr.send();
+}
 
 function openVideoPlayer(url) {
   const overlay = document.getElementById('video-preview-overlay');
   
-  let optimizedUrl = url;
-  if (optimizedUrl.includes('cloudinary.com') && optimizedUrl.includes('/upload/')) {
-    optimizedUrl = optimizedUrl.replace('/upload/', '/upload/q_auto,vc_auto,f_mp4/');
-  }
+  // إعادة ضبط الستايلات في حال كان مصغر سابقاً
+  overlay.classList.remove('floating');
+  overlay.style.removeProperty('left'); overlay.style.removeProperty('top'); overlay.style.removeProperty('transform');
   
-  videoEl.src = optimizedUrl;
-  overlay.classList.add('open');
-  
-  document.getElementById('video-loading-text').style.display = 'block';
-  document.getElementById('video-buffer-percent').textContent = '';
-  
-  videoEl.load();
-  let playPromise = videoEl.play();
-  if (playPromise !== undefined) {
-    playPromise.then(_ => { 
-        // التشغيل نجح
-    }).catch(error => { 
-        console.log("Auto-play prevented"); 
-        document.getElementById('video-loading-text').style.display = 'none';
+  const launchVideo = (finalSrc) => {
+    videoEl.src = finalSrc;
+    overlay.classList.add('open');
+    document.getElementById('video-center-loader').style.display = 'flex';
+    document.getElementById('video-buffer-percent').textContent = '0%';
+    
+    videoEl.load();
+    let playPromise = videoEl.play();
+    if (playPromise !== undefined) playPromise.catch(() => { document.getElementById('video-center-loader').style.display = 'none'; });
+    updateVideoControls(); videoUpdateInt = setInterval(updateVideoControls, 250);
+    try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
+  };
+
+  if ('caches' in window) {
+    caches.open('media-cache').then(cache => {
+      cache.match(url).then(cached => {
+        if (cached) cached.blob().then(blob => launchVideo(URL.createObjectURL(blob))); else launchVideo(url);
+      });
     });
-  }
+  } else { launchVideo(url); }
+}
 
-  updateVideoControls();
-  // تقليل سرعة التحديث لتخفيف الضغط على معالج الهاتف أثناء فك التشفير
-  videoUpdateInt = setInterval(updateVideoControls, 250);
+// 🚀 دوال التحويل بين الشاشة الكاملة والمصغرة
+// 🚀 دوال التحويل بين الشاشة الكاملة والمصغرة
+function minimizeVideoPlayer() {
+  const overlay = document.getElementById('video-preview-overlay');
+  overlay.classList.add('floating');
+  // تثبيت الموقع الابتدائي عبر تحويل المحاور
+  overlay.style.transform = 'translate(20px, 70px)';
+  overlay.style.touchAction = 'none';
+}
 
-  try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
+function restoreVideoPlayer() {
+  const overlay = document.getElementById('video-preview-overlay');
+  overlay.classList.remove('floating');
+  overlay.style.removeProperty('transform');
+  overlay.style.removeProperty('touch-action');
 }
 
 function closeVideoPlayer() {
-  document.getElementById('video-preview-overlay').classList.remove('open');
+  const overlay = document.getElementById('video-preview-overlay');
+  overlay.classList.remove('open');
+  overlay.classList.remove('floating');
+  overlay.style.removeProperty('transform');
+  overlay.style.removeProperty('touch-action');
+  
   videoEl.pause();
+  if (videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
   videoEl.src = '';
   clearInterval(videoUpdateInt);
 }
 
+// 🚀 محرك فيزيائي متطور يعتمد على الـ Transform لحركة ناعمة 100%
+const vidOverlay = document.getElementById('video-preview-overlay');
+let isVidDragging = false, vidStartX, vidStartY, currentTranslateX = 20, currentTranslateY = 70, dragMoved = false;
+
+vidOverlay.addEventListener('touchstart', (e) => {
+  if (!vidOverlay.classList.contains('floating') || e.target.closest('.floating-close-btn')) return;
+  isVidDragging = true; dragMoved = false;
+  vidStartX = e.touches[0].clientX; vidStartY = e.touches[0].clientY;
+  vidOverlay.style.transition = 'none'; 
+}, {passive: false});
+
+vidOverlay.addEventListener('touchmove', (e) => {
+  if (!isVidDragging) return;
+  if (e.cancelable) e.preventDefault();
+  
+  const dx = e.touches[0].clientX - vidStartX, dy = e.touches[0].clientY - vidStartY;
+  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+
+  if (dragMoved) {
+    document.getElementById('video-trash-zone').style.display = 'flex';
+    let newX = currentTranslateX + dx;
+    let newY = currentTranslateY + dy;
+    
+    vidOverlay.style.transform = `translate(${newX}px, ${newY}px)`;
+
+    const trash = document.getElementById('video-trash-zone').getBoundingClientRect();
+    const vidRect = vidOverlay.getBoundingClientRect();
+    
+    if (vidRect.bottom > trash.top && vidRect.left < trash.right && vidRect.right > trash.left && vidRect.top < trash.bottom) {
+       document.getElementById('video-trash-zone').classList.add('active-hover');
+    } else {
+       document.getElementById('video-trash-zone').classList.remove('active-hover');
+    }
+  }
+}, {passive: false});
+
+vidOverlay.addEventListener('touchend', (e) => {
+  if (!vidOverlay.classList.contains('floating')) return;
+  isVidDragging = false;
+  
+  const trashZone = document.getElementById('video-trash-zone');
+  if (trashZone.classList.contains('active-hover')) {
+      trashZone.style.display = 'none'; trashZone.classList.remove('active-hover');
+      closeVideoPlayer(); return;
+  }
+  trashZone.style.display = 'none';
+
+  if (!dragMoved) {
+     restoreVideoPlayer(); 
+  } else {
+     // حفظ الإحداثيات الجديدة
+     const dx = e.changedTouches[0].clientX - vidStartX;
+     const dy = e.changedTouches[0].clientY - vidStartY;
+     currentTranslateX += dx;
+     currentTranslateY += dy;
+     
+     // حدود الشاشة
+     const rect = vidOverlay.getBoundingClientRect();
+     if (rect.left < 10) currentTranslateX += (10 - rect.left);
+     if (rect.top < 10) currentTranslateY += (10 - rect.top);
+     if (rect.right > window.innerWidth - 10) currentTranslateX -= (rect.right - (window.innerWidth - 10));
+     if (rect.bottom > window.innerHeight - 10) currentTranslateY -= (rect.bottom - (window.innerHeight - 10));
+
+     vidOverlay.style.transition = 'transform 0.2s ease';
+     vidOverlay.style.transform = `translate(${currentTranslateX}px, ${currentTranslateY}px)`;
+  }
+});
+
 function toggleVideoPlay() {
   const btn = document.getElementById('btn-video-play');
-  if (videoEl.paused) {
-    videoEl.play();
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
-  } else {
-    videoEl.pause();
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-  }
+  if (videoEl.paused) { videoEl.play(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; } 
+  else { videoEl.pause(); btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; }
 }
-
-function skipVideo(seconds) {
-  videoEl.currentTime += seconds;
-}
+function skipVideo(seconds) { videoEl.currentTime += seconds; }
 
 function updateVideoControls() {
   if (!videoEl.duration || isNaN(videoEl.duration)) return;
-  
-  document.getElementById('video-time-current').textContent = formatVideoTime(videoEl.currentTime);
   document.getElementById('video-time-total').textContent = formatVideoTime(videoEl.duration);
   
-  const percent = (videoEl.currentTime / videoEl.duration) * 100;
-  document.getElementById('video-progress-fill').style.width = percent + '%';
+  // 🚀 السحر هنا: لا نُحدّث الشريط من السيرفر إذا كان إصبعك يسحب الشريط الآن
+  if (!window.isVidScrubbing) {
+    document.getElementById('video-time-current').textContent = formatVideoTime(videoEl.currentTime);
+    const percent = (videoEl.currentTime / videoEl.duration) * 100;
+    document.getElementById('video-progress-fill').style.width = percent + '%';
+  }
   
-  // إصلاح مشكلة حساب التحميل المسبق (Buffer) التي كانت تجمد الواجهة
   if (videoEl.buffered.length > 0) {
     let buffPercent = 0;
-    // البحث عن النطاق المحمل الذي يقع فيه الوقت الحالي للمشاهدة
     for (let i = 0; i < videoEl.buffered.length; i++) {
-        if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) {
-            buffPercent = (videoEl.buffered.end(i) / videoEl.duration) * 100;
-            break;
-        }
+        if (videoEl.currentTime >= videoEl.buffered.start(i) && videoEl.currentTime <= videoEl.buffered.end(i)) { buffPercent = (videoEl.buffered.end(i) / videoEl.duration) * 100; break; }
     }
-    
-    if (buffPercent === 0) {
-       buffPercent = (videoEl.buffered.end(videoEl.buffered.length - 1) / videoEl.duration) * 100;
-    }
-
+    if (buffPercent === 0) buffPercent = (videoEl.buffered.end(videoEl.buffered.length - 1) / videoEl.duration) * 100;
     document.getElementById('video-buffer-bar').style.width = buffPercent + '%';
-    
-    const loadingText = document.getElementById('video-loading-text');
-    if (loadingText.style.display === 'block') {
-        document.getElementById('video-buffer-percent').textContent = Math.round(buffPercent) + '%';
+    const loaderEl = document.getElementById('video-center-loader');
+    if (loaderEl && loaderEl.style.display === 'flex') {
+        const pctEl = document.getElementById('video-buffer-percent');
+        if(pctEl) pctEl.textContent = Math.round(buffPercent) + '%';
     }
   }
   
@@ -2963,31 +3086,66 @@ function updateVideoControls() {
   else btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
 }
 
-function seekVideoClick(e) {
-  const rect = document.getElementById('video-progress-container').getBoundingClientRect();
-  
-  // دعم لمس الموبايل بدقة أعلى
+/* 🚀 محرك السحب التفاعلي (Scrubbing Engine) */
+window.isVidScrubbing = false;
+let wasVidPlayingBeforeScrub = false;
+const vidProgContainer = document.getElementById('video-progress-container');
+
+function calcScrubPercent(e) {
+  const rect = vidProgContainer.getBoundingClientRect();
   let clientX = e.clientX;
   if (e.touches && e.touches.length > 0) clientX = e.touches[0].clientX;
   else if (e.changedTouches && e.changedTouches.length > 0) clientX = e.changedTouches[0].clientX;
-  if (clientX === undefined) return;
+  if (clientX === undefined) return 0;
   
   let clickX = clientX - rect.left;
   let percent = clickX / rect.width;
-  
   if (percent < 0) percent = 0;
   if (percent > 1) percent = 1;
-  
-  if (videoEl.duration && videoEl.duration !== Infinity && !isNaN(videoEl.duration)) {
-    videoEl.currentTime = percent * videoEl.duration;
-  }
+  return percent;
+}
+
+if (vidProgContainer) {
+  // عند وضع الإصبع على الشريط
+  vidProgContainer.addEventListener('touchstart', (e) => {
+    window.isVidScrubbing = true;
+    wasVidPlayingBeforeScrub = !videoEl.paused;
+    if (wasVidPlayingBeforeScrub) videoEl.pause(); // إيقاف مؤقت سلس
+    
+    const percent = calcScrubPercent(e);
+    document.getElementById('video-progress-fill').style.width = (percent * 100) + '%';
+    if (videoEl.duration) document.getElementById('video-time-current').textContent = formatVideoTime(percent * videoEl.duration);
+  }, {passive: false});
+
+  // أثناء سحب الإصبع يميناً ويساراً
+  vidProgContainer.addEventListener('touchmove', (e) => {
+    if (!window.isVidScrubbing) return;
+    e.preventDefault(); // يمنع سحب الشاشة بالكامل أثناء تقديم الفيديو
+    
+    const percent = calcScrubPercent(e);
+    document.getElementById('video-progress-fill').style.width = (percent * 100) + '%';
+    if (videoEl.duration) document.getElementById('video-time-current').textContent = formatVideoTime(percent * videoEl.duration);
+  }, {passive: false});
+
+  // عند رفع الإصبع
+  vidProgContainer.addEventListener('touchend', (e) => {
+    if (!window.isVidScrubbing) return;
+    window.isVidScrubbing = false;
+    
+    const percent = calcScrubPercent(e);
+    if (videoEl.duration && !isNaN(videoEl.duration)) {
+      videoEl.currentTime = percent * videoEl.duration;
+    }
+    // إكمال التشغيل إذا كان يعمل قبل السحب
+    if (wasVidPlayingBeforeScrub) {
+        let playPromise = videoEl.play();
+        if (playPromise !== undefined) playPromise.catch(()=>{});
+    }
+  });
 }
 
 function formatVideoTime(sec_num) {
-  sec_num = Math.floor(sec_num);
-  let m = Math.floor(sec_num / 60);
-  let s = sec_num % 60;
-  return m + ':' + (s < 10 ? '0' : '') + s;
+  sec_num = Math.floor(sec_num); let m = Math.floor(sec_num / 60), s = sec_num % 60; return m + ':' + (s < 10 ? '0' : '') + s;
 }
 
 async function deleteExpiredMedia(chatId, msg) {
@@ -3020,6 +3178,11 @@ async function deleteExpiredMedia(chatId, msg) {
       await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
          isDeleted: true, text: null, url: null, type: 'deleted'
       });
+  }
+  
+  // 4. مسح الفيديو من كاش المتصفح لعدم استهلاك المساحة الداخلية
+  if ('caches' in window && fileUrl) {
+      caches.open('media-cache').then(cache => cache.delete(fileUrl));
   }
 }
 

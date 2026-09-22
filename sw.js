@@ -32,7 +32,7 @@ const messaging = firebase.messaging();
 // مكتبة Firebase ستقوم الآن بعرض الإشعار الافتراضي بشكل تلقائي ومثالي بناءً على إعدادات Vercel
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة
-const CACHE_NAME = 'app-cache-3'; 
+const CACHE_NAME = 'app-cache-4'; 
 const ASSETS = [
   './',
   './index.html',
