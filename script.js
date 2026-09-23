@@ -1088,13 +1088,19 @@ function attachMessages(chatId) {
               ticksEl.setAttribute('stroke', '#00f0ff');
               ticksEl.style.stroke = '#00f0ff';
               ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+            } else if (m.delivered) {
+              // 🚀 إصلاح الصحين الرمادي عند فتح الشات من الكاش
+              ticksEl.setAttribute('stroke', 'var(--text-muted)');
+              ticksEl.style.stroke = 'var(--text-muted)';
+              ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
             }
           }
           // تحديث الكاش المحلي إذا في اختلاف بالحالة
           const cacheIdx = liveMsgsCache.findIndex(cached => cached.key === child.key);
-          if (cacheIdx !== -1 && (liveMsgsCache[cacheIdx].read !== m.read || liveMsgsCache[cacheIdx].listened !== m.listened)) {
+          if (cacheIdx !== -1 && (liveMsgsCache[cacheIdx].read !== m.read || liveMsgsCache[cacheIdx].listened !== m.listened || liveMsgsCache[cacheIdx].delivered !== m.delivered)) {
              liveMsgsCache[cacheIdx].read = m.read;
              liveMsgsCache[cacheIdx].listened = m.listened;
+             liveMsgsCache[cacheIdx].delivered = m.delivered; // 🚀 حفظ الاستلام بالكاش المحلي
              localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
           }
         });
@@ -3750,7 +3756,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.5</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.6</div>
       </div>
     </div>
     
