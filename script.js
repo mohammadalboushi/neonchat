@@ -3725,7 +3725,7 @@ async function openChatSettingsMenu() {
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:10px;">
       <div style="font-size:13px; font-weight:bold; color:var(--text-secondary); flex:1; text-align:right;">إعدادات</div>
       <div style="flex:1; text-align:center; font-family:var(--font-en); font-size:12px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; background:rgba(0,240,255,0.05); border:1px dashed var(--border-subtle); padding:2px 0; border-radius:6px; cursor:pointer;" onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" title="نسخ الـ ID">${friendId}</div>
-      <div style="flex:1; text-align:left;"><span style="font-size: 10px; background: rgba(160, 32, 240, 0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 6px; border-radius: 4px; font-family: var(--font-en); font-weight: bold;">v1.0.6</span></div>
+      <div style="flex:1; text-align:left;"><span style="font-size: 10px; background: rgba(160, 32, 240, 0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 6px; border-radius: 4px; font-family: var(--font-en); font-weight: bold;">v1.0.7</span></div>
     </div>
     
     <button class="msg-menu-btn" onclick="toggleChatSearch(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
