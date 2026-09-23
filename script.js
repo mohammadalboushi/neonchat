@@ -588,7 +588,20 @@ function loadChats() {
     chatsData[snap.key] = d;
     let hasNew = false;
     
-    if (!isFirstChatsLoad && d.unread > (lastUnreads[snap.key] || 0)) hasNew = true;
+    if (!isFirstChatsLoad && d.unread > (lastUnreads[snap.key] || 0)) {
+       hasNew = true;
+       // 🚀 التأكيد الأول: إذا كان الشخص فاتح القائمة الرئيسية واستلم رسالة، نحولها لصحين رمادي فوراً
+       db.ref('chats/' + snap.key + '/messages').orderByChild('timestamp').limitToLast(1).once('value', msgSnap => {
+          if(msgSnap.exists()) {
+            msgSnap.forEach(child => {
+               const m = child.val();
+               if(m.senderUid !== currentUser.uid && !m.read && !m.delivered) {
+                  db.ref('chats/' + snap.key + '/messages/' + child.key).update({ delivered: true });
+               }
+            });
+          }
+       });
+    }
     lastUnreads[snap.key] = d.unread;
     
     if (!presenceListeners[d.friendUid]) {
@@ -1833,10 +1846,13 @@ async function pushMessage(msg) {
       try {
         const friendSnap = await db.ref('users/' + friendUid).once('value');
         if (friendSnap.exists() && friendSnap.val().fcmToken) {
-          fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
+                    fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
           .then(async res => { 
             const data = await res.json(); 
-            if(!data.success) {
+            if (data.success) {
+              // 🚀 التأكيد للرسائل المعلقة: تحديث الصحين الرمادي عند نجاح إيصال الإشعار بعد عودة الإنترنت
+              db.ref('chats/' + p.chatId + '/messages/' + p.key).update({ delivered: true });
+            } else {
               if(data.error.includes('unregistered') || data.error.includes('NotRegistered')) {
                 db.ref('users/' + friendUid + '/fcmToken').remove();
                 showToast(`تنبيه: إشعارات ${currentChat.friendProfile.name} معطلة، خليها تفتح التطبيق`, 'info');
@@ -3728,7 +3744,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.3</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.4</div>
       </div>
     </div>
     
