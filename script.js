@@ -308,8 +308,22 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       try { await ensureUserProfile(user); } catch(e) {}
       setupPresence(user.uid);
       
-      // حماية معمارية: منع انهيار التطبيق إذا كان المتصفح لا يدعم الإشعارات
-      if ('Notification' in window && 'serviceWorker' in navigator) {
+      // 🚀 دالة لاستقبال توكن الأندرويد من تطبيق AndroidIDE
+      window.setAndroidToken = function(nativeToken) {
+        window.androidFCMToken = nativeToken;
+        // إذا كان المستخدم مسجل دخوله حالياً، نحدث التوكن فوراً
+        if (typeof currentUser !== 'undefined' && currentUser) {
+          db.ref('users/' + currentUser.uid + '/fcmToken').set(nativeToken);
+        }
+      };
+
+      // 📱 فحص البيئة: هل التطبيق يعمل داخل الأندرويد أو في المتصفح؟
+      if (window.androidFCMToken) {
+        // نحن داخل تطبيق الأندرويد، نستخدم التوكن الأصلي للإشعارات بالخلفية
+        db.ref('users/' + user.uid + '/fcmToken').set(window.androidFCMToken);
+      } 
+      else if ('Notification' in window && 'serviceWorker' in navigator) {
+        // 🌐 نحن في المتصفح العادي، نستخدم إشعارات الويب (Web Push)
         try {
           let currentPermission = Notification.permission;
           if (currentPermission === 'default') {
@@ -323,7 +337,6 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
             }
             
-            // الحل الجذري (الاستقبال): استشعار تغيير التوكن من المتصفح وتحديثه بالداتا بيز تلقائياً
             messaging.onTokenRefresh(async () => {
               try {
                 const refreshedToken = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
