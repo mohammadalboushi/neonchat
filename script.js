@@ -1088,13 +1088,12 @@ function attachMessages(chatId) {
               ticksEl.setAttribute('stroke', '#00f0ff');
               ticksEl.style.stroke = '#00f0ff';
               ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
-            } else if (m.delivered) {
+                        } else if (m.delivered) {
               // 🚀 إصلاح الصحين الرمادي عند فتح الشات من الكاش
-              ticksEl.setAttribute('stroke', 'var(--text-muted)');
-              ticksEl.style.stroke = 'var(--text-muted)';
+              ticksEl.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
+              ticksEl.style.stroke = 'rgba(255, 255, 255, 0.65)';
               ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
             }
-          }
           // تحديث الكاش المحلي إذا في اختلاف بالحالة
           const cacheIdx = liveMsgsCache.findIndex(cached => cached.key === child.key);
           if (cacheIdx !== -1 && (liveMsgsCache[cacheIdx].read !== m.read || liveMsgsCache[cacheIdx].listened !== m.listened || liveMsgsCache[cacheIdx].delivered !== m.delivered)) {
@@ -1329,8 +1328,8 @@ function attachMessages(chatId) {
         ticksEl.style.stroke = '#00f0ff';
         ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
       } else if (msg.delivered) {
-        ticksEl.setAttribute('stroke', 'var(--text-muted)');
-        ticksEl.style.stroke = 'var(--text-muted)';
+        ticksEl.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
+        ticksEl.style.stroke = 'rgba(255, 255, 255, 0.65)';
         ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
       }
     }
@@ -1516,7 +1515,7 @@ function buildMsgEl(msg, isBackground = false) {
 
     let ticks = '';
   if (isOut && !msg.isPending) {
-    let color = 'var(--text-muted)';
+    let color = 'rgba(255, 255, 255, 0.65)';
     let content = '<polyline points="20 6 9 17 4 12"></polyline>'; // صح واحد كافتراضي (أُرسلت)
     
     if (msg.read || (msg.type === 'voice' && msg.listened)) {
