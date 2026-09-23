@@ -165,22 +165,21 @@ window.addEventListener('popstate', e => {
   if (imgOverlay && imgOverlay.classList.contains('open')) {
     closeImgPreview();
     isPopupOpen = true;
-  }
-  
-  if (videoOverlay && videoOverlay.classList.contains('open')) {
+  } else if (videoOverlay && videoOverlay.classList.contains('open')) {
     if (!videoOverlay.classList.contains('floating')) {
        minimizeVideoPlayer(); 
        history.pushState({ screen: currentActiveScreen }, '', ''); 
     }
     isPopupOpen = true;
-  }
-  
-  if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) { closeMsgMenu(); isPopupOpen = true; }
-  if (modalOverlay && modalOverlay.classList.contains('open')) { modalOverlay.classList.remove('open'); isPopupOpen = true; }
-  
-  // 🚀 إغلاق المعرض عند ضغط زر الرجوع بالموبايل
-  if (galleryOverlay && galleryOverlay.classList.contains('open')) { 
+  } else if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) { 
+    closeMsgMenu(); 
+    isPopupOpen = true; 
+  } else if (modalOverlay && modalOverlay.classList.contains('open')) { 
+    modalOverlay.classList.remove('open'); 
+    isPopupOpen = true; 
+  } else if (galleryOverlay && galleryOverlay.classList.contains('open')) { 
     closeMediaGallery(); 
+    // 🚀 تم إزالة فتح قائمة الخيارات للعودة للمحادثة مباشرة
     isPopupOpen = true; 
   }
 
@@ -1078,20 +1077,21 @@ function attachMessages(chatId) {
       if(snapshot.exists()) {
         snapshot.forEach(child => {
           const m = child.val();
-          const ticksEl = document.getElementById('ticks-' + child.key);
+                    const ticksEl = document.getElementById('ticks-' + child.key);
           if (ticksEl) {
             if (m.type === 'voice' && m.listened) {
               ticksEl.setAttribute('stroke', '#00ff88');
               ticksEl.style.stroke = '#00ff88';
-              ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+              ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
             } else if (m.read) {
               ticksEl.setAttribute('stroke', '#00f0ff');
               ticksEl.style.stroke = '#00f0ff';
-              ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+              ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
             } else if (m.delivered) {
+              // 🚀 إصلاح الصحين الرمادي عند فتح الشات من الكاش
               ticksEl.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
               ticksEl.style.stroke = 'rgba(255, 255, 255, 0.65)';
-              ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+              ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
             }
           }
           // تحديث الكاش المحلي إذا في اختلاف بالحالة
@@ -1123,8 +1123,8 @@ function attachMessages(chatId) {
         db.ref('chats/' + chatId + '/messages/' + msg.key).update({ delivered: true });
     }
 
-    if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image' || msg.type === 'voice') && msg.timestamp) {
-                // توقيت الحذف: 24 ساعة بالتمام والكمال لجميع الوسائط (فيديو، صورة، صوتيات، ريكوردات)
+    if ((msg.type === 'video' || msg.type === 'image') && msg.timestamp) {
+                // توقيت الحذف: 24 ساعة بالتمام والكمال للصور والفيديوهات فقط (الصوتيات ستبقى للأبد)
                 const EXPIRY_TIME = 24 * 60 * 60 * 1000; 
                 // 🚀 استخدام الوقت الحقيقي لحساب العمر ومنع التدمير الفوري
                 const age = getTrueTime() - msg.timestamp;
@@ -1322,15 +1322,15 @@ function attachMessages(chatId) {
       if (msg.type === 'voice' && msg.listened) {
         ticksEl.setAttribute('stroke', '#00ff88');
         ticksEl.style.stroke = '#00ff88';
-        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+        ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
       } else if (msg.read) {
         ticksEl.setAttribute('stroke', '#00f0ff');
         ticksEl.style.stroke = '#00f0ff';
-        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+        ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
       } else if (msg.delivered) {
         ticksEl.setAttribute('stroke', 'rgba(255, 255, 255, 0.65)');
         ticksEl.style.stroke = 'rgba(255, 255, 255, 0.65)';
-        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+        ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
       }
     }
     const reactEl = document.getElementById('react-' + msg.key);
@@ -1349,6 +1349,22 @@ function attachMessages(chatId) {
         bubbleEl.style.border = '1px solid var(--border-subtle)';
         bubbleEl.innerHTML = '<div style="color:var(--text-muted);font-style:italic;font-size:12px;">🚫 تم حذف هذه الرسالة</div>';
       }
+    }
+  });
+
+  // 🚀 السحر هون: استشعار الحذف النهائي (الدمار الشامل للصور والفيديوهات بعد 24 ساعة) لمسحها من الشاشة فوراً
+  currentMessagesQuery.on('child_removed', snap => {
+    const bubbleEl = document.getElementById('msg-' + snap.key);
+    if (bubbleEl) {
+      const fullRow = bubbleEl.closest('.msg-row');
+      if (fullRow) fullRow.remove();
+    }
+    
+    // تنظيف الكاش المحلي كمان عشان ما ترجع تظهر
+    const idx = liveMsgsCache.findIndex(m => m.key === snap.key);
+    if (idx !== -1) {
+      liveMsgsCache.splice(idx, 1);
+      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
     }
   });
 }
@@ -1520,11 +1536,11 @@ function buildMsgEl(msg, isBackground = false) {
     
     if (msg.read || (msg.type === 'voice' && msg.listened)) {
       color = (msg.type === 'voice' && msg.listened) ? '#00ff88' : '#00f0ff';
-      content = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>'; // صحين أزرق/أخضر (قُرئت)
+      content = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>'; // صحين أزرق/أخضر (قُرئت)
     } else if (msg.delivered) {
-      content = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>'; // صحين رمادي (تم الاستلام)
+      content = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>'; // صحين رمادي (تم الاستلام)
     }
-    ticks = `<svg id="ticks-${msg.key}" width="14" height="14" viewBox="0 0 28 18" fill="none" stroke="${color}" stroke-width="2" style="margin-left:4px;margin-bottom:-2px;">${content}</svg>`;
+    ticks = `<svg id="ticks-${msg.key}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left:6px;margin-bottom:-2px;">${content}</svg>`;
   }
   const timeEl = `<div class="msg-time">${msg.isEdited ? '<span style="font-size:10px;opacity:0.7;">(معدلة)</span>' : ''}${ticks}${formatTime(msg.timestamp)}</div>`;
   const reactHtml = `<div id="react-${msg.key}" class="msg-reaction" style="display:${msg.reaction?'flex':'none'}">${msg.reaction||''}</div>`;
@@ -3248,17 +3264,14 @@ async function deleteExpiredMedia(chatId, msg) {
   }
 
   // 3. بعد ما طيّرنا الملف من السيرفر، منمسحه من الدردشة (Firebase) للطرفين
-  if (!msg.isDeleted) {
-      await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
-         isDeleted: true, text: null, url: null, type: 'deleted'
-      });
-  }
-  
-  // 4. مسح الفيديو من كاش المتصفح لعدم استهلاك المساحة الداخلية
-  if ('caches' in window && fileUrl) {
-      caches.open('media-cache').then(cache => cache.delete(fileUrl));
-  }
-}
+            // 3. بعد ما طيّرنا الملف من السيرفر، منمسحه نهائياً من قاعدة بيانات الدردشة (Firebase) بدون ترك أي أثر
+          await db.ref(`chats/${chatId}/messages/${msg.key}`).remove();
+          
+          // 4. مسح الفيديو والصور من كاش المتصفح لعدم استهلاك المساحة الداخلية
+          if ('caches' in window && fileUrl) {
+              caches.open('media-cache').then(cache => cache.delete(fileUrl));
+          }
+        }
 
 /* ═══════════════════════════════════
    SCROLL & CHAT UTILS
@@ -3292,7 +3305,7 @@ if (window.visualViewport) {
 }
 
 document.body.addEventListener('touchmove', (e) => {
-  const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results') || e.target.closest('#msg-input');
+  const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results') || e.target.closest('#msg-input') || e.target.closest('#media-gallery-grid');
   if (!isScrollable) {
     e.preventDefault();
   }
@@ -3796,6 +3809,11 @@ async function openChatSettingsMenu() {
       <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
 
       <!-- منطقة الخطر الحمراء -->
+      <button class="msg-menu-btn danger" onclick="deleteAllChatMedia(); closeMsgMenu();" style="background:rgba(255,0,144,0.04); border:1px solid rgba(255,0,144,0.15); justify-content:flex-start; gap:16px; padding:12px 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        <span style="font-weight:600; font-size:14px;">حذف جميع الوسائط</span>
+      </button>
+
       <button class="msg-menu-btn danger" onclick="clearCurrentChatHistory(); closeMsgMenu();" style="background:rgba(255,0,144,0.04); border:1px solid rgba(255,0,144,0.15); justify-content:flex-start; gap:16px; padding:12px 16px;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
         <span style="font-weight:600; font-size:14px;">مسح محتوى الدردشة</span>
@@ -3815,6 +3833,26 @@ async function openChatSettingsMenu() {
 // توجيه الأوامر للمحادثة المفتوحة حالياً
 function clearCurrentChatHistory() { if(currentChat) clearChatHistory(currentChat.chatId); }
 function blockCurrentUser() { if(currentChat) blockUser(currentChat.friendUid); }
+
+function deleteAllChatMedia() {
+  if(!currentChat) return;
+  openModal('حذف الوسائط', 'هل تريد دمار جميع الصور والفيديوهات من هذه المحادثة نهائياً للطرفين ومن السيرفر؟').then(async ok => {
+    if(ok) {
+       showToast('جاري تدمير الوسائط... يرجى الانتظار', 'info');
+       const snap = await db.ref('chats/' + currentChat.chatId + '/messages').once('value');
+       if(snap.exists()){
+          snap.forEach(child => {
+             const m = { ...child.val(), key: child.key };
+             // نحذف الصور والفيديوهات بس، ونترك الصوتيات والنصوص
+             if((m.type === 'image' || m.type === 'video') && !m.isDeleted) {
+                deleteExpiredMedia(currentChat.chatId, m);
+             }
+          });
+       }
+       showToast('تم تدمير جميع الوسائط بنجاح ✔️', 'success');
+    }
+  });
+}
 
 // محرك ضغط وتطبيق الخلفيات المخصصة
 /* 🚀 محرك قاعدة بيانات IndexedDB لحفظ الخلفيات بالدقة الأصلية الخام 100% */
@@ -4135,10 +4173,18 @@ async function openMediaGallery(chatId) {
   try {
     const snap = await db.ref('chats/' + chatId + '/messages').once('value');
     let media = [];
+    const now = Date.now();
+    const EXPIRY_TIME = 24 * 60 * 60 * 1000; // 24 ساعة
+
     if (snap.exists()) {
       snap.forEach(child => {
         const m = child.val();
-        if ((m.type === 'image' || m.type === 'video') && !m.isDeleted && m.url) media.push({ ...m, key: child.key });
+        // 🚀 فلترة الصور والفيديوهات اللي مر عليها 24 ساعة عشان ما تطلع مكسورة بالمعرض
+        if ((m.type === 'image' || m.type === 'video') && !m.isDeleted && m.url) {
+           if (now - m.timestamp < EXPIRY_TIME) {
+               media.push({ ...m, key: child.key });
+           }
+        }
       });
     }
     
@@ -4152,22 +4198,38 @@ async function openMediaGallery(chatId) {
     grid.innerHTML = '';
     media.forEach(m => {
       const div = document.createElement('div');
-      div.style.position = 'relative';
+      // 🚀 إجبار الحاوية تكون مربعة وإضافة cursor
+      div.style.cssText = 'position: relative; width: 100%; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: #050b12; border: 1px solid var(--border-subtle); cursor: pointer;';
       
       if (m.type === 'image') {
         const isEncrypted = m.url.includes('enc_img_') || m.url.endsWith('.bin');
         if (isEncrypted) {
-          div.innerHTML = `<img src="" class="gallery-item" id="gal_${m.key}" />`;
+          div.innerHTML = `<img src="" style="width:100%; height:100%; object-fit:cover; pointer-events:none;" id="gal_${m.key}" />`;
           decryptImageUrl(m.url).then(url => { const img = document.getElementById('gal_' + m.key); if(img) img.src = url; });
           div.onclick = async () => window.previewImg(await decryptImageUrl(m.url));
         } else {
-          div.innerHTML = `<img src="${m.url}" class="gallery-item" loading="lazy" />`;
+          div.innerHTML = `<img src="${m.url}" style="width:100%; height:100%; object-fit:cover; pointer-events:none;" loading="lazy" />`;
           div.onclick = () => window.previewImg(m.url);
         }
       } else if (m.type === 'video') {
-        div.innerHTML = `<video src="${m.url}#t=0.1" class="gallery-item"></video><div class="gallery-vid-icon"><svg viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
+        div.innerHTML = `<video src="${m.url}#t=0.1" style="width:100%; height:100%; object-fit:cover; pointer-events:none;" preload="metadata"></video><div class="gallery-vid-icon"><svg viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
         div.onclick = () => openVideoPlayer(m.url);
       }
+
+      // 🚀 إيقاف قائمة المتصفح وتفعيل القائمة المخصصة تبع الشات للصور والفيديو
+      let pressTimer;
+      const isOut = m.senderUid === currentUser.uid;
+      div.addEventListener('touchstart', (e) => {
+        pressTimer = setTimeout(() => { openMsgMenu(m, isOut); }, 500);
+      }, { passive: true });
+      div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
+      div.addEventListener('touchend', () => clearTimeout(pressTimer));
+      div.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        clearTimeout(pressTimer);
+        openMsgMenu(m, isOut);
+      });
+
       grid.appendChild(div);
     });
   } catch (e) {
