@@ -314,6 +314,17 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
             }
+            
+            // الحل الجذري (الاستقبال): استشعار تغيير التوكن من المتصفح وتحديثه بالداتا بيز تلقائياً
+            messaging.onTokenRefresh(async () => {
+              try {
+                const refreshedToken = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+                if (refreshedToken) {
+                  await db.ref('users/' + user.uid + '/fcmToken').set(refreshedToken);
+                }
+              } catch (err) {}
+            });
+            
           } else {
             showToast('تنبيه: المتصفح يمنع ظهور الإشعارات', 'error');
           }
@@ -1820,9 +1831,20 @@ async function pushMessage(msg) {
             const friendSnap = await db.ref('users/' + friendUid).once('value');
             if (friendSnap.exists() && friendSnap.val().fcmToken) {
               fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
-              .then(async res => { const data = await res.json(); if(!data.success) showToast('خطأ السيرفر: ' + data.error, 'error'); });
+              .then(async res => { 
+                const data = await res.json(); 
+                if(!data.success) {
+                  // الحل الجذري (الإرسال): إذا التوكن محروق، بنمسحه من الداتا بيز عشان ما نضل نبعت للعدم
+                  if(data.error.includes('unregistered') || data.error.includes('NotRegistered')) {
+                    db.ref('users/' + friendUid + '/fcmToken').remove();
+                    showToast(`تنبيه: إشعارات ${currentChat.friendProfile.name} معطلة، خليها تفتح التطبيق`, 'info');
+                  } else {
+                    showToast('خطأ السيرفر: ' + data.error, 'error'); 
+                  }
+                }
+              });
             }
-          } catch (err) { showToast('خطأ إرسال: ' + err.message, 'error'); }
+          } catch (err) {}
       }
     }
 function toggleReaction(msgKey) {
@@ -2516,7 +2538,7 @@ async function toggleRecording(isSinging = false) {
             if (bubble) {
                bubble.innerHTML = `
                 <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
-                  <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
+                  <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... ??️'}</span>
                   <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
                 </div>
                 <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
@@ -3703,7 +3725,7 @@ async function openChatSettingsMenu() {
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:10px;">
       <div style="font-size:13px; font-weight:bold; color:var(--text-secondary); flex:1; text-align:right;">إعدادات</div>
       <div style="flex:1; text-align:center; font-family:var(--font-en); font-size:12px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; background:rgba(0,240,255,0.05); border:1px dashed var(--border-subtle); padding:2px 0; border-radius:6px; cursor:pointer;" onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" title="نسخ الـ ID">${friendId}</div>
-      <div style="flex:1; text-align:left;"><span style="font-size: 10px; background: rgba(160, 32, 240, 0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 6px; border-radius: 4px; font-family: var(--font-en); font-weight: bold;">v1.0.5</span></div>
+      <div style="flex:1; text-align:left;"><span style="font-size: 10px; background: rgba(160, 32, 240, 0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 6px; border-radius: 4px; font-family: var(--font-en); font-weight: bold;">v1.0.6</span></div>
     </div>
     
     <button class="msg-menu-btn" onclick="toggleChatSearch(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
