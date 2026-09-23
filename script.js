@@ -1855,18 +1855,14 @@ async function pushMessage(msg) {
       try {
         const friendSnap = await db.ref('users/' + friendUid).once('value');
         if (friendSnap.exists() && friendSnap.val().fcmToken) {
-                                        fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
+                                                            fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
           .then(async res => { 
-            if (res.ok) {
-              db.ref('chats/' + p.chatId + '/messages/' + p.key).update({ delivered: true });
-            }
-            
+            // الاعتماد الكامل صار على الـ sw.js للاستلام الفعلي
             try {
               const data = await res.json(); 
               if (!res.ok || (data && data.success === false)) {
                 if(data && data.error && (data.error.includes('unregistered') || data.error.includes('NotRegistered'))) {
                   db.ref('users/' + friendUid + '/fcmToken').remove();
-                  db.ref('chats/' + p.chatId + '/messages/' + p.key + '/delivered').remove();
                 }
               }
             } catch(parseErr) {}
