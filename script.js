@@ -150,10 +150,16 @@ const msgReadObserver = new IntersectionObserver((entries, observer) => {
 ═══════════════════════════════════ */
 history.pushState({ screen: 'home' }, '', '');
 window.addEventListener('popstate', e => {
+  // إصلاح الثغرة: نقلنا تعريف الشاشة الحالية للأعلى لتعمل الأكواد بشكل سليم
+  let currentActiveScreen = 'home';
+  document.querySelectorAll('.screen').forEach(s => { if (s.classList.contains('active')) currentActiveScreen = s.id.replace('screen-', ''); });
+
   const imgOverlay = document.getElementById('img-preview-overlay');
   const videoOverlay = document.getElementById('video-preview-overlay');
   const msgMenuOverlay = document.getElementById('msg-menu-overlay');
   const modalOverlay = document.getElementById('modal-overlay');
+  const galleryOverlay = document.getElementById('media-gallery-overlay'); // 🚀 إضافة المعرض
+  
   let isPopupOpen = false;
 
   if (imgOverlay && imgOverlay.classList.contains('open')) {
@@ -163,18 +169,21 @@ window.addEventListener('popstate', e => {
   
   if (videoOverlay && videoOverlay.classList.contains('open')) {
     if (!videoOverlay.classList.contains('floating')) {
-       minimizeVideoPlayer(); // 🚀 زر الرجوع يصغر الفيديو ولا يغلقه
-       history.pushState({ screen: currentActiveScreen }, '', ''); // استعادة المسار لمنع الخروج من التطبيق
+       minimizeVideoPlayer(); 
+       history.pushState({ screen: currentActiveScreen }, '', ''); 
     }
     isPopupOpen = true;
   }
   
   if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) { closeMsgMenu(); isPopupOpen = true; }
   if (modalOverlay && modalOverlay.classList.contains('open')) { modalOverlay.classList.remove('open'); isPopupOpen = true; }
-
-  let currentActiveScreen = 'home';
-  document.querySelectorAll('.screen').forEach(s => { if (s.classList.contains('active')) currentActiveScreen = s.id.replace('screen-', ''); });
   
+  // 🚀 إغلاق المعرض عند ضغط زر الرجوع بالموبايل
+  if (galleryOverlay && galleryOverlay.classList.contains('open')) { 
+    closeMediaGallery(); 
+    isPopupOpen = true; 
+  }
+
   if (isPopupOpen) { history.pushState({ screen: currentActiveScreen }, '', ''); return; }
   const targetScreen = e.state && e.state.screen ? e.state.screen : 'home';
   if (currentActiveScreen === 'home') { history.pushState({ screen: 'home' }, '', ''); return; }
@@ -1025,13 +1034,17 @@ function attachMessages(chatId) {
               }
 
               // 🚀 عرض الرسائل المعلقة (الأوفلاين) مباشرة عند فتح المحادثة لتجنب اختفاء الفويسات
-              let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-              pending.filter(p => p.chatId === chatId).forEach(p => {
-                 const el = buildMsgEl(p.msg, true);
-                 el.id = 'row_' + p.key;
-                 area.appendChild(el);
-              });
-
+                // 🚀 عرض الرسائل المعلقة (الأوفلاين) مباشرة عند فتح المحادثة لتجنب اختفاء الفويسات (عبر IndexedDB)
+  pendingDB.getAll().then(pending => {
+    pending.filter(p => p.chatId === chatId).forEach(p => {
+       if (!document.getElementById('row_' + p.key) && !document.getElementById('msg-' + p.key)) {
+         const el = buildMsgEl(p.msg, true);
+         el.id = 'row_' + p.key;
+         area.appendChild(el);
+         area.scrollTop = area.scrollHeight;
+       }
+    });
+  });
               messagesRef = db.ref('chats/' + chatId + '/messages');
   
   // 🚀 الحل الجذري: نلغي الاعتماد على startAt نهائياً لأنه يسبب اختفاء الرسائل لو توقيت الأجهزة مختلف
@@ -1076,6 +1089,11 @@ function attachMessages(chatId) {
     if (msg.key && (msg.key.startsWith('pending_') || msg.key.startsWith('temp_'))) {
         db.ref('chats/' + chatId + '/messages/' + msg.key).remove();
         return;
+    }
+
+    // 🚀 نظام "تم الاستلام" (Delivered): إذا وصلت الرسالة للطرف التاني ومو مقروءة، بيعطيها تم الاستلام
+    if (msg.senderUid !== currentUser.uid && !msg.read && !msg.delivered) {
+        db.ref('chats/' + chatId + '/messages/' + msg.key).update({ delivered: true });
     }
 
     if ((msg.type === 'video' || msg.type === 'audio' || msg.type === 'image' || msg.type === 'voice') && msg.timestamp) {
@@ -1284,6 +1302,10 @@ function attachMessages(chatId) {
         ticksEl.setAttribute('stroke', '#00f0ff');
         ticksEl.style.stroke = '#00f0ff';
         ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
+      } else if (msg.delivered) {
+        ticksEl.setAttribute('stroke', 'var(--text-muted)');
+        ticksEl.style.stroke = 'var(--text-muted)';
+        ticksEl.innerHTML = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>';
       }
     }
     const reactEl = document.getElementById('react-' + msg.key);
@@ -1466,11 +1488,17 @@ function buildMsgEl(msg, isBackground = false) {
             openMsgMenu(msg, isOut); 
           });
 
-  let ticks = '';
+    let ticks = '';
   if (isOut && !msg.isPending) {
-    let color = msg.read ? '#00f0ff' : 'var(--text-muted)';
-    if (msg.type === 'voice' && msg.listened) color = '#00ff88'; 
-    const content = (msg.read || msg.listened) ? '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>' : '<polyline points="20 6 9 17 4 12"></polyline>';
+    let color = 'var(--text-muted)';
+    let content = '<polyline points="20 6 9 17 4 12"></polyline>'; // صح واحد كافتراضي (أُرسلت)
+    
+    if (msg.read || (msg.type === 'voice' && msg.listened)) {
+      color = (msg.type === 'voice' && msg.listened) ? '#00ff88' : '#00f0ff';
+      content = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>'; // صحين أزرق/أخضر (قُرئت)
+    } else if (msg.delivered) {
+      content = '<polyline points="24 6 13 17 8 12"></polyline><polyline points="20 6 9 17 4 12"></polyline>'; // صحين رمادي (تم الاستلام)
+    }
     ticks = `<svg id="ticks-${msg.key}" width="14" height="14" viewBox="0 0 28 18" fill="none" stroke="${color}" stroke-width="2" style="margin-left:4px;margin-bottom:-2px;">${content}</svg>`;
   }
   const timeEl = `<div class="msg-time">${msg.isEdited ? '<span style="font-size:10px;opacity:0.7;">(معدلة)</span>' : ''}${ticks}${formatTime(msg.timestamp)}</div>`;
@@ -1672,18 +1700,18 @@ async function syncPendingMessages() {
   if (window.isSyncingMsgs) return;
   window.isSyncingMsgs = true;
 
-  let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
+  // 🚀 جلب الفويسات والرسايل المعلقة من IndexedDB الآمن بدل LocalStorage الضعيف
+  let pending = await pendingDB.getAll();
   if (pending.length === 0) { window.isSyncingMsgs = false; return; }
   
   const now = Date.now();
-  const validPending = [];
-  let hasChanges = false;
   
   for (const p of pending) {
-    // 🚀 تقليل مدة الاحتفاظ بالرسائل المعلقة لـ 1 ساعة لقتل أي رسالة زومبي معطوبة تلقائياً وتنظيف جوالك
-    if (now - p.time > 3600000) { hasChanges = true; continue; } 
+    if (now - p.time > 3600000) { 
+      await pendingDB.delete(p.key);
+      continue; 
+    } 
     
-    // الرفع لـ Supabase أولاً
     if (p.msg.type === 'voice' && p.msg.url && p.msg.url.startsWith('data:audio')) {
         try {
             const res = await fetch(p.msg.url);
@@ -1700,16 +1728,14 @@ async function syncPendingMessages() {
             
             if (uploadRes.ok) {
                 p.msg.url = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
-                hasChanges = true;
             } else {
-                validPending.push(p); continue;
+                continue;
             }
         } catch (err) {
-            validPending.push(p); continue; 
+            continue; 
         }
     }
 
-    // الإرسال لفايربيس
     try {
         delete p.msg.isPending;
         
@@ -1717,66 +1743,51 @@ async function syncPendingMessages() {
         const snapshot = await msgRef.once('value');
         const trueTime = getTrueTime();
         
-        // 🚀 نمنع تحديث الوقت إذا كانت الرسالة واصلة مسبقاً، عشان ما تنطبع تحت كأنها جديدة!
         if (!snapshot.exists()) {
             p.msg.timestamp = trueTime; 
             await msgRef.set(p.msg);
         }
         
-        // 🚀 عزلنا كود التحديثات الجانبية بـ try-catch خاص عشان لو فشل ما يرجع الرسالة للطابور
         try {
             const lastMsg = p.msg.type === 'text' ? p.msg.text : p.msg.type === 'image' ? '📷 صورة' : p.msg.type === 'video' ? '🎥 فيديو' : p.msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
-                            if (p.friendUid) {
-                    await db.ref().update({
-                      [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
-                      [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
-                    });
-                    // 🚀 منع زيادة العداد عند مزامنة رسائل مع النفس
-                    if (p.friendUid !== currentUser.uid) {
-                        db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
-                    }
+            if (p.friendUid) {
+                await db.ref().update({
+                  [`userChats/${currentUser.uid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${p.chatId}/updatedAt`]: trueTime,
+                  [`userChats/${p.friendUid}/${p.chatId}/lastMsg`]: lastMsg, [`userChats/${p.friendUid}/${p.chatId}/updatedAt`]: trueTime
+                });
+                if (p.friendUid !== currentUser.uid) {
+                    db.ref(`userChats/${p.friendUid}/${p.chatId}/unread`).transaction(v => (v || 0) + 1);
                 }
-        } catch(metaErr) { console.error("تجاهل خطأ القائمة الجانبية", metaErr); }
+            }
+        } catch(metaErr) {}
         
-        // 🚀 الإصلاح الجذري: نلغي الحذف الأعمى للرسالة.
-        // فايربيز أصلاً بيحدث الرسالة وبيشيل شاشة التحميل لحاله (عن طريق messagesListener).
-        // هون بس بنتأكد إذا لسا فيها pending-overlay (بحال ما تحدثت لسبب ما) نستبدلها بالرسالة النظيفة.
         const existingRow = document.getElementById('msg-' + p.key)?.closest('.msg-row');
         if (existingRow && existingRow.querySelector('.pending-overlay')) {
             existingRow.replaceWith(buildMsgEl(p.msg, false));
         } else if (document.getElementById('row_' + p.key)) {
-            // تنظيف بحال علق الـ row المؤقت بدون msg id
             document.getElementById('row_' + p.key).remove();
         }
         
-        hasChanges = true;
+        // 🚀 مسح الرسالة من IndexedDB بعد نجاح الإرسال
+        await pendingDB.delete(p.key);
     } catch (e) {
-        p.msg.isPending = true; 
-        validPending.push(p);
+        // يبقى في الداتا بيز للمحاولة القادمة
     }
   }
   
-  if (hasChanges || validPending.length !== pending.length) {
-     localStorage.setItem('neon_pending_msgs', JSON.stringify(validPending));
-  }
   window.isSyncingMsgs = false;
 }
-
-window.addEventListener('online', syncPendingMessages);
 
 async function pushMessage(msg) {
   const { chatId, friendUid } = currentChat;
   
-  // 🚀 توحيد التوقيت ليكون دقيق 100% مع السيرفر قبل الإرسال لمنع رمي الرسائل في الماضي
   msg.timestamp = getTrueTime();
 
-  // فحص الحظر السريع: الاعتماد على المتغيرات المحلية لتفادي تجميد إرسال الرسائل والصوت
   let isBlockedByMe = false, isBlockedByThem = false;
   if (typeof myBlockedUsers !== 'undefined') {
      isBlockedByMe = !!myBlockedUsers[friendUid];
      isBlockedByThem = typeof blockedByThemStatus !== 'undefined' ? !!blockedByThemStatus[friendUid] : false;
   } else {
-     // إذا ما كانت جاهزة، منعطيها مهلة نصف ثانية بس كرمال ما يعلق الإرسال
      try {
         isBlockedByMe = await Promise.race([db.ref('blockedUsers/' + currentUser.uid + '/' + friendUid).once('value').then(s => s.exists()), new Promise(r => setTimeout(() => r(false), 500))]);
         isBlockedByThem = await Promise.race([db.ref('blockedUsers/' + friendUid + '/' + currentUser.uid).once('value').then(s => s.exists()), new Promise(r => setTimeout(() => r(false), 500))]);
@@ -1787,16 +1798,13 @@ async function pushMessage(msg) {
   if (isBlockedByThem) { showToast('لا يمكنك إرسال رسالة لهذا المستخدم', 'error'); return; }
 
   const ref = db.ref('chats/' + chatId + '/messages').push(); 
-  msg.key = ref.key; // 🚀 تحديث المفتاح ليكون متطابق دائماً
+  msg.key = ref.key; 
   
-  // 🚀 وضع الرسالة كمعلقة فقط إذا كان المتصفح أوفلاين فعلياً
+  // 🚀 وضع الرسالة كمعلقة بـ IndexedDB إذا كان المتصفح أوفلاين فعلياً لتجنب فقدانها وتجنب ضغط الـ LocalStorage
   if (!navigator.onLine) {
       msg.isPending = true;
-      let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-      pending.push({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
-      localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
+      await pendingDB.save({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
       
-      // إضافتها للشاشة مباشرة كمعلقة ليراها المستخدم
       const area = document.getElementById('messages-area');
       if (area && !document.getElementById('row_' + ref.key)) {
          const el = buildMsgEl(msg, false);
@@ -1804,49 +1812,43 @@ async function pushMessage(msg) {
          area.appendChild(el);
          setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
       }
-      return; // خروج لعدم وجود نت
+      return; 
   }
 
-  // محاولة الإرسال الفوري للسيرفر
   try {
       await ref.set(msg);
   } catch(e) {
-      // إذا فشل الرفع لسبب ما، نعيدها للمعلقات
       msg.isPending = true;
-      let pending = JSON.parse(localStorage.getItem('neon_pending_msgs') || '[]');
-      pending.push({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
-      localStorage.setItem('neon_pending_msgs', JSON.stringify(pending));
+      await pendingDB.save({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
   }
 
-        const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
-      await db.ref().update({
-        [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
-        [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
-      });
-      
-      // 🚀 السطر الجديد: نمنع زيادة العداد وإرسال الإشعارات إذا كنت تراسل نفسك
-      if (friendUid !== currentUser.uid) {
-          db.ref(`userChats/${friendUid}/${chatId}/unread`).transaction(v => (v || 0) + 1);
-          try {
-            const friendSnap = await db.ref('users/' + friendUid).once('value');
-            if (friendSnap.exists() && friendSnap.val().fcmToken) {
-              fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
-              .then(async res => { 
-                const data = await res.json(); 
-                if(!data.success) {
-                  // الحل الجذري (الإرسال): إذا التوكن محروق، بنمسحه من الداتا بيز عشان ما نضل نبعت للعدم
-                  if(data.error.includes('unregistered') || data.error.includes('NotRegistered')) {
-                    db.ref('users/' + friendUid + '/fcmToken').remove();
-                    showToast(`تنبيه: إشعارات ${currentChat.friendProfile.name} معطلة، خليها تفتح التطبيق`, 'info');
-                  } else {
-                    showToast('خطأ السيرفر: ' + data.error, 'error'); 
-                  }
-                }
-              });
+  const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
+  await db.ref().update({
+    [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
+    [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
+  });
+  
+  if (friendUid !== currentUser.uid) {
+      db.ref(`userChats/${friendUid}/${chatId}/unread`).transaction(v => (v || 0) + 1);
+      try {
+        const friendSnap = await db.ref('users/' + friendUid).once('value');
+        if (friendSnap.exists() && friendSnap.val().fcmToken) {
+          fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
+          .then(async res => { 
+            const data = await res.json(); 
+            if(!data.success) {
+              if(data.error.includes('unregistered') || data.error.includes('NotRegistered')) {
+                db.ref('users/' + friendUid + '/fcmToken').remove();
+                showToast(`تنبيه: إشعارات ${currentChat.friendProfile.name} معطلة، خليها تفتح التطبيق`, 'info');
+              } else {
+                showToast('خطأ السيرفر: ' + data.error, 'error'); 
+              }
             }
-          } catch (err) {}
-      }
-    }
+          }).catch(e=>{});
+        }
+      } catch (err) {}
+  }
+}
 function toggleReaction(msgKey) {
   if (!currentChat) return;
   const reactEl = document.getElementById('react-' + msgKey);
@@ -3722,42 +3724,64 @@ async function openChatSettingsMenu() {
   }
 
   menu.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--border-subtle); padding-bottom:10px;">
-      <div style="font-size:13px; font-weight:bold; color:var(--text-secondary); flex:1; text-align:right;">إعدادات</div>
-      <div style="flex:1; text-align:center; font-family:var(--font-en); font-size:12px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; background:rgba(0,240,255,0.05); border:1px dashed var(--border-subtle); padding:2px 0; border-radius:6px; cursor:pointer;" onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" title="نسخ الـ ID">${friendId}</div>
-      <div style="flex:1; text-align:left;"><span style="font-size: 10px; background: rgba(160, 32, 240, 0.1); border: 1px solid var(--neon-purple); color: var(--neon-purple); padding: 2px 6px; border-radius: 4px; font-family: var(--font-en); font-weight: bold;">v1.0.7</span></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid var(--border-subtle); padding-bottom:12px;">
+      <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.3</div>
+      </div>
     </div>
     
-    <button class="msg-menu-btn" onclick="toggleChatSearch(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <span>بحث في هذه المحادثة</span>
-    </button>
-    
-    <button class="msg-menu-btn" onclick="toggleTheme(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-purple)" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
-      <span>تغيير الوضع الداكن</span>
-    </button>
-    
-    <button class="msg-menu-btn" onclick="document.getElementById('chat-wallpaper-input').click(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-blue)" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"></polyline></svg>
-      <span>تغيير خلفية المحادثة</span>
-      <div onclick="removeChatWallpaper(event)" title="حذف الخلفية" style="margin-right:auto; background:rgba(255,0,144,0.1); color:var(--neon-pink); border:1px solid var(--neon-pink); border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></div>
-    </button>
-    
-    <button class="msg-menu-btn danger" onclick="clearCurrentChatHistory(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px; margin-top:8px; border-top:1px solid var(--border-subtle); border-radius:0;">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
-      <span>مسح محتوى الدردشة</span>
-    </button>
-    
-    <button class="msg-menu-btn danger" onclick="blockCurrentUser(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px;">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-      <span>حظر هذا الشخص</span>
-    </button>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      
+      <!-- إعدادات أساسية بلون موحد -->
+      <button class="msg-menu-btn" onclick="toggleChatSearch(); closeMsgMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span style="font-weight:600; font-size:14px;">بحث في هذه المحادثة</span>
+      </button>
 
-    <button class="msg-menu-btn" onclick="clearAppCache(); closeMsgMenu();" style="display:flex; align-items:center; justify-content:flex-start; gap:14px; margin-top:8px; border-top:1px solid var(--border-subtle); border-radius:0;">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--neon-green)" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><polyline points="21 3 21 8 16 8"></polyline></svg>
-      <span style="color:var(--text-primary);">تنظيف كاش التطبيق</span>
-    </button>
+      <button class="msg-menu-btn" onclick="openMediaGallery('${currentChat.chatId}'); closeMsgMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        <span style="font-weight:600; font-size:14px;">معرض الصور والوسائط</span>
+      </button>
+      
+      <button class="msg-menu-btn" onclick="toggleTheme(); closeMsgMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+        <span style="font-weight:600; font-size:14px;">الوضع الداكن / الفاتح</span>
+      </button>
+      
+      <div style="position:relative; width:100%;">
+        <button class="msg-menu-btn" onclick="document.getElementById('chat-wallpaper-input').click(); closeMsgMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          <span style="font-weight:600; font-size:14px;">تغيير خلفية المحادثة</span>
+        </button>
+        <div onclick="removeChatWallpaper(event)" title="حذف الخلفية" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); background:rgba(255,0,144,0.1); color:var(--neon-pink); border:1px solid rgba(255,0,144,0.3); border-radius:8px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+      </div>
+
+      <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
+
+      <!-- إعدادات النظام الخفيفة -->
+      <button class="msg-menu-btn" onclick="clearAppCache(); closeMsgMenu();" style="background:rgba(255,255,255,0.01); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px; color:var(--text-secondary);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><polyline points="21 3 21 8 16 8"></polyline></svg>
+        <span style="font-weight:600; font-size:14px;">تحديث وتفريغ الكاش</span>
+      </button>
+
+      <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
+
+      <!-- منطقة الخطر الحمراء -->
+      <button class="msg-menu-btn danger" onclick="clearCurrentChatHistory(); closeMsgMenu();" style="background:rgba(255,0,144,0.04); border:1px solid rgba(255,0,144,0.15); justify-content:flex-start; gap:16px; padding:12px 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        <span style="font-weight:600; font-size:14px;">مسح محتوى الدردشة</span>
+      </button>
+      
+      <button class="msg-menu-btn danger" onclick="blockCurrentUser(); closeMsgMenu();" style="background:rgba(255,0,144,0.04); border:1px solid rgba(255,0,144,0.15); justify-content:flex-start; gap:16px; padding:12px 16px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+        <span style="font-weight:600; font-size:14px;">حظر هذا الشخص</span>
+      </button>
+
+    </div>
   `;
   document.getElementById('msg-menu-overlay').classList.add('open');
   if (navigator.vibrate) navigator.vibrate(20);
@@ -4015,6 +4039,11 @@ async function buildLinkPreviewUI(url, containerId) {
       }
       if(data) {
         window.linkPreviewCache[url] = data;
+        // 🚀 تنظيف الذاكرة (Memory Leak Fix): إذا تجاوز الكاش 50 رابط، نمسح أقدم واحد عشان ما تنفجر الذاكرة
+        const keys = Object.keys(window.linkPreviewCache);
+        if (keys.length > 50) {
+          delete window.linkPreviewCache[keys[0]];
+        }
         localStorage.setItem('neon_link_previews', JSON.stringify(window.linkPreviewCache));
       }
     }
@@ -4031,4 +4060,96 @@ async function buildLinkPreviewUI(url, containerId) {
   } catch (err) {
     container.style.display = 'none'; 
   }
+}
+/* ═══════════════════════════════════
+   OFFLINE PENDING DB & MEDIA GALLERY
+═══════════════════════════════════ */
+// 🚀 نظام IndexedDB المخصص لإنقاذ الفويسات والرسايل المعلقة من الضياع (بديل LocalStorage الضعيف)
+const pendingDB = {
+  init: function() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("NeonPendingMsgsDB", 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore('pending', {keyPath: 'key'});
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror = e => reject(e.target.error);
+    });
+  },
+  save: async function(data) {
+    const db = await this.init();
+    return new Promise(resolve => {
+      const tx = db.transaction('pending', 'readwrite');
+      tx.objectStore('pending').put(data);
+      tx.oncomplete = () => resolve();
+    });
+  },
+  getAll: async function() {
+    const db = await this.init();
+    return new Promise(resolve => {
+      const tx = db.transaction('pending', 'readonly');
+      const req = tx.objectStore('pending').getAll();
+      req.onsuccess = () => resolve(req.result);
+    });
+  },
+  delete: async function(key) {
+    const db = await this.init();
+    const tx = db.transaction('pending', 'readwrite');
+    tx.objectStore('pending').delete(key);
+  }
+};
+
+// 🚀 نظام معرض الوسائط (Media Gallery)
+async function openMediaGallery(chatId) {
+  const overlay = document.getElementById('media-gallery-overlay');
+  const grid = document.getElementById('media-gallery-grid');
+  grid.innerHTML = '<div style="color:var(--neon-cyan); padding:40px 20px; text-align:center; width:100%; grid-column: 1 / -1; font-weight:bold;">جاري جلب الوسائط... ⏳</div>';
+  overlay.classList.add('open');
+  
+  // 🚀 تسجيل فتح المعرض في ذاكرة الرجوع تبع الموبايل
+  try { history.pushState({ overlay: 'gallery' }, '', ''); } catch(e){}
+  
+  try {
+    const snap = await db.ref('chats/' + chatId + '/messages').once('value');
+    let media = [];
+    if (snap.exists()) {
+      snap.forEach(child => {
+        const m = child.val();
+        if ((m.type === 'image' || m.type === 'video') && !m.isDeleted && m.url) media.push({ ...m, key: child.key });
+      });
+    }
+    
+    media.sort((a, b) => b.timestamp - a.timestamp); // الأحدث أولاً
+    
+    if (media.length === 0) {
+      grid.innerHTML = '<div style="color:var(--text-muted); padding:40px 20px; text-align:center; width:100%; grid-column: 1 / -1;">لا توجد صور أو فيديوهات في هذه المحادثة</div>';
+      return;
+    }
+    
+    grid.innerHTML = '';
+    media.forEach(m => {
+      const div = document.createElement('div');
+      div.style.position = 'relative';
+      
+      if (m.type === 'image') {
+        const isEncrypted = m.url.includes('enc_img_') || m.url.endsWith('.bin');
+        if (isEncrypted) {
+          div.innerHTML = `<img src="" class="gallery-item" id="gal_${m.key}" />`;
+          decryptImageUrl(m.url).then(url => { const img = document.getElementById('gal_' + m.key); if(img) img.src = url; });
+          div.onclick = async () => window.previewImg(await decryptImageUrl(m.url));
+        } else {
+          div.innerHTML = `<img src="${m.url}" class="gallery-item" loading="lazy" />`;
+          div.onclick = () => window.previewImg(m.url);
+        }
+      } else if (m.type === 'video') {
+        div.innerHTML = `<video src="${m.url}#t=0.1" class="gallery-item"></video><div class="gallery-vid-icon"><svg viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
+        div.onclick = () => openVideoPlayer(m.url);
+      }
+      grid.appendChild(div);
+    });
+  } catch (e) {
+    grid.innerHTML = '<div style="color:var(--neon-pink); padding:40px 20px; text-align:center; width:100%; grid-column: 1 / -1;">حدث خطأ في جلب الوسائط ❌</div>';
+  }
+}
+
+function closeMediaGallery() {
+  document.getElementById('media-gallery-overlay').classList.remove('open');
 }

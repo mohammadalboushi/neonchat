@@ -1876,3 +1876,23 @@ body.light-theme .input-bar {
   user-select: none !important;
   -webkit-user-select: none !important;
 }
+/* تنسيقات معرض الوسائط */
+.gallery-item {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.gallery-vid-icon {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.5);
+  border-radius: 50%; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; border: 1px solid var(--neon-cyan);
+}
+.gallery-vid-icon svg { width: 16px; height: 16px; margin-left: 2px; }
