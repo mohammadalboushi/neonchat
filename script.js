@@ -2711,6 +2711,19 @@ function toggleVoiceSpeed(btn, msgKey) {
 
 window.voiceBlobCache = window.voiceBlobCache || {};
 
+window.pauseCurrentVoiceNote = function() {
+    if (currentAudio && !currentAudio.paused) {
+        currentAudio.pause();
+        if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
+        document.querySelectorAll('.voice-play-btn').forEach(b => {
+           if (b.innerHTML.includes('rect')) {
+               b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+           }
+        });
+        clearInterval(audioUpdateInterval);
+    }
+};
+
 async function playVoice(btn, url, msgKey, isOut) {
   if (isOut === false && currentChat) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
@@ -2720,12 +2733,14 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio && currentAudioMsgKey === msgKey) {
     if (!currentAudio.paused) { 
         currentAudio.pause(); 
+        if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); 
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; 
         clearInterval(audioUpdateInterval); 
         return; 
     } else { 
         currentAudio.play(); 
         currentAudio.playbackRate = globalVoiceSpeed; 
+        if(window.AndroidCall) window.AndroidCall.startVoiceNoteMode(); 
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
         startAudioProgress(msgKey); 
         return; 
@@ -2735,6 +2750,7 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio) {
     currentAudio.pause(); 
     currentAudio.src = ''; 
+    if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); 
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
     clearInterval(audioUpdateInterval);
@@ -2748,7 +2764,6 @@ async function playVoice(btn, url, msgKey, isOut) {
      optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
   }
 
-  // 🚀 جلب المقطع وتخزينه كـ Blob كامل في الذاكرة لضمان التسبيق الفوري بدون الرجوع للصفر
   let playSrc = optimizedUrl;
   try {
     if (window.voiceBlobCache[optimizedUrl]) {
@@ -2769,14 +2784,18 @@ async function playVoice(btn, url, msgKey, isOut) {
   currentAudio.preload = 'auto'; 
   currentAudio.playbackRate = globalVoiceSpeed;
   
-  currentAudio.onplaying = () => { btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; startAudioProgress(msgKey); };
+  currentAudio.onplaying = () => { 
+      if(window.AndroidCall) window.AndroidCall.startVoiceNoteMode(); 
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+      startAudioProgress(msgKey); 
+  };
   currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
   
   let playPromise = currentAudio.play();
   if (playPromise !== undefined) {
     playPromise.catch(e => {
-      console.log("Audio playback waiting...");
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+      if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
       clearInterval(audioUpdateInterval);
     });
   }
@@ -2790,7 +2809,10 @@ async function playVoice(btn, url, msgKey, isOut) {
     let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
     while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
     let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
+    
     currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
+    if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); 
+    
     if (nextBtn) nextBtn.click();
   };
 }
@@ -3394,15 +3416,16 @@ function initCallListener(uid) {
       if (data.ringStatus === 'ringing' && statusView) {
         statusView.textContent = 'يرن...';
       }
-    } else if (data.status === 'answered') {
-      if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
+        } else if (data.status === 'answered') {
+      if(ringAudio) { ringAudio.pause(); ringAudio.currentTime = 0; }
       if(incomingRow) incomingRow.style.display = 'none';
-      if(activeRow) activeRow.style.display = 'flex'; // إرجاع زر الإنهاء للمكالمة الفعالة
+      if(activeRow) activeRow.style.display = 'flex'; 
       if(statusView) statusView.textContent = '0:00';
       
       if (data.role === 'caller' && !window.callTimerInt) {
         startCallTimer();
       }
+    }
     } else if (data.status === 'ended') {
       forceEndCallUI();
     }
