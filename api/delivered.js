@@ -10,7 +10,6 @@ if (!admin.apps.length) {
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: pk,
     }),
-    // 🚀 هذا هو السطر الحاسم الذي كان ينقصنا لتجنب الخطأ 500
     databaseURL: "https://neonchat-2df05-default-rtdb.firebaseio.com"
   });
 }
@@ -44,9 +43,29 @@ module.exports = async (req, res) => {
 
   try {
     const db = admin.database();
+
+    //   :            ""
+    if (msgKey === 'call_wakeup') {
+      const uids = chatId.split('_');
+      if (uids.length === 2) {
+         //     (caller)      
+         const call1Snap = await db.ref(`calls/${uids[0]}`).once('value');
+         if (call1Snap.exists() && call1Snap.val().role === 'caller') {
+             await db.ref(`calls/${uids[0]}`).update({ ringStatus: 'ringing' });
+         }
+         
+         const call2Snap = await db.ref(`calls/${uids[1]}`).once('value');
+         if (call2Snap.exists() && call2Snap.val().role === 'caller') {
+             await db.ref(`calls/${uids[1]}`).update({ ringStatus: 'ringing' });
+         }
+      }
+      return res.status(200).json({ success: true, message: 'Call marked as ringing' });
+    }
+
+    //       " " ( )
     await db.ref(`chats/${chatId}/messages/${msgKey}`).update({ delivered: true });
-    
     res.status(200).json({ success: true, message: 'Marked as delivered' });
+
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
