@@ -203,7 +203,35 @@ function renderScreenUI(name) {
   if (name === 'profile') populateProfile();
   if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
   if (name === 'blocked-users') loadBlockedUsers();
-  if (name !== 'chat') detachMessages();
+  
+  // 🚀 عدم فصل المحادثة إذا كنا في شاشة المكالمة لتظل متصلة بالخلفية
+  if (name !== 'chat' && name !== 'call') detachMessages();
+  
+  // 🚀 إظهار أيقونة عائمة للعودة للمكالمة عند تصغيرها
+    // 🚀 إظهار أيقونة عائمة للعودة للمكالمة أو إنهائها عند تصغيرها
+  let bubble = document.getElementById('active-call-bubble');
+  if (window.currentCallId && name !== 'call') {
+    if (!bubble) {
+      bubble = document.createElement('div');
+      bubble.id = 'active-call-bubble';
+      bubble.style.cssText = `position:fixed; top:80px; left:20px; display:flex; flex-direction:column; align-items:center; gap:8px; z-index:1000;`;
+      
+      bubble.innerHTML = `
+        <!-- زر الرجوع للمكالمة -->
+        <div onclick="showScreen('call')" style="width:48px; height:48px; background:var(--neon-green); color:var(--bg-void); border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 15px rgba(0,255,136,0.4); cursor:pointer; animation:pulse-green 1.5s infinite;" title="العودة للمكالمة">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+        </div>
+        <!-- زر إنهاء المكالمة السريع -->
+        <div onclick="endCall()" style="width:36px; height:36px; background:#f15c6d; color:white; border-radius:50%; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 10px rgba(241,92,109,0.4); cursor:pointer;" title="إنهاء المكالمة">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path><line x1="23" y1="1" x2="1" y2="23"></line></svg>
+        </div>
+      `;
+      document.body.appendChild(bubble);
+    }
+    bubble.style.display = 'flex';
+  } else {
+    if (bubble) bubble.style.display = 'none';
+  }
 }
 
 let toastTimer;
@@ -3554,13 +3582,14 @@ function forceEndCallUI() {
   }
   window.currentCallId = null;
   
+  // 🚀 إخفاء أيقونة المكالمة العائمة فوراً عند انتهاء المكالمة
+  const activeBubble = document.getElementById('active-call-bubble');
+  if (activeBubble) activeBubble.style.display = 'none';
+  
   // إعادة الأزرار لشكلها الطبيعي للمكالمة القادمة
   const incomingRow = document.getElementById('wa-incoming-row'), activeRow = document.getElementById('wa-active-call-row');
   if(incomingRow) incomingRow.style.display = 'none';
   if(activeRow) activeRow.style.display = 'flex';
-  
-  // 🚀 إعادة زر الصوت للشكل الافتراضي (سماعة الأذن) للمكالمة القادمة
-  if(typeof selectAudioRoute === 'function') selectAudioRoute('earpiece', true);
   
   // 🚀 الحل الجذري: إعادة بناء المحادثة برمجياً لربط الفايربيس من جديد
   if (document.getElementById('screen-call').classList.contains('active')) {
@@ -3642,7 +3671,12 @@ function toggleMuteCall() {
 }
 
 function minimizeCall() {
-  showToast('قريباً: تصغير المكالمة', 'info');
+  // 🚀 تصغير المكالمة والرجوع للشاشة السابقة (المحادثة أو الرئيسية)
+  if (currentChat && currentChat.chatId) {
+    showScreen('chat');
+  } else {
+    showScreen('home');
+  }
 }
 
 async function joinAgoraVoice(channelName) {
