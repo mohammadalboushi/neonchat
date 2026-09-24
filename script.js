@@ -322,8 +322,23 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
         // نحن داخل تطبيق الأندرويد، نستخدم التوكن الأصلي للإشعارات بالخلفية
         db.ref('users/' + user.uid + '/fcmToken').set(window.androidFCMToken);
       } 
+            // 🚀 دالة لاستقبال توكن الأندرويد من تطبيق AndroidIDE
+      window.setAndroidToken = function(nativeToken) {
+        window.androidFCMToken = nativeToken;
+        if (typeof currentUser !== 'undefined' && currentUser) {
+          db.ref('users/' + currentUser.uid + '/fcmToken').set(nativeToken);
+        }
+      };
+
+      // 📱 فحص البيئة القاطع: استخدام كائن التحميل كدليل على أننا داخل التطبيق
+      if (window.AndroidDownloader) {
+        // نحن داخل تطبيق الأندرويد قطعاً! نكتفي بتوكن النظام ولن نطلب توكن المتصفح أبداً
+        if (window.androidFCMToken) {
+          db.ref('users/' + user.uid + '/fcmToken').set(window.androidFCMToken);
+        }
+      } 
       else if ('Notification' in window && 'serviceWorker' in navigator) {
-        // 🌐 نحن في المتصفح العادي، نستخدم إشعارات الويب (Web Push)
+        // 🌐 نحن في المتصفح العادي، نستخدم إشعارات الويب
         try {
           let currentPermission = Notification.permission;
           if (currentPermission === 'default') {
@@ -345,11 +360,10 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
                 }
               } catch (err) {}
             });
-            
           } else {
             showToast('تنبيه: المتصفح يمنع ظهور الإشعارات', 'error');
           }
-
+          
           messaging.onMessage((payload) => {
             if (currentChat && currentChat.friendProfile && payload.notification.title === currentChat.friendProfile.name) {
               return;
