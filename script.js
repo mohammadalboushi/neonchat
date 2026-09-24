@@ -1470,7 +1470,7 @@ function buildMsgEl(msg, isBackground = false) {
     let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
-    if (e.target.tagName === 'A') return;
+    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
     
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) { 
@@ -1491,7 +1491,7 @@ function buildMsgEl(msg, isBackground = false) {
   }, { passive: false });
 
   bubble.addEventListener('touchmove', e => {
-    if (e.target.tagName === 'A' || !touchStartX) return;
+    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform') || !touchStartX) return;
     const dx = e.touches[0].clientX - touchStartX, dy = e.touches[0].clientY - touchStartY;
     
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
@@ -1518,7 +1518,7 @@ function buildMsgEl(msg, isBackground = false) {
   }, { passive: true });
 
             bubble.addEventListener('touchend', e => {
-            if (e.target.tagName === 'A') return;
+            if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
 
             if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
               e.target.style.opacity = '1'; 
@@ -3435,10 +3435,6 @@ function initCallListener(uid) {
     } else if (data.status === 'answered') {
       // 🚀 إيقاف نغمة الرنين فوراً لدى الطرفين عند الرد
       if(ringAudio) { ringAudio.pause(); ringAudio.currentTime = 0; }
-      // إيقاف إشعار الأندرويد في حال كان يعمل (مع حماية المتصفح)
-      try { if(window.AndroidCall) window.AndroidCall.endCall(); } catch(e){}
-      // إعادة تفعيل وضع المكالمة النظيف بدون رنين
-      setTimeout(() => { try { if(window.AndroidCall) window.AndroidCall.startCall(); } catch(e){} }, 200);
 
       if(incomingRow) incomingRow.style.display = 'none';
       if(activeRow) activeRow.style.display = 'flex'; 
@@ -3504,6 +3500,10 @@ async function acceptCall() {
   if(incomingRow) incomingRow.style.display = 'none'; 
   if(activeRow) activeRow.style.display = 'flex'; 
   if(statusView) statusView.textContent = 'جاري التوصيل...';
+
+  // 🚀 تنظيف إشعار الرنين تبع الأندرويد وإعطاء مهلة صغيرة ليرتاح محرك الصوت قبل فتح المايك
+  try { if(window.AndroidCall) window.AndroidCall.endCall(); } catch(e){}
+  await new Promise(r => setTimeout(r, 150));
   
   await joinAgoraVoice(window.currentCallId);
   if(window.AndroidCall) window.AndroidCall.startCall();
