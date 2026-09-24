@@ -365,11 +365,8 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           messaging.onMessage((payload) => {
-            if (currentChat && currentChat.friendProfile && payload.notification.title === currentChat.friendProfile.name) {
-              return;
-            }
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-            showToast(`📩 رسالة من ${payload.notification.title}`, 'info');
+            // 🚀 تم تعطيل النوافذ المنبثقة والرجة أثناء استخدام التطبيق المفتوح
+            // لمنع الإزعاج، حيث أن المحادثات تتحدث تلقائياً بالبيانات الحية
           });
 
         } catch (err) { 
@@ -1988,21 +1985,31 @@ function openMsgMenu(msg, isOut) {
             }
         }
         
-        // استخدام fetch لفرض التنزيل بدل الفتح بنافذة جديدة (تضمن حفظها كملف فعلي)
+        // استخدام fetch لفرض التنزيل وضمان الحفظ في الأندرويد أو المتصفح
         try {
             const response = await fetch(dlUrl);
             const blob = await response.blob();
-            const objectUrl = window.URL.createObjectURL(blob);
             
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = objectUrl;
-            a.download = uniqueName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(objectUrl);
-            showToast('تم التنزيل بنجاح ✔️', 'success');
+            if (window.AndroidDownloader) {
+                // 🚀 نحن داخل تطبيق الأندرويد: نرسل الملف مباشرة وبشكل مضمون لمنع ضياعه
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = function() {
+                    window.AndroidDownloader.saveBase64(reader.result, blob.type);
+                };
+            } else {
+                // نحن في متصفح عادي: نستخدم طريقة الرابط المؤقت
+                const objectUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = objectUrl;
+                a.download = uniqueName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => window.URL.revokeObjectURL(objectUrl), 2000);
+                showToast('تم التنزيل بنجاح ✔️', 'success');
+            }
         } catch (err) {
             showToast('فشل التنزيل', 'error');
         }
