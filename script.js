@@ -3574,6 +3574,19 @@ function forceEndCallUI() {
   }
 }
 
+// 🚀 دالة العداد تبع المكالمة اللي كانت ناقصة وعم تعمل انهيار للتطبيق
+function startCallTimer() {
+  if (window.callTimerInt) clearInterval(window.callTimerInt);
+  let callSec = 0;
+  const statusView = document.getElementById('call-status-view');
+  window.callTimerInt = setInterval(() => {
+    callSec++;
+    const m = Math.floor(callSec / 60);
+    const s = callSec % 60;
+    if(statusView) statusView.textContent = m + ':' + (s < 10 ? '0' : '') + s;
+  }, 1000);
+}
+
 function openAudioRouteSheet() {
   document.getElementById('audio-route-overlay').classList.add('open');
   document.getElementById('audio-route-sheet').classList.add('open');
@@ -3583,27 +3596,35 @@ function closeAudioRouteSheet() {
   document.getElementById('audio-route-sheet').classList.remove('open');
 }
 
-function selectAudioRoute(route) {
+function selectAudioRoute(route, fromJava = false) {
   document.querySelectorAll('.audio-route-item').forEach(el => el.classList.remove('selected'));
-  document.getElementById('route-' + route).classList.add('selected');
+  const targetEl = document.getElementById('route-' + route);
+  if (targetEl) targetEl.classList.add('selected');
   
   const iconCurrent = document.getElementById('icon-route-current');
-  if (route === 'speaker') {
-    iconCurrent.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
-    document.getElementById('btn-route-call').classList.add('active');
-  } else if (route === 'bluetooth') {
-    iconCurrent.innerHTML = '<polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>';
-    document.getElementById('btn-route-call').classList.add('active');
-  } else {
-    iconCurrent.innerHTML = '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>';
-    document.getElementById('btn-route-call').classList.remove('active');
+  if (iconCurrent) {
+      if (route === 'speaker') {
+        iconCurrent.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+        document.getElementById('btn-route-call').classList.add('active');
+      } else if (route === 'bluetooth') {
+        iconCurrent.innerHTML = '<polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>';
+        document.getElementById('btn-route-call').classList.add('active');
+      } else {
+        iconCurrent.innerHTML = '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>';
+        document.getElementById('btn-route-call').classList.remove('active');
+      }
   }
   
-  if (window.AndroidCall) {
+  if (window.AndroidCall && !fromJava) {
     window.AndroidCall.setAudioRoute(route);
   }
-  closeAudioRouteSheet();
+  if (!fromJava) closeAudioRouteSheet();
 }
+
+// 🚀 استقبال الأمر من الأندرويد لتحديث الأيقونة
+window.updateAudioUI = function(route) {
+    selectAudioRoute(route, true);
+};
 
 let callIsMuted = false;
 function toggleMuteCall() {
