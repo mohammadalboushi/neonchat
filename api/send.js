@@ -2,7 +2,6 @@ const admin = require('firebase-admin');
 
 if (!admin.apps.length) {
   let pk = process.env.FIREBASE_PRIVATE_KEY || '';
-  // تنظيف المفتاح من أي علامات تنصيص إضافية قد يضعها Vercel ومعالجة الفواصل بدقة
   pk = pk.replace(/(^"|"$)/g, '').replace(/\\n/g, '\n');
 
   admin.initializeApp({
@@ -17,7 +16,6 @@ if (!admin.apps.length) {
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
   
-  // حماية أمنية حرجة: تقييد الوصول لمنع الهجمات الخارجية وإرسال إشعارات عشوائية
   const allowedOrigins = ['https://neonchat.mooo.com', 'https://mohammadalboushi.github.io', 'http://localhost:2435', 'http://localhost:5500'];
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
@@ -40,25 +38,27 @@ module.exports = async (req, res) => {
 
   if (!token) return res.status(400).json({ error: 'Token is required' });
 
-  // 🚀 النطاق الجديد للتطبيق لضمان التوجيه الصحيح عند ضغط الإشعار
   const baseUrl = 'https://neonchat.mooo.com';
 
   const message = {
     token: token,
-    notification: {
+    // 🚀 التعديل الجذري: نرسل الداتا المخفية للأندرويد ليتم إيقاظ التطبيق إجبارياً في الخلفية
+    data: {
       title: title || 'رسالة جديدة',
       body: body || 'لديك رسالة جديدة',
     },
     android: {
       priority: 'high',
     },
+    // 🚀 نوجه إشعارات الويب للمتصفحات حصراً لتعمل بشكل منفصل دون التأثير على التطبيق
     webpush: {
       headers: {
         urgency: 'high',
         TTL: '86400'
       },
       notification: {
-        // دمج الرابط الأساسي مع مسار الأيقونة لضمان ظهورها في كل المتصفحات
+        title: title || 'رسالة جديدة',
+        body: body || 'لديك رسالة جديدة',
         icon: icon ? `${baseUrl}/${icon}` : `${baseUrl}/icon-192.png`,
         dir: 'rtl',
         requireInteraction: true,
@@ -74,7 +74,6 @@ module.exports = async (req, res) => {
     const response = await admin.messaging().send(message);
     res.status(200).json({ success: true, response });
   } catch (error) {
-    console.error('Error sending message:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
