@@ -2714,7 +2714,11 @@ window.voiceBlobCache = window.voiceBlobCache || {};
 window.pauseCurrentVoiceNote = function() {
     if (currentAudio && !currentAudio.paused) {
         currentAudio.pause();
-        if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
+        try {
+            if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
+        } catch (e) {
+            console.log("Not in Android App");
+        }
         document.querySelectorAll('.voice-play-btn').forEach(b => {
            if (b.innerHTML.includes('rect')) {
                b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
@@ -2733,14 +2737,18 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio && currentAudioMsgKey === msgKey) {
     if (!currentAudio.paused) { 
         currentAudio.pause(); 
-        if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); 
+        if (window.AndroidCall) {
+            window.AndroidCall.stopVoiceNoteMode();
+        }
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; 
         clearInterval(audioUpdateInterval); 
         return; 
     } else { 
         currentAudio.play(); 
         currentAudio.playbackRate = globalVoiceSpeed; 
-        if(window.AndroidCall) window.AndroidCall.startVoiceNoteMode(); 
+        if (window.AndroidCall) {
+            window.AndroidCall.startVoiceNoteMode();
+        }
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
         startAudioProgress(msgKey); 
         return; 
@@ -2750,7 +2758,9 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio) {
     currentAudio.pause(); 
     currentAudio.src = ''; 
-    if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); 
+    if (window.AndroidCall) {
+        window.AndroidCall.stopVoiceNoteMode();
+    }
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
     clearInterval(audioUpdateInterval);
@@ -2785,7 +2795,9 @@ async function playVoice(btn, url, msgKey, isOut) {
   currentAudio.playbackRate = globalVoiceSpeed;
   
   currentAudio.onplaying = () => { 
-      if(window.AndroidCall) window.AndroidCall.startVoiceNoteMode(); 
+      if (window.AndroidCall) {
+          window.AndroidCall.startVoiceNoteMode();
+      }
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
       startAudioProgress(msgKey); 
   };
@@ -2795,7 +2807,9 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (playPromise !== undefined) {
     playPromise.catch(e => {
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-      if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
+      if (window.AndroidCall) {
+          window.AndroidCall.stopVoiceNoteMode();
+      }
       clearInterval(audioUpdateInterval);
     });
   }
@@ -2811,7 +2825,9 @@ async function playVoice(btn, url, msgKey, isOut) {
     let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
     
     currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
-    if(window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); 
+    if (window.AndroidCall) {
+        window.AndroidCall.stopVoiceNoteMode();
+    }
     
     if (nextBtn) nextBtn.click();
   };
@@ -3410,14 +3426,20 @@ function initCallListener(uid) {
       // 🚀 إرسال إشارة "يرن..." للمتصل فوراً بمجرد فتح الخط وتوفر الإنترنت
       db.ref('calls/' + data.peerUid).update({ ringStatus: 'ringing' });
       
-      // ❌ تم إزالة أمر startCall من هنا لكي يخرج الرنين من مكبر الصوت الخارجي طبيعياً!
+            // ❌ تم إزالة أمر startCall من هنا لكي يخرج الرنين من مكبر الصوت الخارجي طبيعياً!
     } else if (data.status === 'calling') {
       // 🚀 إذا كنت أنت المتصل، راقب إذا كان الهاتف يرن هناك
       if (data.ringStatus === 'ringing' && statusView) {
         statusView.textContent = 'يرن...';
       }
-        } else if (data.status === 'answered') {
+    } else if (data.status === 'answered') {
+      // 🚀 إيقاف نغمة الرنين فوراً لدى الطرفين عند الرد
       if(ringAudio) { ringAudio.pause(); ringAudio.currentTime = 0; }
+      // إيقاف إشعار الأندرويد في حال كان يعمل (مع حماية المتصفح)
+      try { if(window.AndroidCall) window.AndroidCall.endCall(); } catch(e){}
+      // إعادة تفعيل وضع المكالمة النظيف بدون رنين
+      setTimeout(() => { try { if(window.AndroidCall) window.AndroidCall.startCall(); } catch(e){} }, 200);
+
       if(incomingRow) incomingRow.style.display = 'none';
       if(activeRow) activeRow.style.display = 'flex'; 
       if(statusView) statusView.textContent = '0:00';
@@ -3425,7 +3447,6 @@ function initCallListener(uid) {
       if (data.role === 'caller' && !window.callTimerInt) {
         startCallTimer();
       }
-    }
     } else if (data.status === 'ended') {
       forceEndCallUI();
     }
