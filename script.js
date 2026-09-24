@@ -2484,12 +2484,13 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
   const files = e.target.files;
   if (!files.length || !currentChat) return;
   
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
-    const fileName = file.name.toLowerCase();
-    const isImage = file.type.startsWith('image/');
-    const isVideo = file.type.startsWith('video/');
-    const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
+        for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileName = file.name.toLowerCase();
+        // 🚀 تحصين إضافي للتعرف على الملفات من امتدادها في حال كان المتصفح غبي وما تعرف عليها
+        const isImage = file.type.startsWith('image/') || fileName.endsWith('.jpg') || fileName.endsWith('.png') || fileName.endsWith('.jpeg') || fileName.endsWith('.webp');
+        const isVideo = file.type.startsWith('video/') || fileName.endsWith('.mp4') || fileName.endsWith('.mkv') || fileName.endsWith('.webm') || fileName.endsWith('.mov') || fileName.endsWith('.avi');
+        const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
 
     if (isImage) {
       uploadMediaWithUI(file, 'image');
