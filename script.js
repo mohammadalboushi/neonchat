@@ -1868,7 +1868,6 @@ async function pushMessage(msg) {
   const ref = db.ref('chats/' + chatId + '/messages').push(); 
   msg.key = ref.key; 
   
-  // 🚀 وضع الرسالة كمعلقة بـ IndexedDB إذا كان المتصفح أوفلاين فعلياً لتجنب فقدانها وتجنب ضغط الـ LocalStorage
   if (!navigator.onLine) {
       msg.isPending = true;
       await pendingDB.save({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
@@ -1901,9 +1900,20 @@ async function pushMessage(msg) {
       try {
         const friendSnap = await db.ref('users/' + friendUid).once('value');
         if (friendSnap.exists() && friendSnap.val().fcmToken) {
-                                                            fetch(`${VERCEL_URL}/api/send`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: friendSnap.val().fcmToken, title: myProfile.name, body: lastMsg, icon: 'icon-192.png' }) })
+          // 🚀 السطر المعدل: إرسال مفتاح الرسالة واسم المحادثة إلى سيرفر الإشعارات
+          fetch(`${VERCEL_URL}/api/send`, { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ 
+              token: friendSnap.val().fcmToken, 
+              title: myProfile.name, 
+              body: lastMsg, 
+              icon: 'icon-192.png',
+              msgKey: msg.key, // 🚀 إضافة رقم الرسالة
+              chatId: chatId   // 🚀 إضافة مسار المحادثة
+            }) 
+          })
           .then(async res => { 
-            // الاعتماد الكامل صار على الـ sw.js للاستلام الفعلي
             try {
               const data = await res.json(); 
               if (!res.ok || (data && data.success === false)) {
