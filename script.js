@@ -691,16 +691,30 @@ function loadChats() {
     }
     
     // 🚀 السحر هون: الاستماع إذا هاد الشخص حظرني عشان أخفي صورته وحالته بالرئيسية
-    if (!blockedByThemListeners[d.friendUid]) {
-      blockedByThemListeners[d.friendUid] = db.ref('blockedUsers/' + d.friendUid + '/' + currentUser.uid).on('value', bSnap => {
-        blockedByThemStatus[d.friendUid] = bSnap.exists();
-        renderChatsList();
-      });
-    }
-    
-    renderChatsList();
-    if (hasNew && !document.getElementById('screen-chat').classList.contains('active') && navigator.vibrate) navigator.vibrate([100, 50, 100]);
-  };
+                // 🚀 السحر هون: الاستماع إذا هاد الشخص حظرني عشان أخفي صورته وحالته بالرئيسية
+            if (!blockedByThemListeners[d.friendUid]) {
+              blockedByThemListeners[d.friendUid] = db.ref('blockedUsers/' + d.friendUid + '/' + currentUser.uid).on('value', bSnap => {
+                blockedByThemStatus[d.friendUid] = bSnap.exists();
+                renderChatsList();
+              });
+            }
+            
+            renderChatsList();
+            
+            if (hasNew) {
+               let isHomeActive = document.getElementById('screen-home').classList.contains('active');
+               let isChatActive = document.getElementById('screen-chat').classList.contains('active');
+               let isCurrentChat = isChatActive && currentChat && currentChat.chatId === snap.key;
+               
+               // 1. إذا كنت بالرئيسية مافي إشعار (لأنك عم تشوف المحادثات قدامك)
+               // 2. إذا كنت جوا محادثة نفس الشخص مافي إشعار (لأنك عم تقرأ رسالته فوراً)
+               // 3. إذا كنت بمحادثة شخص تاني (مثلاً مارلين) ومصطفى بعت -> طلّع توست ورجة!
+               if (!isHomeActive && !isCurrentChat) {
+                   if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                   showToast('📩 رسالة جديدة من ' + (d.friendName || 'صديق'), 'info');
+               }
+            }
+          };
 
   db.ref('userChats/' + currentUser.uid).on('child_added', chatsListener);
   db.ref('userChats/' + currentUser.uid).on('child_changed', chatsListener);
@@ -2015,28 +2029,34 @@ function openMsgMenu(msg, isOut) {
         
         // استخدام fetch لفرض التنزيل وضمان الحفظ في الأندرويد أو المتصفح
         try {
-            const response = await fetch(dlUrl);
-            const blob = await response.blob();
-            
-            if (window.AndroidDownloader) {
-                // 🚀 نحن داخل تطبيق الأندرويد: نرسل الملف مباشرة وبشكل مضمون لمنع ضياعه
-                const reader = new FileReader();
-                reader.readAsDataURL(blob);
-                reader.onloadend = function() {
-                    window.AndroidDownloader.saveBase64(reader.result, blob.type);
-                };
+            if (window.AndroidDownloader && !dlUrl.startsWith('blob:')) {
+                // 🚀 للملفات الكبيرة (فيديو/صوت): نمرر الرابط لمدير تنزيلات الأندرويد النظامي لمنع انهيار التطبيق
+                window.AndroidDownloader.downloadFile(dlUrl, uniqueName);
+                showToast('بدأ التنزيل في الخلفية ⬇️', 'info');
             } else {
-                // نحن في متصفح عادي: نستخدم طريقة الرابط المؤقت
-                const objectUrl = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = objectUrl;
-                a.download = uniqueName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                setTimeout(() => window.URL.revokeObjectURL(objectUrl), 2000);
-                showToast('تم التنزيل بنجاح ✔️', 'success');
+                const response = await fetch(dlUrl);
+                const blob = await response.blob();
+                
+                if (window.AndroidDownloader) {
+                    // 🚀 للصور المشفرة (صغيرة الحجم ورابطها blob): نرسلها Base64 لأن مدير التنزيلات لا يدعم blob
+                    const reader = new FileReader();
+                    reader.readAsDataURL(blob);
+                    reader.onloadend = function() {
+                        window.AndroidDownloader.saveBase64(reader.result, blob.type);
+                    };
+                } else {
+                    // نحن في متصفح عادي: نستخدم طريقة الرابط المؤقت
+                    const objectUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = objectUrl;
+                    a.download = uniqueName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => window.URL.revokeObjectURL(objectUrl), 2000);
+                    showToast('تم التنزيل بنجاح ✔️', 'success');
+                }
             }
         } catch (err) {
             showToast('فشل التنزيل', 'error');
