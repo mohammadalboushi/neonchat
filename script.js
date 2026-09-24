@@ -364,6 +364,8 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
         if (window.androidFCMToken) {
           db.ref('users/' + user.uid + '/fcmToken').set(window.androidFCMToken);
         }
+        // 🚀 إرسال رقم المستخدم للأندرويد لحفظه بالذاكرة الدائمة
+        if (window.AndroidCall) window.AndroidCall.saveUid(user.uid);
       } 
       else if ('Notification' in window && 'serviceWorker' in navigator) {
         // 🌐 نحن في المتصفح العادي، نستخدم إشعارات الويب
