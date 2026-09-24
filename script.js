@@ -3559,6 +3559,9 @@ function forceEndCallUI() {
   if(incomingRow) incomingRow.style.display = 'none';
   if(activeRow) activeRow.style.display = 'flex';
   
+  // 🚀 إعادة زر الصوت للشكل الافتراضي (سماعة الأذن) للمكالمة القادمة
+  if(typeof selectAudioRoute === 'function') selectAudioRoute('earpiece', true);
+  
   // 🚀 الحل الجذري: إعادة بناء المحادثة برمجياً لربط الفايربيس من جديد
   if (document.getElementById('screen-call').classList.contains('active')) {
       if (currentChat && currentChat.chatId) {
