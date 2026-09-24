@@ -2774,19 +2774,7 @@ async function playVoice(btn, url, msgKey, isOut) {
      optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
   }
 
-  let playSrc = optimizedUrl;
-  try {
-    if (window.voiceBlobCache[optimizedUrl]) {
-      playSrc = window.voiceBlobCache[optimizedUrl];
-    } else {
-      const res = await fetch(optimizedUrl);
-      const blob = await res.blob();
-      playSrc = URL.createObjectURL(blob);
-      window.voiceBlobCache[optimizedUrl] = playSrc;
-    }
-  } catch (e) {
-    playSrc = optimizedUrl;
-  }
+  let playSrc = window.voiceBlobCache[optimizedUrl] || optimizedUrl;
 
   if (currentAudioMsgKey !== msgKey) return;
   
