@@ -3515,7 +3515,21 @@ async function acceptCall() {
 }
 
 function endCall() {
-  if (currentCallPeer) db.ref('calls/' + currentCallPeer).update({ status: 'ended' });
+  if (currentCallPeer) {
+    db.ref('calls/' + currentCallPeer).update({ status: 'ended' });
+    
+    // 🚀 السحر هون: إرسال إشعار "إغلاق خط" صامت للطرف الآخر ليطفي الرنين عنده إذا كان بالخلفية
+    db.ref('users/' + currentCallPeer).once('value').then(snap => {
+       if(snap.exists() && snap.val().fcmToken) {
+         fetch(`${VERCEL_URL}/api/send`, {
+           method: 'POST', headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+             token: snap.val().fcmToken, title: 'إنهاء', body: 'إنهاء', msgKey: 'call_end', chatId: window.currentCallId || ''
+           })
+         }).catch(e=>{});
+       }
+    });
+  }
   db.ref('calls/' + currentUser.uid).remove(); 
   setTimeout(() => forceEndCallUI(), 500);
 }
@@ -3591,6 +3605,23 @@ function selectAudioRoute(route) {
   closeAudioRouteSheet();
 }
 
+let callIsMuted = false;
+function toggleMuteCall() {
+  callIsMuted = !callIsMuted;
+  const btn = document.getElementById('btn-mute-call');
+  if (callIsMuted) {
+    btn.classList.add('active');
+    // 🚀 كتم المايك من الجذور قبل ما يوصل لأغورا
+    if (window.callPreGain) window.callPreGain.gain.value = 0; 
+    if (window.localCallTrack) window.localCallTrack.setMuted(true);
+  } else {
+    btn.classList.remove('active');
+    // 🚀 إعادة فتح المايك
+    if (window.callPreGain) window.callPreGain.gain.value = 1.0; 
+    if (window.localCallTrack) window.localCallTrack.setMuted(false);
+  }
+}
+
 function minimizeCall() {
   showToast('قريباً: تصغير المكالمة', 'info');
 }
@@ -3612,10 +3643,11 @@ async function joinAgoraVoice(channelName) {
       window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
       window.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       
-      // 2. تطبيق الفلاتر
+            // 2. تطبيق الفلاتر
       const source = window.callAudioCtx.createMediaStreamSource(window.callRawStream);
       const preGain = window.callAudioCtx.createGain(); 
-      preGain.gain.value = 1.0; // قوة المايك الأساسية: 1
+      preGain.gain.value = callIsMuted ? 0 : 1.0; 
+      window.callPreGain = preGain;
       
       const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
       const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
