@@ -3371,14 +3371,16 @@ function initCallListener(uid) {
     currentCallPeer = data.peerUid; 
     window.currentCallId = data.chatId;
     
-    const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('wa-incoming-row'), ringAudio = document.getElementById('ringtone-audio');
+    const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), incomingRow = document.getElementById('wa-incoming-row'), activeRow = document.getElementById('wa-active-call-row'), ringAudio = document.getElementById('ringtone-audio');
     
     if (nameView) nameView.textContent = data.peerName || 'مستخدم';
     if (avatarView) avatarView.innerHTML = data.peerPhoto ? `<img src="${data.peerPhoto}" style="width:100%;height:100%;object-fit:cover;">` : (data.peerName || '?').charAt(0);
     
     if (data.status === 'incoming') {
       if(statusView) { statusView.textContent = 'يتصل بك...'; statusView.style.color = '#8696a0'; }
-      if(acceptBtn) acceptBtn.style.display = 'flex';
+      if(incomingRow) incomingRow.style.display = 'flex';
+      if(activeRow) activeRow.style.display = 'none'; // إخفاء زر الإنهاء الفردي
+      
       if(ringAudio && ringAudio.paused) ringAudio.play().catch(e=>{});
       if (navigator.vibrate) navigator.vibrate([500, 300, 500, 300, 500]);
       renderScreenUI('call');
@@ -3386,7 +3388,7 @@ function initCallListener(uid) {
       // 🚀 إرسال إشارة "يرن..." للمتصل فوراً بمجرد فتح الخط وتوفر الإنترنت
       db.ref('calls/' + data.peerUid).update({ ringStatus: 'ringing' });
       
-      if(window.AndroidCall) window.AndroidCall.startCall();
+      // ❌ تم إزالة أمر startCall من هنا لكي يخرج الرنين من مكبر الصوت الخارجي طبيعياً!
     } else if (data.status === 'calling') {
       // 🚀 إذا كنت أنت المتصل، راقب إذا كان الهاتف يرن هناك
       if (data.ringStatus === 'ringing' && statusView) {
@@ -3394,7 +3396,8 @@ function initCallListener(uid) {
       }
     } else if (data.status === 'answered') {
       if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
-      if(acceptBtn) acceptBtn.style.display = 'none';
+      if(incomingRow) incomingRow.style.display = 'none';
+      if(activeRow) activeRow.style.display = 'flex'; // إرجاع زر الإنهاء للمكالمة الفعالة
       if(statusView) statusView.textContent = '0:00';
       
       if (data.role === 'caller' && !window.callTimerInt) {
@@ -3411,12 +3414,13 @@ async function startCall() {
   currentCallPeer = currentChat.friendUid; 
   window.currentCallId = [currentUser.uid, currentCallPeer].sort().join('_');
   
-  const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('wa-incoming-row'), ringAudio = document.getElementById('ringtone-audio');
+  const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), incomingRow = document.getElementById('wa-incoming-row'), activeRow = document.getElementById('wa-active-call-row'), ringAudio = document.getElementById('ringtone-audio');
   
   if(nameView) nameView.textContent = currentChat.friendProfile.name; 
   if(avatarView) avatarView.innerHTML = currentChat.friendProfile.photo ? `<img src="${currentChat.friendProfile.photo}" style="width:100%;height:100%;object-fit:cover;">` : (currentChat.friendProfile.name || '?').charAt(0);
   if(statusView) { statusView.textContent = 'جاري الاتصال...'; statusView.style.color = '#8696a0'; }
-  if(acceptBtn) acceptBtn.style.display = 'none';
+  if(incomingRow) incomingRow.style.display = 'none';
+  if(activeRow) activeRow.style.display = 'flex';
   
   renderScreenUI('call');
   
@@ -3427,14 +3431,34 @@ async function startCall() {
 
   await db.ref('calls/' + currentUser.uid).set({ status: 'calling', role: 'caller', peerUid: currentCallPeer, peerName: currentChat.friendProfile.name, peerPhoto: currentChat.friendProfile.photo || '', chatId: window.currentCallId });
   await db.ref('calls/' + currentCallPeer).set({ status: 'incoming', role: 'callee', peerUid: currentUser.uid, peerName: myProfile.name, peerPhoto: myProfile.photo || '', chatId: window.currentCallId });
+
+  // 🚀 السحر هنا: إرسال إشعار فوري للطرف الآخر لإيقاظ هاتفه من النوم لكي ترن المكالمة!
+  try {
+    const friendSnap = await db.ref('users/' + currentCallPeer).once('value');
+    if (friendSnap.exists() && friendSnap.val().fcmToken) {
+      fetch(`${VERCEL_URL}/api/send`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          token: friendSnap.val().fcmToken, 
+          title: 'مكالمة واردة 📞', 
+          body: myProfile.name + ' يتصل بك...', 
+          icon: 'icon-192.png',
+          msgKey: 'call_wakeup', 
+          chatId: window.currentCallId 
+        }) 
+      }).catch(e=>{});
+    }
+  } catch (err) {}
 }
 
 async function acceptCall() {
   if (!currentCallPeer) return;
-  const acceptBtn = document.getElementById('wa-incoming-row'), statusView = document.getElementById('call-status-view'), ringAudio = document.getElementById('ringtone-audio');
+  const incomingRow = document.getElementById('wa-incoming-row'), activeRow = document.getElementById('wa-active-call-row'), statusView = document.getElementById('call-status-view'), ringAudio = document.getElementById('ringtone-audio');
   
   if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
-  if(acceptBtn) acceptBtn.style.display = 'none'; 
+  if(incomingRow) incomingRow.style.display = 'none'; 
+  if(activeRow) activeRow.style.display = 'flex'; 
   if(statusView) statusView.textContent = 'جاري التوصيل...';
   
   await joinAgoraVoice(window.currentCallId);
@@ -3476,6 +3500,12 @@ function forceEndCallUI() {
     window.callAudioCtx = null;
   }
   window.currentCallId = null;
+  
+  // إعادة الأزرار لشكلها الطبيعي للمكالمة القادمة
+  const incomingRow = document.getElementById('wa-incoming-row'), activeRow = document.getElementById('wa-active-call-row');
+  if(incomingRow) incomingRow.style.display = 'none';
+  if(activeRow) activeRow.style.display = 'flex';
+  
   if (document.getElementById('screen-call').classList.contains('active')) renderScreenUI('chat');
 }
 
