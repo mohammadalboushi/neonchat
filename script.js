@@ -3506,20 +3506,13 @@ function forceEndCallUI() {
   if(incomingRow) incomingRow.style.display = 'none';
   if(activeRow) activeRow.style.display = 'flex';
   
-  if (document.getElementById('screen-call').classList.contains('active')) renderScreenUI('chat');
-}
-
-// 🚀 دوال التحكم بواجهة المكالمة وبطاقة الصوت
-let callIsMuted = false;
-function toggleMuteCall() {
-  callIsMuted = !callIsMuted;
-  const btn = document.getElementById('btn-mute-call');
-  if (callIsMuted) {
-    btn.classList.add('active');
-    if (window.localCallTrack) window.localCallTrack.setMuted(true);
-  } else {
-    btn.classList.remove('active');
-    if (window.localCallTrack) window.localCallTrack.setMuted(false);
+  // 🚀 الحل الجذري: إعادة بناء المحادثة برمجياً لربط الفايربيس من جديد
+  if (document.getElementById('screen-call').classList.contains('active')) {
+      if (currentChat && currentChat.chatId) {
+          openChat(currentChat.chatId, currentChat.friendUid, currentChat.friendProfile);
+      } else {
+          showScreen('home');
+      }
   }
 }
 
