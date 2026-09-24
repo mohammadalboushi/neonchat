@@ -34,7 +34,8 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { token, title, body, icon, url } = req.body;
+  // 🚀 استقبال الـ msgKey والـ chatId من الطلب
+  const { token, title, body, icon, url, msgKey, chatId } = req.body;
 
   if (!token) return res.status(400).json({ error: 'Token is required' });
 
@@ -42,15 +43,16 @@ module.exports = async (req, res) => {
 
   const message = {
     token: token,
-    // 🚀 التعديل الجذري: نرسل الداتا المخفية للأندرويد ليتم إيقاظ التطبيق إجبارياً في الخلفية
     data: {
       title: title || 'رسالة جديدة',
       body: body || 'لديك رسالة جديدة',
+      // 🚀 إرفاق البيانات المخفية للأندرويد (يجب أن تكون نصوص String حصراً)
+      msgKey: String(msgKey || ''),
+      chatId: String(chatId || '')
     },
     android: {
       priority: 'high',
     },
-    // 🚀 نوجه إشعارات الويب للمتصفحات حصراً لتعمل بشكل منفصل دون التأثير على التطبيق
     webpush: {
       headers: {
         urgency: 'high',
