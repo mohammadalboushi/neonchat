@@ -9,14 +9,15 @@ if (!admin.apps.length) {
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
       privateKey: pk,
-    })
+    }),
+    // 🚀 هذا هو السطر الحاسم الذي كان ينقصنا لتجنب الخطأ 500
+    databaseURL: "https://neonchat-2df05-default-rtdb.firebaseio.com"
   });
 }
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Credentials', true);
   
-  // نفس الحمايات الأمنية للمنافذ
   const allowedOrigins = ['https://neonchat.mooo.com', 'https://mohammadalboushi.github.io', 'http://localhost:2435', 'http://localhost:5500'];
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
@@ -42,7 +43,6 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // 🚀 تحديث حالة الرسالة إلى "تم الاستلام" (delivered: true) في قاعدة بيانات فايربيس
     const db = admin.database();
     await db.ref(`chats/${chatId}/messages/${msgKey}`).update({ delivered: true });
     
