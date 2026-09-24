@@ -1535,73 +1535,166 @@ body {
   }
 }
 
-/* CALL SCREEN */
+/* CALL SCREEN (WhatsApp Premium Dark Style) */
+#screen-call {
+  background-color: #0b141a !important; 
+  background-image: url('https://i.ibb.co/sK9kXZR/wa-pattern.png') !important; 
+  background-size: cover;
+  background-position: center;
+  background-blend-mode: overlay;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.call-top-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 40px 20px 20px;
+  width: 100%;
+}
+
+.call-encryption-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #8696a0;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.call-avatar-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 20px;
+}
+
 .call-pulse {
-  width: 120px;
-  height: 120px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));
+  background: linear-gradient(135deg, var(--bg-surface), #1f2c34);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 48px;
+  font-size: 56px;
   color: white;
   font-weight: bold;
-  box-shadow: 0 0 0 0 rgba(0, 240, 255, 0.6);
-  animation: pulse-ring 1.5s infinite;
-  border: 3px solid var(--neon-cyan);
-  margin: 0 auto 20px;
+  margin: 0 auto;
   overflow: hidden;
   object-fit: cover;
+  border: 4px solid #1f2c34;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
-@keyframes pulse-ring {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(0, 240, 255, 0.6);
-  }
-
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 25px rgba(0, 240, 255, 0);
-  }
-
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(0, 240, 255, 0);
-  }
+.wa-controls-panel {
+  background: #1f2c34;
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  padding: 24px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  box-shadow: 0 -5px 30px rgba(0,0,0,0.4);
 }
 
-.call-btn {
-  width: 64px;
-  height: 64px;
+.wa-controls-row {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  width: 100%;
+}
+
+.wa-control-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.wa-control-btn {
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
+  background: #374248;
   border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: transform 0.2s;
   color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.wa-control-btn:active { transform: scale(0.9); }
+.wa-control-btn.active { background: #d1d7db; color: #1f2c34; }
+.wa-control-btn.disabled { opacity: 0.4; pointer-events: none; }
+
+.wa-control-btn.btn-red {
+  background: #f15c6d;
+  width: 64px;
+  height: 64px;
+}
+.wa-control-btn.btn-red:active { background: #d04f5e; }
+
+.wa-control-btn.btn-green {
+  background: #00a884;
+  width: 64px;
+  height: 64px;
+  animation: pulse-green 1.5s infinite;
+}
+@keyframes pulse-green {
+  0% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0.4); }
+  70% { box-shadow: 0 0 0 15px rgba(0, 168, 132, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 168, 132, 0); }
 }
 
-.call-btn:active {
-  transform: scale(0.9);
+.wa-control-label {
+  font-size: 13px;
+  color: #d1d7db;
+  font-weight: 600;
 }
 
-.btn-red {
-  background: rgba(255, 0, 144, 0.15);
-  border: 2px solid var(--neon-pink);
-  color: var(--neon-pink);
-  box-shadow: 0 0 15px rgba(255, 0, 144, 0.4);
+/* بطاقة مخرج الصوت (Bottom Sheet) */
+#audio-route-sheet {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: #1f2c34;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  padding: 16px 0 24px;
+  z-index: 1000;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 0 -4px 30px rgba(0,0,0,0.6);
 }
+#audio-route-sheet.open {
+  transform: translateY(0);
+}
+.audio-route-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  color: #e9edef;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.audio-route-item:active { background: rgba(255,255,255,0.05); }
+.audio-route-item.selected { color: #00a884; }
+.audio-route-item svg { width: 24px; height: 24px; }
 
-.btn-green {
-  background: rgba(0, 255, 136, 0.15);
-  border: 2px solid var(--neon-green);
-  color: var(--neon-green);
-  box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+#audio-route-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
 }
+#audio-route-overlay.open { opacity: 1; pointer-events: all; }
 /* ═══════════════════════════════════
    PREMIUM DARK CHAT UI - وضع ليلي احترافي وفخم
 ═══════════════════════════════════ */

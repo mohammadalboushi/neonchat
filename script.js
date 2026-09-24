@@ -3371,20 +3371,31 @@ function initCallListener(uid) {
     currentCallPeer = data.peerUid; 
     window.currentCallId = data.chatId;
     
-    const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('btn-accept-call'), ringAudio = document.getElementById('ringtone-audio');
+    const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('wa-incoming-row'), ringAudio = document.getElementById('ringtone-audio');
     
     if (nameView) nameView.textContent = data.peerName || 'مستخدم';
-    if (avatarView) avatarView.textContent = (data.peerName || '?').charAt(0);
+    if (avatarView) avatarView.innerHTML = data.peerPhoto ? `<img src="${data.peerPhoto}" style="width:100%;height:100%;object-fit:cover;">` : (data.peerName || '?').charAt(0);
     
     if (data.status === 'incoming') {
-      if(statusView) { statusView.textContent = 'يتصل بك... 📞'; statusView.style.color = 'var(--neon-cyan)'; }
+      if(statusView) { statusView.textContent = 'يتصل بك...'; statusView.style.color = '#8696a0'; }
       if(acceptBtn) acceptBtn.style.display = 'flex';
       if(ringAudio && ringAudio.paused) ringAudio.play().catch(e=>{});
       if (navigator.vibrate) navigator.vibrate([500, 300, 500, 300, 500]);
       renderScreenUI('call');
+      
+      // 🚀 إرسال إشارة "يرن..." للمتصل فوراً بمجرد فتح الخط وتوفر الإنترنت
+      db.ref('calls/' + data.peerUid).update({ ringStatus: 'ringing' });
+      
+      if(window.AndroidCall) window.AndroidCall.startCall();
+    } else if (data.status === 'calling') {
+      // 🚀 إذا كنت أنت المتصل، راقب إذا كان الهاتف يرن هناك
+      if (data.ringStatus === 'ringing' && statusView) {
+        statusView.textContent = 'يرن...';
+      }
     } else if (data.status === 'answered') {
       if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
       if(acceptBtn) acceptBtn.style.display = 'none';
+      if(statusView) statusView.textContent = '0:00';
       
       if (data.role === 'caller' && !window.callTimerInt) {
         startCallTimer();
@@ -3400,34 +3411,34 @@ async function startCall() {
   currentCallPeer = currentChat.friendUid; 
   window.currentCallId = [currentUser.uid, currentCallPeer].sort().join('_');
   
-  const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('btn-accept-call'), ringAudio = document.getElementById('ringtone-audio');
+  const avatarView = document.getElementById('call-avatar-view'), nameView = document.getElementById('call-name-view'), statusView = document.getElementById('call-status-view'), acceptBtn = document.getElementById('wa-incoming-row'), ringAudio = document.getElementById('ringtone-audio');
   
   if(nameView) nameView.textContent = currentChat.friendProfile.name; 
-  if(avatarView) avatarView.textContent = (currentChat.friendProfile.name || '?').charAt(0);
-  if(statusView) { statusView.textContent = 'جاري الاتصال...'; statusView.style.color = 'var(--neon-cyan)'; }
+  if(avatarView) avatarView.innerHTML = currentChat.friendProfile.photo ? `<img src="${currentChat.friendProfile.photo}" style="width:100%;height:100%;object-fit:cover;">` : (currentChat.friendProfile.name || '?').charAt(0);
+  if(statusView) { statusView.textContent = 'جاري الاتصال...'; statusView.style.color = '#8696a0'; }
   if(acceptBtn) acceptBtn.style.display = 'none';
   
   renderScreenUI('call');
   
-  // 🚀 المتصل يدخل غرفة الصوت فوراً (هذا يحل مشكلة كتم الصوت من المتصفح)
   await joinAgoraVoice(window.currentCallId);
+  if(window.AndroidCall) window.AndroidCall.startCall();
 
   if(ringAudio && ringAudio.paused) ringAudio.play().catch(e=>{});
 
-  await db.ref('calls/' + currentUser.uid).set({ status: 'calling', role: 'caller', peerUid: currentCallPeer, peerName: currentChat.friendProfile.name, chatId: window.currentCallId });
-  await db.ref('calls/' + currentCallPeer).set({ status: 'incoming', role: 'callee', peerUid: currentUser.uid, peerName: myProfile.name, chatId: window.currentCallId });
+  await db.ref('calls/' + currentUser.uid).set({ status: 'calling', role: 'caller', peerUid: currentCallPeer, peerName: currentChat.friendProfile.name, peerPhoto: currentChat.friendProfile.photo || '', chatId: window.currentCallId });
+  await db.ref('calls/' + currentCallPeer).set({ status: 'incoming', role: 'callee', peerUid: currentUser.uid, peerName: myProfile.name, peerPhoto: myProfile.photo || '', chatId: window.currentCallId });
 }
 
 async function acceptCall() {
   if (!currentCallPeer) return;
-  const acceptBtn = document.getElementById('btn-accept-call'), statusView = document.getElementById('call-status-view'), ringAudio = document.getElementById('ringtone-audio');
+  const acceptBtn = document.getElementById('wa-incoming-row'), statusView = document.getElementById('call-status-view'), ringAudio = document.getElementById('ringtone-audio');
   
   if(ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
   if(acceptBtn) acceptBtn.style.display = 'none'; 
   if(statusView) statusView.textContent = 'جاري التوصيل...';
   
-  // 🚀 المستقبل يدخل غرفة الصوت فوراً بمجرد كبسة الزر
   await joinAgoraVoice(window.currentCallId);
+  if(window.AndroidCall) window.AndroidCall.startCall();
   
   await db.ref('calls/' + currentUser.uid).update({ status: 'answered' }); 
   await db.ref('calls/' + currentCallPeer).update({ status: 'answered' });
@@ -3442,6 +3453,8 @@ function endCall() {
 }
 
 function forceEndCallUI() {
+  if(window.AndroidCall) window.AndroidCall.endCall();
+  
   if (window.callTimerInt) { clearInterval(window.callTimerInt); window.callTimerInt = null; }
   const ringAudio = document.getElementById('ringtone-audio'); 
   if (ringAudio && !ringAudio.paused) { ringAudio.pause(); ringAudio.currentTime = 0; }
@@ -3454,7 +3467,6 @@ function forceEndCallUI() {
   if (window.rtcCallClient) { 
     window.rtcCallClient.leave(); 
   }
-  // إغلاق فلاتر الصوت والمايكروفون المخصص لتنظيف الذاكرة
   if (window.callRawStream) {
     window.callRawStream.getTracks().forEach(t => t.stop());
     window.callRawStream = null;
@@ -3465,6 +3477,55 @@ function forceEndCallUI() {
   }
   window.currentCallId = null;
   if (document.getElementById('screen-call').classList.contains('active')) renderScreenUI('chat');
+}
+
+// 🚀 دوال التحكم بواجهة المكالمة وبطاقة الصوت
+let callIsMuted = false;
+function toggleMuteCall() {
+  callIsMuted = !callIsMuted;
+  const btn = document.getElementById('btn-mute-call');
+  if (callIsMuted) {
+    btn.classList.add('active');
+    if (window.localCallTrack) window.localCallTrack.setMuted(true);
+  } else {
+    btn.classList.remove('active');
+    if (window.localCallTrack) window.localCallTrack.setMuted(false);
+  }
+}
+
+function openAudioRouteSheet() {
+  document.getElementById('audio-route-overlay').classList.add('open');
+  document.getElementById('audio-route-sheet').classList.add('open');
+}
+function closeAudioRouteSheet() {
+  document.getElementById('audio-route-overlay').classList.remove('open');
+  document.getElementById('audio-route-sheet').classList.remove('open');
+}
+
+function selectAudioRoute(route) {
+  document.querySelectorAll('.audio-route-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('route-' + route).classList.add('selected');
+  
+  const iconCurrent = document.getElementById('icon-route-current');
+  if (route === 'speaker') {
+    iconCurrent.innerHTML = '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+    document.getElementById('btn-route-call').classList.add('active');
+  } else if (route === 'bluetooth') {
+    iconCurrent.innerHTML = '<polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"></polyline>';
+    document.getElementById('btn-route-call').classList.add('active');
+  } else {
+    iconCurrent.innerHTML = '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>';
+    document.getElementById('btn-route-call').classList.remove('active');
+  }
+  
+  if (window.AndroidCall) {
+    window.AndroidCall.setAudioRoute(route);
+  }
+  closeAudioRouteSheet();
+}
+
+function minimizeCall() {
+  showToast('قريباً: تصغير المكالمة', 'info');
 }
 
 async function joinAgoraVoice(channelName) {
