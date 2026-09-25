@@ -3711,8 +3711,8 @@ function toggleMuteCall() {
     if (window.localCallTrack) window.localCallTrack.setMuted(true);
   } else {
     btn.classList.remove('active');
-    // 🚀 إعادة فتح المايك
-    if (window.callPreGain) window.callPreGain.gain.value = 1.0; 
+    // 🚀 إعادة فتح المايك بقوة التضخيم الجديدة
+    if (window.callPreGain) window.callPreGain.gain.value = 3.5; 
     if (window.localCallTrack) window.localCallTrack.setMuted(false);
   }
 }
@@ -3739,14 +3739,14 @@ async function joinAgoraVoice(channelName) {
     if (window.rtcCallClient.connectionState === "DISCONNECTED") {
       await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
       
-      // 1. إغلاق عزل الصدى والضجيج للحصول على جودة الاستوديو المطلوبة
-      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      // 1. إغلاق عزل الصدى والضجيج وتفعيل التضخيم لتقوية المايك
+      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
       window.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       
             // 2. تطبيق الفلاتر
       const source = window.callAudioCtx.createMediaStreamSource(window.callRawStream);
       const preGain = window.callAudioCtx.createGain(); 
-      preGain.gain.value = callIsMuted ? 0 : 1.0; 
+      preGain.gain.value = callIsMuted ? 0 : 3.5; // 🚀 تضخيم الصوت 3 أضعاف ونصف لتعويض ضعف المايك
       window.callPreGain = preGain;
       
       const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
