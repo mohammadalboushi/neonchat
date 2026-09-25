@@ -538,8 +538,17 @@ function cleanupListeners() {
 function confirmLogout() {
   openModal('تسجيل الخروج', 'هل أنت متأكد أنك تريد تسجيل الخروج؟').then(ok => {
     if (ok) {
-      if (currentUser) db.ref('users/' + currentUser.uid + '/status').set(Date.now());
+      if (currentUser) {
+        db.ref('users/' + currentUser.uid + '/status').set(Date.now());
+        db.ref('users/' + currentUser.uid + '/fcmToken').remove();
+      }
       cleanupListeners();
+      
+      // 🚀 مسح الـ UID من الذاكرة الدائمة للأندرويد لمنع تداخل الإشعارات مستقبلاً
+      if (window.AndroidCall && typeof window.AndroidCall.saveUid === 'function') {
+        window.AndroidCall.saveUid("");
+      }
+
       auth.signOut().then(() => {
         localStorage.removeItem('myProfile');
         const avatarEl = document.getElementById('profile-avatar');
@@ -1060,7 +1069,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   });
 }
 
-function attachMessages(chatId) {
+async function attachMessages(chatId) {
   const area = document.getElementById('messages-area');
   area.innerHTML = '';
   lastMsgDate = '';
@@ -1093,43 +1102,43 @@ function attachMessages(chatId) {
     friendPhoto: myProfile.photo || ''
   });
 
-  const cacheKey = 'chat_cache_' + chatId;
-  const cachedData = localStorage.getItem(cacheKey);
-  let liveMsgsCache = [];
-  
-  if (cachedData) {
-    try {
-      liveMsgsCache = JSON.parse(cachedData);
-      const fragment = document.createDocumentFragment();
-      let tempLastDate = '';
-      
-      liveMsgsCache.forEach(m => {
-        const dStr = formatDate(m.timestamp);
-        if (dStr !== tempLastDate) {
-          const sep = document.createElement('div');
-          sep.className = 'date-sep';
-          sep.innerHTML = `<span>${dStr}</span>`;
-          fragment.appendChild(sep);
-          tempLastDate = dStr;
-        }
-        fragment.appendChild(buildMsgEl(m, true));
-      });
-      
-      area.appendChild(fragment);
-      area.scrollTop = area.scrollHeight;
-      
-                        if (liveMsgsCache.length > 0) {
-                    lastMsgDate = tempLastDate;
-                    oldestMsgKey = liveMsgsCache[0].key;
-                    oldestMsgTimestamp = liveMsgsCache[0].timestamp;
-                  }
-                } catch (e) {
-                  liveMsgsCache = [];
+            // 🚀 جلب الكاش من IndexedDB بدلاً من LocalStorage لضمان استيعاب مئات الميغابايتات دون انهيار
+          let liveMsgsCache = await chatCacheDB.get(chatId);
+          
+          if (liveMsgsCache && liveMsgsCache.length > 0) {
+            try {
+              const fragment = document.createDocumentFragment();
+              let tempLastDate = '';
+              
+              liveMsgsCache.forEach(m => {
+                const dStr = formatDate(m.timestamp);
+                if (dStr !== tempLastDate) {
+                  const sep = document.createElement('div');
+                  sep.className = 'date-sep';
+                  sep.innerHTML = `<span>${dStr}</span>`;
+                  fragment.appendChild(sep);
+                  tempLastDate = dStr;
                 }
-              }
+                fragment.appendChild(buildMsgEl(m, true));
+              });
+              
+              area.appendChild(fragment);
+              area.scrollTop = area.scrollHeight;
+              
+              lastMsgDate = tempLastDate;
+              oldestMsgKey = liveMsgsCache[0].key;
+              oldestMsgTimestamp = liveMsgsCache[0].timestamp;
+            } catch (e) {
+              liveMsgsCache = [];
+            }
+          } else {
+              liveMsgsCache = [];
+          }
 
-              // 🚀 عرض الرسائل المعلقة (الأوفلاين) مباشرة عند فتح المحادثة لتجنب اختفاء الفويسات
-                // 🚀 عرض الرسائل المعلقة (الأوفلاين) مباشرة عند فتح المحادثة لتجنب اختفاء الفويسات (عبر IndexedDB)
+          // 🚀 تنظيف LocalStorage القديم إذا كان موجوداً لنفس المحادثة لتحرير المساحة
+          localStorage.removeItem('chat_cache_' + chatId);
+
+          // 🚀 عرض الرسائل المعلقة (الأوفلاين) مباشرة عند فتح المحادثة لتجنب اختفاء الفويسات
   pendingDB.getAll().then(pending => {
     pending.filter(p => p.chatId === chatId).forEach(p => {
        if (!document.getElementById('row_' + p.key) && !document.getElementById('msg-' + p.key)) {
@@ -1174,7 +1183,7 @@ function attachMessages(chatId) {
              liveMsgsCache[cacheIdx].read = m.read;
              liveMsgsCache[cacheIdx].listened = m.listened;
              liveMsgsCache[cacheIdx].delivered = m.delivered;
-             localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+             chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
           }
         });
       }
@@ -1217,7 +1226,7 @@ function attachMessages(chatId) {
     if (!existsInCache) {
       liveMsgsCache.push(msg);
       if (liveMsgsCache.length > 100) liveMsgsCache.shift(); 
-      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+      chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
 
     if (document.getElementById('msg-' + msg.key)) {
@@ -1369,7 +1378,7 @@ function attachMessages(chatId) {
     const idx = liveMsgsCache.findIndex(m => m.key === msg.key);
     if (idx !== -1) {
       liveMsgsCache[idx] = msg;
-      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+      chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
 
     if (msg.isEdited && !msg.isDeleted && msg.type === 'text') {
@@ -1438,7 +1447,7 @@ function attachMessages(chatId) {
     const idx = liveMsgsCache.findIndex(m => m.key === snap.key);
     if (idx !== -1) {
       liveMsgsCache.splice(idx, 1);
-      localStorage.setItem(cacheKey, JSON.stringify(liveMsgsCache));
+      chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
   });
 }
@@ -3876,7 +3885,8 @@ function clearChatHistory(chatId) {
   openModal('مسح', 'مسح رسائل هذه المحادثة من جهازك؟').then(ok => {
     if (ok) {
       db.ref('chats/' + chatId + '/messages').remove().then(() => {
-        localStorage.removeItem('chat_cache_' + chatId);
+        chatCacheDB.delete(chatId); // 🚀 حذف الكاش من IndexedDB
+        localStorage.removeItem('chat_cache_' + chatId); // احتياطياً مسح القديم
         if (currentChat && currentChat.chatId === chatId) {
           document.getElementById('messages-area').innerHTML = '';
         }
@@ -4436,6 +4446,39 @@ const pendingDB = {
     const db = await this.init();
     const tx = db.transaction('pending', 'readwrite');
     tx.objectStore('pending').delete(key);
+  }
+};
+
+// 🚀 نظام IndexedDB المخصص لكاش الرسائل (بديل LocalStorage لتفادي الانهيار)
+const chatCacheDB = {
+  init: function() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("NeonChatMsgsCacheDB", 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore('chats', {keyPath: 'chatId'});
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror = e => reject(e.target.error);
+    });
+  },
+  save: async function(chatId, messages) {
+    const db = await this.init();
+    return new Promise(resolve => {
+      const tx = db.transaction('chats', 'readwrite');
+      tx.objectStore('chats').put({ chatId, messages });
+      tx.oncomplete = () => resolve();
+    });
+  },
+  get: async function(chatId) {
+    const db = await this.init();
+    return new Promise(resolve => {
+      const tx = db.transaction('chats', 'readonly');
+      const req = tx.objectStore('chats').get(chatId);
+      req.onsuccess = () => resolve(req.result ? req.result.messages : []);
+    });
+  },
+  delete: async function(chatId) {
+    const db = await this.init();
+    const tx = db.transaction('chats', 'readwrite');
+    tx.objectStore('chats').delete(chatId);
   }
 };
 
