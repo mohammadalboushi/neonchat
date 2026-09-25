@@ -910,15 +910,13 @@ function wakeUpCloudinary() {
   fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', { method: 'POST', body: fd }).catch(()=>{});
 }
 
+window.isChatOpening = false;
 async function openChat(chatId, friendUid, friendProfile = null) {
+  history.pushState({ screen: 'chat' }, '', ''); // 🚀 إصلاح الهيستوري لتبقى داخل المحادثة
   renderScreenUI('chat'); 
   
-  // 🚀 حماية من النقرات المزدوجة (Ghost Clicks) وتداخل اللمس عند فتح المحادثة
-  const chatScreenEl = document.getElementById('screen-chat');
-  if(chatScreenEl) {
-     chatScreenEl.style.pointerEvents = 'none';
-     setTimeout(() => { chatScreenEl.style.pointerEvents = 'all'; }, 400);
-  }
+  window.isChatOpening = true;
+  setTimeout(() => { window.isChatOpening = false; }, 600); // 🚀 تجميد التفاعلات نصف ثانية
 
   detachMessages();
   wakeUpCloudinary(); // 🚀 تسخين السيرفر أول ما تفتح المحادثة
@@ -1663,13 +1661,13 @@ function buildMsgEl(msg, isBackground = false) {
     const isEncrypted = msg.url.includes('enc_img_') || msg.url.endsWith('.bin');
     
     if (window.localImageCache && window.localImageCache[msg.url]) {
-        bubble.innerHTML = `${replyHtml}<img id="${imgId}" class="msg-img" src="${window.localImageCache[msg.url]}" style="pointer-events: auto;" onclick="window.previewImg(this.src)"/>${timeEl}${reactHtml}`;
+        bubble.innerHTML = `${replyHtml}<img id="${imgId}" class="msg-img" src="${window.localImageCache[msg.url]}" onclick="window.previewImg(this.src)"/>${timeEl}${reactHtml}`;
     } else {
         bubble.innerHTML = `${replyHtml}
             <div id="loader_${imgId}" style="width:200px; height:150px; background:rgba(0,240,255,0.05); border-radius:12px; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-subtle);">
                 <div style="width:24px; height:24px; border:2px solid var(--neon-cyan); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite;"></div>
             </div>
-            <img id="${imgId}" class="msg-img" src="" style="display:none; pointer-events: auto;" onclick="window.previewImg(this.src)"/>
+            <img id="${imgId}" class="msg-img" src="" style="display:none;" onclick="window.previewImg(this.src)"/>
             ${timeEl}${reactHtml}`;
         
         if (!msg.isPending) {
@@ -2174,6 +2172,7 @@ function confirmDeleteMsg(msgKey) {
 let currentScale = 1; let imgTx = 0, imgTy = 0; let imgStartX = 0, imgStartY = 0;
 
 window.previewImg = function(url) {
+  if (window.isChatOpening) return; // 🚀 الحماية الحديدية من النقرات الوهمية
   const img = document.getElementById('img-preview-el');
   
   // معالجة الرابط: إذا كانت الصورة من كلاوديناري ومصغرة، نطلب النسخة الأصلية عالية الدقة
@@ -2810,6 +2809,7 @@ window.pauseCurrentVoiceNote = function() {
 };
 
 async function playVoice(btn, url, msgKey, isOut) {
+  if (window.isChatOpening) return; // 🚀 الحماية الحديدية من النقرات الوهمية
   if (isOut === false && currentChat) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
     const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
@@ -3157,6 +3157,7 @@ function downloadVideoLocally(msg, containerEl) {
 }
 
 function openVideoPlayer(url) {
+  if (window.isChatOpening) return; // 🚀 الحماية الحديدية من النقرات الوهمية
   const overlay = document.getElementById('video-preview-overlay');
   
   // إعادة ضبط الستايلات في حال كان مصغر سابقاً
