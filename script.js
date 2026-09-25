@@ -285,7 +285,11 @@ if(btnLogin) {
     if (!rawEmail || !pass) { showToast('الرجاء إدخال اسم المستخدم وكلمة المرور', 'error'); return; }
     const email = formatEmail(rawEmail);
     btnLogin.disabled = true; btnLogin.textContent = 'جاري الدخول...';
-    try { await auth.signInWithEmailAndPassword(email, pass); } 
+    try { 
+      // 🚀 إجبار الحفظ الداخلي قبل الدخول مباشرة
+      await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+      await auth.signInWithEmailAndPassword(email, pass); 
+    } 
     catch (e) { showToast(e.code === 'auth/wrong-password' ? 'كلمة المرور غير صحيحة!' : 'تأكد من البيانات', 'error'); } 
     finally { btnLogin.disabled = false; btnLogin.textContent = 'دخول'; }
   });
@@ -300,6 +304,8 @@ if(btnSignup) {
     const email = formatEmail(rawEmail);
     btnSignup.disabled = true; btnSignup.textContent = 'جاري الإنشاء...';
     try {
+      // 🚀 إجبار الحفظ الداخلي قبل إنشاء الحساب مباشرة
+      await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       const userCred = await auth.createUserWithEmailAndPassword(email, pass);
       if (!rawEmail.includes('@')) await userCred.user.updateProfile({ displayName: rawEmail });
       showToast('تم إنشاء الحساب بنجاح!', 'success');
