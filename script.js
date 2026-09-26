@@ -99,51 +99,9 @@ const msgReadObserver = new IntersectionObserver((entries, observer) => {
 }, { threshold: 0.1 });
 
 /* ═══════════════════════════════════
-   BACKGROUND CANVAS (مُحسن للبطارية)
+   BACKGROUND CANVAS - تم الإلغاء لتوفير الشحن
 ═══════════════════════════════════ */
-(function initBg() {
-  const canvas = document.getElementById('bg-canvas');
-  const ctx = canvas.getContext('2d');
-  let W, H, particles = [];
-
-  function resize() {
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  }
-  resize();
-  window.addEventListener('resize', resize);
-
-  function mkP() {
-    return {
-      x: Math.random() * W, y: Math.random() * H,
-      r: Math.random() * 1.5 + .3,
-      vx: (Math.random() - .5) * .15, vy: (Math.random() - .5) * .15,
-      a: Math.random() * .6 + .2
-    };
-  }
-  for (let i = 0; i < 40; i++) particles.push(mkP()); 
-
-  function draw() {
-    if (document.hidden || (document.getElementById('screen-chat') && document.getElementById('screen-chat').classList.contains('active'))) {
-      setTimeout(() => requestAnimationFrame(draw), 500);
-      return;
-    }
-    ctx.clearRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(0,240,255,0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    particles.forEach(p => {
-      p.x += p.vx; p.y += p.vy;
-      if (p.x < 0 || p.x > W) p.vx *= -1;
-      if (p.y < 0 || p.y > H) p.vy *= -1;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(0,240,255,${p.a})`; ctx.fill();
-    });
-    requestAnimationFrame(draw);
-  }
-  draw();
-})();
+// تم مسح كود الـ Canvas القديم بالكامل للحفاظ على بطارية الهاتف ومنع الحرارة واستبداله بـ CSS
 
 /* ═══════════════════════════════════
    NAVIGATION & UTILS
@@ -174,6 +132,9 @@ window.addEventListener('popstate', e => {
   } else if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) { 
     closeMsgMenu(); 
     isPopupOpen = true; 
+  } else if (document.getElementById('main-menu-overlay') && document.getElementById('main-menu-overlay').classList.contains('open')) {
+    closeMainMenu();
+    isPopupOpen = true;
   } else if (modalOverlay && modalOverlay.classList.contains('open')) { 
     modalOverlay.classList.remove('open'); 
     isPopupOpen = true; 
@@ -332,6 +293,29 @@ async function initMicrophone() {
 }
 
 window.localImageCache = {}; // 🚀 السحر هون: ذاكرة تخزين مؤقتة لمنع رجفة الصورة وإعادة تحميلها
+
+window.avatarMemory = {};
+async function applySmartCache(url, elOrId) {
+  if (!url) return;
+  const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+  if (!el) return;
+  if (window.avatarMemory[url]) { el.src = window.avatarMemory[url]; return; }
+  if ('caches' in window) {
+    try {
+      const cache = await caches.open('media-cache');
+      const res = await cache.match(url);
+      if (res) {
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        window.avatarMemory[url] = objUrl;
+        el.src = objUrl;
+      } else {
+        el.src = url; // للتحميل أول مرة بس
+        fetch(url).then(netRes => { if(netRes.ok) cache.put(url, netRes); }).catch(()=>{});
+      }
+    } catch(e) { el.src = url; }
+  } else { el.src = url; }
+}
 
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.log("Auth Error:", err)).finally(() => {
   auth.onAuthStateChanged(async user => {
@@ -564,7 +548,10 @@ function updateHomeHeader() {
   document.getElementById('home-subtitle').textContent = 'مرحباً، ' + myProfile.name.split(' ')[0];
   document.getElementById('my-id-badge').textContent = myProfile.uniqueId;
   const av = document.getElementById('home-avatar');
-  if (myProfile.photo) av.outerHTML = `<img class="home-avatar" src="${myProfile.photo}" onclick="showScreen('profile')" id="home-avatar" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\' onclick=\\'showScreen(\\&quot;profile\\&quot;)\\'>${myProfile.name.charAt(0)}</div>'"/>`;
+  if (myProfile.photo) {
+    av.outerHTML = `<img class="home-avatar" id="home-avatar" onclick="window.previewImg('${myProfile.photo}')" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\' onclick=\\'showScreen(\\&quot;profile\\&quot;)\\'>${myProfile.name.charAt(0)}</div>'"/>`;
+    applySmartCache(myProfile.photo, 'home-avatar');
+  }
   else { av.className = 'home-avatar-placeholder'; av.textContent = myProfile.name.charAt(0); }
 }
 
@@ -578,7 +565,10 @@ function populateProfile() {
   document.getElementById('profile-name-input').value = myProfile.name;
   document.getElementById('profile-id-value').textContent = myProfile.uniqueId;
   const av = document.getElementById('profile-avatar');
-  if (myProfile.photo) av.outerHTML = `<img class="profile-avatar" src="${myProfile.photo}" id="profile-avatar"/>`;
+  if (myProfile.photo) {
+    av.outerHTML = `<img class="profile-avatar" id="profile-avatar"/>`;
+    applySmartCache(myProfile.photo, 'profile-avatar');
+  }
   else av.textContent = myProfile.name.charAt(0);
 }
 
@@ -760,30 +750,33 @@ function renderChatsList(filter = '') {
   if (!filtered.length) { empty.style.display = 'flex'; list.querySelectorAll('.chat-item').forEach(e => e.remove()); return; }
   empty.style.display = 'none'; list.querySelectorAll('.chat-item').forEach(e => e.remove());
   
-  filtered.forEach(([chatId, data]) => {
-    const div = document.createElement('div'); div.className = 'chat-item';
-    const liveData = getFriendData(data.friendUid, data);
-    
-    const initials = (liveData.name || '?').charAt(0);
-    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
-    
-    // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
-    const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
-    const onlineBadge = isOnline ? `<div style="position:absolute; bottom:2px; right:2px; width:13px; height:13px; background:var(--neon-green); border-radius:50%; border:2px solid var(--bg-surface); z-index:2;"></div>` : '';
-    
-    const lastMsg = data.lastMsg || 'اضغط لبدء المحادثة';
-    div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(liveData.name||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
-    
-    // التمرير السريع الفوري مع إرسال البيانات المحدثة
-    div.addEventListener('click', () => openChat(chatId, data.friendUid, { name: liveData.name, photo: liveData.photo }));
-    
-    let pressTimer;
-    div.addEventListener('touchstart', () => { pressTimer = setTimeout(() => { openHomeChatMenu(chatId, data.friendUid, liveData.name); }, 600); }, { passive: true });
-    div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
-    div.addEventListener('touchend', () => clearTimeout(pressTimer));
-    div.addEventListener('contextmenu', e => { e.preventDefault(); openHomeChatMenu(chatId, data.friendUid, liveData.name); });
-    list.appendChild(div);
-  });
+        filtered.forEach(([chatId, data]) => {
+        const div = document.createElement('div'); div.className = 'chat-item';
+        const liveData = getFriendData(data.friendUid, data);
+        
+        const initials = (liveData.name || '?').charAt(0);
+        const imgId = 'chat_av_' + chatId;
+        const avatarHtml = liveData.photo ? `<img id="${imgId}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
+        
+        // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
+        const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
+        const onlineBadge = isOnline ? `<div style="position:absolute; bottom:2px; right:2px; width:13px; height:13px; background:var(--neon-green); border-radius:50%; border:2px solid var(--bg-surface); z-index:2;"></div>` : '';
+        
+        const lastMsg = data.lastMsg || 'اضغط لبدء المحادثة';
+        div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(liveData.name||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
+        
+        // التمرير السريع الفوري مع إرسال البيانات المحدثة
+        div.addEventListener('click', () => openChat(chatId, data.friendUid, { name: liveData.name, photo: liveData.photo }));
+        
+        let pressTimer;
+        div.addEventListener('touchstart', () => { pressTimer = setTimeout(() => { openHomeChatMenu(chatId, data.friendUid, liveData.name); }, 600); }, { passive: true });
+        div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
+        div.addEventListener('touchend', () => clearTimeout(pressTimer));
+        div.addEventListener('contextmenu', e => { e.preventDefault(); openHomeChatMenu(chatId, data.friendUid, liveData.name); });
+        list.appendChild(div);
+        
+        if (liveData.photo) applySmartCache(liveData.photo, imgId);
+      });
 }
 
 function filterChats(val) { renderChatsList(val); }
@@ -833,14 +826,22 @@ async function sendFriendRequest(friendUid) {
 function initFriendRequestsListener(uid) {
   if (friendRequestsListener) db.ref('friendRequests/' + uid).off('value', friendRequestsListener);
   friendRequestsListener = db.ref('friendRequests/' + uid).on('value', snap => {
-    const list = document.getElementById('friend-requests-list'), badge = document.getElementById('home-req-badge');
-    if (!snap.exists()) { if (badge) badge.style.display = 'none'; if (list) list.innerHTML = '<div style="text-align:center;">لا توجد طلبات</div>'; return; }
+    const list = document.getElementById('friend-requests-list');
+    const badge = document.getElementById('home-req-badge');
+    const menuBadge = document.getElementById('menu-req-badge');
+    if (!snap.exists()) { 
+      if (badge) badge.style.display = 'none'; 
+      if (menuBadge) menuBadge.style.display = 'none'; 
+      if (list) list.innerHTML = '<div style="text-align:center;">لا توجد طلبات</div>'; 
+      return; 
+    }
     let count = 0, htmlStr = '';
     snap.forEach(reqSnap => {
       count++; const req = reqSnap.val();
       htmlStr += `<div class="search-result-card" style="padding:12px 16px;"><div class="search-result-avatar" style="width:40px;height:40px;">${(req.name || '?').charAt(0)}</div><div class="search-result-info"><div class="search-result-name" style="font-size:14px;margin-bottom:0;">${escHtml(req.name)}</div></div><div style="display:flex;gap:6px;"><button class="btn-primary" style="width:auto;padding:6px 12px;font-size:12px;background:var(--neon-green);box-shadow:none;" onclick="acceptFriendRequest('${req.uid}')">موافقة</button><button class="btn-danger" style="width:auto;padding:6px 12px;font-size:12px;" onclick="rejectFriendRequest('${req.uid}')">رفض</button></div></div>`;
     });
     if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+    if (menuBadge) { menuBadge.textContent = count; menuBadge.style.display = count > 0 ? 'flex' : 'none'; }
     if (list) list.innerHTML = htmlStr;
   });
 }
@@ -938,7 +939,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
-    avatarEl.outerHTML = `<img src="${friendProfile.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
+    avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
+    applySmartCache(friendProfile.photo, 'chat-header-avatar');
   } else {
     avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
   }
@@ -970,7 +972,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const avatarEl = document.getElementById('chat-header-avatar');
     if (avatarEl) {
       if (fData.photo) {
-        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
+        avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
+        applySmartCache(fData.photo, 'chat-header-avatar');
       } else {
         avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(fData.name||'?').charAt(0)}</div>`;
       }
@@ -1470,7 +1473,7 @@ function buildMsgEl(msg, isBackground = false) {
   let bgStyle = isOut ? 'background:linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));' : 'background:linear-gradient(135deg, var(--neon-blue), var(--neon-purple));';
   
   if (profile.photo) {
-    avatarNode.src = profile.photo;
+    applySmartCache(profile.photo, avatarNode);
     avatarNode.style.cssText = commonStyle + 'cursor:pointer;';
     avatarNode.onclick = (e) => {
       e.stopPropagation();
@@ -4019,9 +4022,40 @@ function startUpdateDownload(apkUrl) {
   if (window.AndroidDownloader && typeof window.AndroidDownloader.startAppUpdate === 'function') {
      window.AndroidDownloader.startAppUpdate(apkUrl);
   } else {
-     // دعم احتياطي إذا فتح التطبيق من المتصفح
-     window.open(apkUrl, '_blank');
-     closeUpdateModal();
+     // التحميل الاحترافي لمستخدمي المتصفح مع عرض شريط التقدم الفخم
+     const xhr = new XMLHttpRequest();
+     xhr.open('GET', apkUrl, true);
+     xhr.responseType = 'blob'; // سحب الملف ككتلة بيانات خام
+     
+     xhr.onprogress = function(e) {
+        if (e.lengthComputable) {
+           const percent = Math.round((e.loaded / e.total) * 100);
+           // تحديث الشريط فقط إذا لم يصل 100 لترك النهاية لدالة النجاح
+           if (percent < 100) window.updateAppProgress(percent);
+        }
+     };
+     
+     xhr.onload = function() {
+        if (xhr.status >= 200 && xhr.status < 300) {
+           window.updateAppProgress(100);
+           // تفعيل التحميل الفعلي للملف بعد اكتمال سحبه
+           const blob = xhr.response;
+           const url = window.URL.createObjectURL(blob);
+           const a = document.createElement('a');
+           a.style.display = 'none';
+           a.href = url;
+           a.download = apkUrl.split('/').pop() || "NeonChat_Update.apk";
+           document.body.appendChild(a);
+           a.click();
+           document.body.removeChild(a);
+           setTimeout(() => window.URL.revokeObjectURL(url), 5000);
+        } else {
+           window.updateAppProgress(-1);
+        }
+     };
+     
+     xhr.onerror = function() { window.updateAppProgress(-1); };
+     xhr.send();
   }
 }
 
@@ -4044,6 +4078,15 @@ window.updateAppProgress = function(percent) {
     setTimeout(closeUpdateModal, 4000);
   }
 };
+
+function openMainMenu() {
+  document.getElementById('main-menu-overlay').classList.add('open');
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+function closeMainMenu() {
+  document.getElementById('main-menu-overlay').classList.remove('open');
+}
 
 /* ═══════════════════════════════════
    CHAT SETTINGS MENU & CUSTOM WALLPAPER
@@ -4506,7 +4549,7 @@ async function openMediaGallery(chatId) {
   grid.innerHTML = '<div style="color:var(--neon-cyan); padding:40px 20px; text-align:center; width:100%; grid-column: 1 / -1; font-weight:bold;">جاري جلب الوسائط... ⏳</div>';
   overlay.classList.add('open');
   
-  // 🚀 تسجيل فتح المعرض في ذاكرة الرجوع تبع الموبايل
+  // ?? تسجيل فتح المعرض في ذاكرة الرجوع تبع الموبايل
   try { history.pushState({ overlay: 'gallery' }, '', ''); } catch(e){}
   
   try {

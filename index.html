@@ -35,8 +35,6 @@
 
 <body>
 
-  <canvas id="bg-canvas"></canvas>
-
   <div id="loader-screen">
     <div class="loader-logo">
       <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
@@ -104,6 +102,50 @@
 
   <div class="msg-menu-overlay" id="msg-menu-overlay" onclick="if(event.target===this)closeMsgMenu()">
     <div class="msg-menu" id="msg-menu"></div>
+  </div>
+
+  <!-- قائمة الخيارات الرئيسية -->
+  <div class="msg-menu-overlay" id="main-menu-overlay" onclick="if(event.target===this)closeMainMenu()">
+    <div class="msg-menu" id="main-menu">
+      <div style="font-size:15px; font-weight:800; color:var(--text-primary); text-align:center; margin-bottom:16px; border-bottom:1px solid var(--border-subtle); padding-bottom:12px;">القائمة الرئيسية</div>
+      
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="msg-menu-btn" onclick="showScreen('profile'); closeMainMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span style="font-weight:600; font-size:14px;">تعديل الملف الشخصي</span>
+        </button>
+
+        <button class="msg-menu-btn" onclick="showScreen('add-friend'); closeMainMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5c-1.1 0-2 .9-2 2v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+          <span style="font-weight:600; font-size:14px; flex:1; text-align:right;">إضافة صديق</span>
+          <span class="badge-req" id="menu-req-badge" style="display:none; background: #ff2a2a; box-shadow: 0 0 10px #ff2a2a; position: relative; top: 0; right: 0; transform: none; width: auto; padding: 0 6px; min-width: 20px;">0</span>
+        </button>
+
+        <button class="msg-menu-btn" onclick="showScreen('my-friends'); closeMainMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          <span style="font-weight:600; font-size:14px;">قائمة الأصدقاء</span>
+        </button>
+
+        <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
+
+        <button class="msg-menu-btn" onclick="checkForUpdate(); closeMainMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <span style="font-weight:600; font-size:14px;">البحث عن تحديث</span>
+        </button>
+
+        <button class="msg-menu-btn" onclick="testNotificationsManually(); closeMainMenu();" style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--neon-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span style="font-weight:600; font-size:14px; color:var(--text-primary);">اختبار الإشعارات</span>
+        </button>
+
+        <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
+
+        <button class="msg-menu-btn danger" onclick="confirmLogout(); closeMainMenu();" style="background:rgba(255,0,144,0.04); border:1px solid rgba(255,0,144,0.15); justify-content:flex-start; gap:16px; padding:12px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          <span style="font-weight:600; font-size:14px;">تسجيل الخروج</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div id="video-preview-overlay">
@@ -223,6 +265,8 @@
     </div>
 
     <div class="screen" id="screen-home">
+      <div class="hologram-globe"></div>
+      <div class="hologram-globe-core"></div>
       <header class="app-header home-header" style="gap: 6px; padding: 0 10px;">
         <div id="home-avatar" class="home-avatar-placeholder" onclick="showScreen('profile')" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">أ</div>
                 <div class="header-title" style="font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
@@ -234,28 +278,12 @@
         <div class="my-id-badge" id="my-id-badge" onclick="copyMyId()" style="font-size: 11px; padding: 2px 4px; letter-spacing: 0; flex-shrink: 0;">------</div>
 
         <div style="display:flex; gap:4px; flex-shrink: 0;">
-          <button class="btn-icon" onclick="confirmLogout()" title="تسجيل الخروج" style="width:34px; height:34px; color:var(--neon-pink); border-color:rgba(255,0,144,0.3);">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-              <polyline points="16 17 21 12 16 7"></polyline>
-              <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
-          </button>
-          <button class="btn-icon" onclick="showScreen('add-friend')" title="إضافة صديق" style="width:34px; height:34px;">
-            <span class="badge-req" id="home-req-badge" style="display:none; transform: scale(0.8); top: -4px; right: -4px;">0</span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5c-1.1 0-2 .9-2 2v2"></path>
-              <circle cx="8.5" cy="7" r="4"></circle>
-              <line x1="20" y1="8" x2="20" y2="14"></line>
-              <line x1="23" y1="11" x2="17" y2="11"></line>
-            </svg>
-          </button>
-          <button class="btn-icon" onclick="showScreen('my-friends')" title="قائمة الأصدقاء" style="width:34px; height:34px;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          <button class="btn-icon" onclick="openMainMenu()" title="الخيارات" style="width:34px; height:34px; border-color:var(--border-subtle);">
+            <span class="badge-req" id="home-req-badge" style="display:none; transform: scale(0.95); top: -5px; right: -5px; background: #ff2a2a; box-shadow: 0 0 12px #ff2a2a;">0</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
             </svg>
           </button>
         </div>
@@ -485,9 +513,6 @@
           <div class="profile-id-hint">شارك هذا الرقم مع أصدقائك كي يجدوك</div>
         </div>
                 <button class="btn-primary" onclick="copyMyId()">📋 نسخ رقم الـ ID</button>
-        <button class="btn-primary" onclick="checkForUpdate()" style="background: linear-gradient(135deg, var(--neon-purple), var(--neon-cyan)); margin-top: 10px; color: var(--bg-void); box-shadow: var(--shadow-neon);"> البحث عن تحديث</button>
-        <button class="btn-primary" onclick="testNotificationsManually()" style="background: var(--neon-green); margin-top: 10px; margin-bottom: 10px; color: var(--bg-void);">🔔 تفعيل واختبار الإشعارات</button>
-        <button class="btn-danger" onclick="confirmLogout()">تسجيل الخروج</button>
       </div>
     </div>
 
