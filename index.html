@@ -73,12 +73,14 @@
 
   <!-- نافذة التحديث الفخمة -->
   <div class="modal-overlay" id="update-modal-overlay">
-    <div class="modal" style="text-align: center; overflow: hidden; padding: 0;">
-      <div style="background: linear-gradient(135deg, var(--neon-purple), var(--neon-cyan)); padding: 30px 20px; position: relative;">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="margin-bottom: 10px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <h2 style="color: white; font-family: var(--font-en); font-weight: 900; margin: 0; letter-spacing: 1px;" id="update-modal-title">تحديث جديد متوفر!</h2>
+    <div class="modal" style="text-align: center; padding: 32px 24px;">
+      <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;">
+        <div style="width: 72px; height: 72px; border-radius: 22px; background: rgba(0, 240, 255, 0.06); border: 1.5px solid var(--border-glow); display: flex; align-items: center; justify-content: center; margin-bottom: 16px; box-shadow: var(--shadow-neon);">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--neon-cyan)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <h2 style="font-family: var(--font-ar); font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 0;" id="update-modal-title">تحديث جديد متوفر!</h2>
       </div>
-      <div style="padding: 24px;">
+      <div>
         <div id="update-modal-desc" style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6;">جاري التحقق من التحديثات...</div>
         
         <!-- شريط التحميل -->
@@ -88,13 +90,20 @@
             <span id="update-pct">0%</span>
           </div>
           <div style="width: 100%; height: 8px; background: rgba(0, 240, 255, 0.1); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-subtle);">
-            <div id="update-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); box-shadow: 0 0 10px var(--neon-cyan); transition: width 0.3s ease;"></div>
+            <div id="update-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-blue)); box-shadow: 0 0 10px var(--neon-cyan); transition: width 0.3s ease;"></div>
           </div>
         </div>
 
         <div class="modal-actions" id="update-modal-actions">
           <button class="btn-modal btn-modal-cancel" onclick="closeUpdateModal()">إلغاء</button>
           <button class="btn-modal btn-modal-ok" id="btn-start-update" style="display: none; background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue)); color: white;">تحديث الآن</button>
+        </div>
+
+        <!-- أزرار ما بعد التحميل للتثبيت والمصادر غير المعروفة -->
+        <div id="install-actions" style="display: none; flex-direction: column; gap: 10px;">
+          <button class="btn-modal btn-modal-ok" onclick="if(window.AndroidDownloader) window.AndroidDownloader.installLastUpdate()" style="background: linear-gradient(135deg, var(--neon-green), var(--neon-cyan)); color: var(--bg-void); width: 100%;">تثبيت التحديث</button>
+          <button class="btn-modal btn-modal-cancel" onclick="if(window.AndroidDownloader) window.AndroidDownloader.openUnknownSources()" style="border-color: var(--neon-pink); color: var(--neon-pink); width: 100%;">الإعدادات (تفعيل مصادر غير معروفة)</button>
+          <button class="btn-modal btn-modal-cancel" onclick="closeUpdateModal()" style="width: 100%;">إغلاق</button>
         </div>
       </div>
     </div>

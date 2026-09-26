@@ -3974,6 +3974,7 @@ function checkForUpdate() {
   const desc = document.getElementById('update-modal-desc');
   const btnUpdate = document.getElementById('btn-start-update');
   const progContainer = document.getElementById('update-progress-container');
+  const installActions = document.getElementById('install-actions');
   
   if(!overlay) return;
   overlay.classList.add('open');
@@ -3981,6 +3982,8 @@ function checkForUpdate() {
   desc.textContent = "يرجى الانتظار، جاري الاتصال بخادم التحديثات...";
   progContainer.style.display = 'none';
   btnUpdate.style.display = 'none';
+  document.getElementById('update-modal-actions').style.display = 'flex';
+  if(installActions) installActions.style.display = 'none';
 
   // جلب رقم الإصدار من الأندرويد مباشرة، وإذا لم يجده يعتبره 1.0
   const appVersion = window.CURRENT_APP_VERSION || 1.0;
@@ -4073,9 +4076,10 @@ window.updateAppProgress = function(percent) {
   
   if (percent >= 100) {
     document.getElementById('update-modal-title').textContent = "اكتمل التحميل!";
-    document.getElementById('update-modal-desc').innerHTML = "جاري فتح نافذة التثبيت...<br><span style='color:var(--neon-green)'>ملاحظة: إذا طلب منك الهاتف صلاحية لتثبيت التطبيقات من مصادر غير معروفة، يرجى الموافقة.</span>";
+    document.getElementById('update-modal-desc').innerHTML = "إذا لم تفتح نافذة التثبيت تلقائياً، اضغط على <b>تثبيت التحديث</b>.<br><br><span style='color:var(--neon-pink)'>ملاحظة:</span> إذا احتجت لمنح صلاحية التثبيت من مصادر غير معروفة، افتح الإعدادات من الزر أدناه ثم عُد واضغط تثبيت.";
+    document.getElementById('update-modal-actions').style.display = 'none';
     document.getElementById('update-progress-container').style.display = 'none';
-    setTimeout(closeUpdateModal, 4000);
+    document.getElementById('install-actions').style.display = 'flex';
   }
 };
 
