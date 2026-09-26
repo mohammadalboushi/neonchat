@@ -73,6 +73,35 @@
     </div>
   </div>
 
+  <!-- نافذة التحديث الفخمة -->
+  <div class="modal-overlay" id="update-modal-overlay">
+    <div class="modal" style="text-align: center; overflow: hidden; padding: 0;">
+      <div style="background: linear-gradient(135deg, var(--neon-purple), var(--neon-cyan)); padding: 30px 20px; position: relative;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="margin-bottom: 10px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <h2 style="color: white; font-family: var(--font-en); font-weight: 900; margin: 0; letter-spacing: 1px;" id="update-modal-title">تحديث جديد متوفر!</h2>
+      </div>
+      <div style="padding: 24px;">
+        <div id="update-modal-desc" style="font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6;">جاري التحقق من التحديثات...</div>
+        
+        <!-- شريط التحميل -->
+        <div id="update-progress-container" style="display: none; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: bold; color: var(--neon-cyan); font-family: var(--font-en);">
+            <span>التحميل...</span>
+            <span id="update-pct">0%</span>
+          </div>
+          <div style="width: 100%; height: 8px; background: rgba(0, 240, 255, 0.1); border-radius: 4px; overflow: hidden; border: 1px solid var(--border-subtle);">
+            <div id="update-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); box-shadow: 0 0 10px var(--neon-cyan); transition: width 0.3s ease;"></div>
+          </div>
+        </div>
+
+        <div class="modal-actions" id="update-modal-actions">
+          <button class="btn-modal btn-modal-cancel" onclick="closeUpdateModal()">إلغاء</button>
+          <button class="btn-modal btn-modal-ok" id="btn-start-update" style="display: none; background: linear-gradient(135deg, var(--neon-cyan), var(--neon-blue)); color: white;">تحديث الآن</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="msg-menu-overlay" id="msg-menu-overlay" onclick="if(event.target===this)closeMsgMenu()">
     <div class="msg-menu" id="msg-menu"></div>
   </div>
@@ -455,7 +484,8 @@
           <div class="profile-id-value" id="profile-id-value">------</div>
           <div class="profile-id-hint">شارك هذا الرقم مع أصدقائك كي يجدوك</div>
         </div>
-        <button class="btn-primary" onclick="copyMyId()">📋 نسخ رقم الـ ID</button>
+                <button class="btn-primary" onclick="copyMyId()">📋 نسخ رقم الـ ID</button>
+        <button class="btn-primary" onclick="checkForUpdate()" style="background: linear-gradient(135deg, var(--neon-purple), var(--neon-cyan)); margin-top: 10px; color: var(--bg-void); box-shadow: var(--shadow-neon);">🔄 البحث عن تحديث</button>
         <button class="btn-primary" onclick="testNotificationsManually()" style="background: var(--neon-green); margin-top: 10px; margin-bottom: 10px; color: var(--bg-void);">🔔 تفعيل واختبار الإشعارات</button>
         <button class="btn-danger" onclick="confirmLogout()">تسجيل الخروج</button>
       </div>

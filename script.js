@@ -979,35 +979,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const nameEl = document.getElementById('chat-header-name');
     if (nameEl) nameEl.textContent = fData.name || 'مستخدم';
     
-    document.querySelectorAll('.msg-friend-avatar').forEach(el => {
-      let commonStyle = 'width:32px !important; height:32px !important; min-width:32px !important; min-height:32px !important; max-width:32px !important; max-height:32px !important; border-radius:50%; object-fit:cover; flex-shrink:0; align-self:flex-end; border:1px solid rgba(0, 240, 255, 0.4); margin: 0 6px; z-index:2;';
-      let bgStyle = 'background:linear-gradient(135deg, var(--neon-blue), var(--neon-purple));';
-      
-      if (fData.photo) {
-        if (el.tagName !== 'IMG') {
-          const newEl = document.createElement('img');
-          newEl.className = 'msg-friend-avatar';
-          newEl.src = fData.photo;
-          newEl.style.cssText = commonStyle + 'cursor:pointer;';
-          newEl.onclick = (e) => { e.stopPropagation(); window.previewImg(fData.photo); };
-          el.replaceWith(newEl);
-        } else {
-          el.src = fData.photo;
-          el.style.cssText = commonStyle + 'cursor:pointer;';
-          el.onclick = (e) => { e.stopPropagation(); window.previewImg(fData.photo); };
-        }
-      } else {
-        if (el.tagName === 'IMG') {
-          const newEl = document.createElement('div');
-          newEl.className = 'msg-friend-avatar';
-          newEl.textContent = (fData.name || '?').charAt(0);
-          newEl.style.cssText = commonStyle + bgStyle + 'display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:bold; color:white;';
-          el.replaceWith(newEl);
-        } else {
-          el.textContent = (fData.name || '?').charAt(0);
-        }
-      }
-    });
+    // 🚀 تم إزالة كود تحديث جميع صور الرسائل القديمة لأنه يسبب تعليق كامل للمعالج عند فتح المحادثات الطويلة
+    // الصور ستأخذ شكلها الجديد فقط للرسائل الجديدة لتخفيف العبء عن الرام
 
     const statusEl = document.getElementById('chat-header-status');
     const val = fData.status;
@@ -1158,11 +1131,11 @@ async function attachMessages(chatId) {
               messagesRef = db.ref('chats/' + chatId + '/messages');
   
   // 🚀 الحل الجذري: نلغي الاعتماد على startAt نهائياً لأنه يسبب اختفاء الرسائل لو توقيت الأجهزة مختلف
-  currentMessagesQuery = messagesRef.orderByKey().limitToLast(50);
+  currentMessagesQuery = messagesRef.orderByKey().limitToLast(30);
   
     if (liveMsgsCache.length > 0) {
-    // التحديث الصامت: جلب حالة آخر 50 رسالة وتحديث المؤشرات بدون إعادة بناء الواجهة
-    messagesRef.orderByKey().limitToLast(50).once('value', snapshot => {
+    // التحديث الصامت: جلب حالة آخر 30 رسالة وتحديث المؤشرات بدون إعادة بناء الواجهة
+    messagesRef.orderByKey().limitToLast(30).once('value', snapshot => {
       if(snapshot.exists()) {
         snapshot.forEach(child => {
           const m = child.val();
@@ -1231,7 +1204,7 @@ async function attachMessages(chatId) {
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
     if (!existsInCache) {
       liveMsgsCache.push(msg);
-      if (liveMsgsCache.length > 100) liveMsgsCache.shift(); 
+      if (liveMsgsCache.length > 40) liveMsgsCache.shift(); // 🚀 تخفيض الكاش لـ 40 ليرتاح الرام تماماً
       chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
 
@@ -1317,7 +1290,7 @@ async function attachMessages(chatId) {
       loader.innerHTML = '<div style="text-align:center; padding:10px; font-size:12px; color:var(--neon-cyan);">جاري التحميل...</div>';
       area.insertBefore(loader, area.firstChild);
 
-      const snap = await messagesRef.orderByKey().endAt(oldestMsgKey).limitToLast(100).once('value');
+      const snap = await messagesRef.orderByKey().endAt(oldestMsgKey).limitToLast(30).once('value'); // 🚀 سحب 30 رسالة فقط لمنع تقطيش الشاشة
       
       loader.remove(); 
 
@@ -1597,11 +1570,7 @@ function buildMsgEl(msg, isBackground = false) {
               singleTapTimer = setTimeout(() => {
                 const vidContainer = e.target.closest('.video-thumb-container');
                 if (vidContainer) {
-                  if (vidContainer.getAttribute('data-cached') === 'true') {
-                     openVideoPlayer(msg.url);
-                  } else {
-                     downloadVideoLocally(msg, vidContainer);
-                  }
+                   openVideoPlayer(msg.url); // 🚀 فتح الفيديو كبث مباشر (Streaming) فوراً دون تحميل
                 } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
                   window.previewImg(e.target.src);
                 }
@@ -1686,32 +1655,14 @@ function buildMsgEl(msg, isBackground = false) {
         }
     }
   } else if (msg.type === 'video') {
-    const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size} MB</div>` : '';
+    const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size}</div>` : '';
     bubble.innerHTML = `${replyHtml}<div id="vid-container-${msg.key}" class="video-thumb-container" style="background:#050b12; border:1px solid var(--border-subtle);">
         <div id="vid-ui-${msg.key}" class="video-play-icon" style="pointer-events:none; background:rgba(0,0,0,0.7); z-index:2;">
-           <div style="width:24px; height:24px; border:2px solid var(--neon-cyan); border-top-color:transparent; border-radius:50%; animation:spin 1s linear infinite;"></div>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </div>
         <div id="vid-progress-${msg.key}" style="position:absolute; bottom:0; left:0; height:4px; background:var(--neon-cyan); width:0%; transition:width 0.2s; z-index:2;"></div>
         ${fileSize}
       </div>${timeEl}${reactHtml}`;
-
-    if (!msg.isPending && 'caches' in window) {
-      setTimeout(() => {
-        caches.open('media-cache').then(cache => {
-          cache.match(msg.url).then(cached => {
-            const uiEl = document.getElementById(`vid-ui-${msg.key}`);
-            const containerEl = document.getElementById(`vid-container-${msg.key}`);
-            if (cached) {
-              if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-              if (containerEl) containerEl.setAttribute('data-cached', 'true');
-            } else {
-              if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-              if (containerEl) containerEl.setAttribute('data-cached', 'false');
-            }
-          });
-        });
-      }, 50);
-    }
   } else if (msg.type === 'audio') {
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
@@ -2380,126 +2331,102 @@ async function uploadMediaWithUI(file, type, extraData = null) {
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
   }
 
-  const compressImage = (imageFile) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(imageFile);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1280; 
-          const MAX_HEIGHT = 1280;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-          } else {
-            if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
-          }
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob((blob) => { resolve(blob); }, 'image/jpeg', 0.6);
-        };
-      };
-    });
-  };
-
-  const tryUpload = async () => {
-    const row = document.getElementById('row_' + tempId);
-    if (row) { 
-      const ov = row.querySelector('.pending-overlay'); 
-      if (ov) ov.innerHTML = `
-        <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
-        <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
-          <div id="bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
-        </div>
-      `; 
-    }
-    
-    let finalFileToUpload = file;
-    if (type === 'image') {
-      const pctTxt = document.getElementById('pct_' + tempId);
-      if(pctTxt) pctTxt.textContent = '🔒';
-      
-      const compressedBlob = await compressImage(file);
-      finalFileToUpload = await encryptImageBlob(compressedBlob); 
-    }
-
-    const xhr = new XMLHttpRequest();
-    const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-    const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
-    
-    if (type === 'image') {
-      const cleanName = `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin`; 
-      xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
-      xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
-      xhr.setRequestHeader('apikey', SUPA_KEY);
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream'); 
-    } else {
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
-    }
-    
-    xhr.timeout = 25000; 
-    
-    xhr.upload.onprogress = e => {
-      if (e.lengthComputable) {
-        const percent = Math.round((e.loaded / e.total) * 100);
-        const bar = document.getElementById('bar_' + tempId);
-        const pctTxt = document.getElementById('pct_' + tempId);
-        if (bar) bar.style.width = percent + '%';
-        if (pctTxt && pctTxt.textContent !== '🔒') pctTxt.textContent = percent + '%';
-        if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
-      }
-    };
-    
-    const handleFail = (msg) => {
+  // 🚀 إعطاء المتصفح استراحة 100 ميلي ثانية ليرسم فقاعة الدردشة قبل ما ينعصر بالعمليات الثقيلة
+  setTimeout(async () => {
+      const tryUpload = async () => {
+        const row = document.getElementById('row_' + tempId);
         if (row) { 
           const ov = row.querySelector('.pending-overlay'); 
-          if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
+          if (ov) ov.innerHTML = `
+            <div id="pct_${tempId}" style="font-size:16px; font-weight:bold; color:var(--neon-cyan); font-family:var(--font-en); text-shadow:0 0 5px #000;">0%</div>
+            <div style="width:70%; height:6px; background:rgba(0,0,0,0.5); border-radius:3px; overflow:hidden; border:1px solid rgba(255,255,255,0.2);">
+              <div id="bar_${tempId}" style="width:0%; height:100%; background:linear-gradient(90deg, var(--neon-purple), var(--neon-cyan)); transition:width 0.1s linear;"></div>
+            </div>
+          `; 
         }
-    };
-
-    xhr.onload = async () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        let finalUrl = '';
+        
+        let finalFileToUpload = file;
         if (type === 'image') {
-          const cleanName = xhr.responseURL.split('/').pop();
-          finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
-        } else {
-          let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
-          finalUrl = data.secure_url;
+          const pctTxt = document.getElementById('pct_' + tempId);
+          if(pctTxt) pctTxt.textContent = '🔒';
+          
+          // 🚀 تم إزالة ضغط الصورة للمحافظة على الدقة 100% كما طلبت، التشفير يتم على الملف الخام مباشرة
+          finalFileToUpload = await encryptImageBlob(file); 
         }
 
-        if (finalUrl) {
-          window.lastUploadedUrl = finalUrl;
-          if (type === 'image' && window.localImageCache) window.localImageCache[finalUrl] = tempUrl; 
-          const currentRow = document.getElementById('row_' + tempId);
-          if (currentRow) currentRow.remove();
-          await pushMessage({ type: type, url: finalUrl, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+        const xhr = new XMLHttpRequest();
+        const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
+        const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+        
+        if (type === 'image') {
+          const cleanName = `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin`; 
+          xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
+          xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
+          xhr.setRequestHeader('apikey', SUPA_KEY);
+          xhr.setRequestHeader('Content-Type', 'application/octet-stream'); 
         } else {
-          handleFail('فشل الرفع');
+          xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
         }
-      } else {
-        handleFail('فشل الرفع');
-      }
-    };
-    
-    xhr.onerror = () => handleFail('خطأ اتصال');
-    xhr.ontimeout = () => handleFail('انتهى الوقت');
-    
-    if (type === 'image') {
-      xhr.send(finalFileToUpload);
-    } else {
-      const fd = new FormData(); fd.append('file', finalFileToUpload); fd.append('upload_preset', 'omarhweh1');
-      xhr.send(fd);
-    }
-  };
-  window.pendingUploads[tempId] = tryUpload;
-  tryUpload();
+        
+        xhr.timeout = 180000; // 🚀 زدنا الوقت لـ 3 دقائق لأن الصور الخام بتأخذ وقت أطول بالرفع
+        
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            const bar = document.getElementById('bar_' + tempId);
+            const pctTxt = document.getElementById('pct_' + tempId);
+            if (bar) bar.style.width = percent + '%';
+            if (pctTxt && pctTxt.textContent !== '🔒') pctTxt.textContent = percent + '%';
+            if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
+          }
+        };
+        
+        const handleFail = (msg) => {
+            if (row) { 
+              const ov = row.querySelector('.pending-overlay'); 
+              if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
+            }
+        };
+
+        xhr.onload = async () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            let finalUrl = '';
+            if (type === 'image') {
+              const cleanName = xhr.responseURL.split('/').pop();
+              finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+            } else {
+              let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
+              finalUrl = data.secure_url;
+            }
+
+            if (finalUrl) {
+              window.lastUploadedUrl = finalUrl;
+              if (type === 'image' && window.localImageCache) window.localImageCache[finalUrl] = tempUrl; 
+              const currentRow = document.getElementById('row_' + tempId);
+              if (currentRow) currentRow.remove();
+              await pushMessage({ type: type, url: finalUrl, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+            } else {
+              handleFail('فشل الرفع');
+            }
+          } else {
+            handleFail('فشل الرفع');
+          }
+        };
+        
+        xhr.onerror = () => handleFail('خطأ اتصال');
+        xhr.ontimeout = () => handleFail('انتهى الوقت');
+        
+        if (type === 'image') {
+          xhr.send(finalFileToUpload);
+        } else {
+          const fd = new FormData(); fd.append('file', finalFileToUpload); fd.append('upload_preset', 'omarhweh1');
+          xhr.send(fd);
+        }
+      };
+      
+      window.pendingUploads[tempId] = tryUpload;
+      tryUpload();
+  }, 100);
 }
 
 document.getElementById('file-img-input').addEventListener('change', async e => {
@@ -2939,9 +2866,9 @@ function startAudioProgress(msgKey) {
         if (fill) fill.style.width = perc + '%';
       }
       
-      if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
+            if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
     }
-  }, 30); 
+  }, 100); // 🚀 تخفيف سرعة العداد ليرتاح المعالج ويمنع حرارة الجهاز
 }
 
 function seekVoice(event, url, msgKey) {
@@ -3164,26 +3091,20 @@ function openVideoPlayer(url) {
   overlay.classList.remove('floating');
   overlay.style.removeProperty('left'); overlay.style.removeProperty('top'); overlay.style.removeProperty('transform');
   
-  const launchVideo = (finalSrc) => {
-    videoEl.src = finalSrc;
-    overlay.classList.add('open');
-    document.getElementById('video-center-loader').style.display = 'flex';
-    document.getElementById('video-buffer-percent').textContent = '0%';
-    
-    videoEl.load();
-    let playPromise = videoEl.play();
-    if (playPromise !== undefined) playPromise.catch(() => { document.getElementById('video-center-loader').style.display = 'none'; });
-    updateVideoControls(); videoUpdateInt = setInterval(updateVideoControls, 250);
-    try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
-  };
-
-  if ('caches' in window) {
-    caches.open('media-cache').then(cache => {
-      cache.match(url).then(cached => {
-        if (cached) cached.blob().then(blob => launchVideo(URL.createObjectURL(blob))); else launchVideo(url);
-      });
-    });
-  } else { launchVideo(url); }
+  // 🚀 أزلنا f_auto,q_auto لأنها تجبر السيرفر على معالجة الفيديو قبل إرساله وتسبب التعليق
+  // الرابط الخام يدعم البث المباشر فوراً!
+  videoEl.src = url;
+  
+  overlay.classList.add('open');
+  document.getElementById('video-center-loader').style.display = 'flex';
+  document.getElementById('video-buffer-percent').textContent = '0%';
+  
+  videoEl.load();
+  let playPromise = videoEl.play();
+  if (playPromise !== undefined) playPromise.catch(() => { document.getElementById('video-center-loader').style.display = 'none'; });
+  updateVideoControls(); 
+  videoUpdateInt = setInterval(updateVideoControls, 250);
+  try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
 }
 
 // 🚀 دوال التحويل بين الشاشة الكاملة والمصغرة
@@ -4032,11 +3953,84 @@ async function testNotificationsManually() {
     } else {
       showToast('تم رفض الإذن من إعدادات المتصفح', 'error');
     }
-  } catch (err) {
+    } catch (err) {
     showToast('خطأ: ' + err.message, 'error');
     console.error('FCM Error:', err);
   }
 }
+
+/* ═══════════════════════════════════
+   UPDATE ENGINE (LOCAL HOSTING)
+═══════════════════════════════════ */
+// رقم الإصدار سيأتي من الأندرويد تلقائياً ولن تحتاجه هنا أبداً!
+const UPDATE_JSON_URL = "./version.json";
+
+function checkForUpdate() {
+  const overlay = document.getElementById('update-modal-overlay');
+  const title = document.getElementById('update-modal-title');
+  const desc = document.getElementById('update-modal-desc');
+  const btnUpdate = document.getElementById('btn-start-update');
+  const progContainer = document.getElementById('update-progress-container');
+  
+  if(!overlay) return;
+  overlay.classList.add('open');
+  title.textContent = "البحث عن تحديث...";
+  desc.textContent = "يرجى الانتظار، جاري الاتصال بخادم التحديثات...";
+  progContainer.style.display = 'none';
+  btnUpdate.style.display = 'none';
+
+  // جلب رقم الإصدار من الأندرويد مباشرة، وإذا لم يجده يعتبره 1.0
+  const appVersion = window.CURRENT_APP_VERSION || 1.0;
+
+  // إضافة Date.now لمنع الكاش وجلب أحدث ملف دائماً
+  fetch(UPDATE_JSON_URL + "?t=" + Date.now())
+    .then(res => res.json())
+    .then(data => {
+      if (parseFloat(data.version) > appVersion) {
+
+function closeUpdateModal() {
+  const overlay = document.getElementById('update-modal-overlay');
+  if(overlay) overlay.classList.remove('open');
+}
+
+function startUpdateDownload(apkUrl) {
+  const desc = document.getElementById('update-modal-desc');
+  const progContainer = document.getElementById('update-progress-container');
+  const actions = document.getElementById('update-modal-actions');
+  
+  desc.innerHTML = "<span style='color:var(--neon-pink)'>جاري تحميل التحديث بحجمه الكامل، يرجى عدم إغلاق التطبيق...</span>";
+  actions.style.display = 'none';
+  progContainer.style.display = 'block';
+  
+  if (window.AndroidDownloader && typeof window.AndroidDownloader.startAppUpdate === 'function') {
+     window.AndroidDownloader.startAppUpdate(apkUrl);
+  } else {
+     // دعم احتياطي إذا فتح التطبيق من المتصفح
+     window.open(apkUrl, '_blank');
+     closeUpdateModal();
+  }
+}
+
+// دالة تستقبل النسبة المئوية من الجافا (Android)
+window.updateAppProgress = function(percent) {
+  if (percent === -1) {
+    document.getElementById('update-modal-desc').textContent = "فشل التحميل! تأكد من اتصالك ومساحة الهاتف.";
+    document.getElementById('update-modal-actions').style.display = 'flex';
+    document.getElementById('update-progress-container').style.display = 'none';
+    return;
+  }
+  
+  document.getElementById('update-pct').textContent = percent + '%';
+  document.getElementById('update-bar').style.width = percent + '%';
+  
+  if (percent >= 100) {
+    document.getElementById('update-modal-title').textContent = "اكتمل التحميل!";
+    document.getElementById('update-modal-desc').innerHTML = "جاري فتح نافذة التثبيت...<br><span style='color:var(--neon-green)'>ملاحظة: إذا طلب منك الهاتف صلاحية لتثبيت التطبيقات من مصادر غير معروفة، يرجى الموافقة.</span>";
+    document.getElementById('update-progress-container').style.display = 'none';
+    setTimeout(closeUpdateModal, 4000);
+  }
+};
+
 /* ═══════════════════════════════════
    CHAT SETTINGS MENU & CUSTOM WALLPAPER
 ═══════════════════════════════════ */
