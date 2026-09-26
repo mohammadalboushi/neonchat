@@ -2555,7 +2555,7 @@ async function toggleRecording(isSinging = false) {
   if (!navigator.mediaDevices) { showToast('المتصفح لا يدعم التسجيل', 'error'); return; }
   try {
     isSingingMode = isSinging; 
-    let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
+    let audioConstraints = { echoCancellation: false, noiseSuppression: true, autoGainControl: true, sampleRate: 48000, channelCount: 2 };
     if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
     const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     
@@ -2568,14 +2568,14 @@ async function toggleRecording(isSinging = false) {
     const source = audioCtx.createMediaStreamSource(rawStream);
     const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
 
-    const preGain = audioCtx.createGain(); preGain.gain.value = 0.5;
-    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
-    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
+    const preGain = audioCtx.createGain(); preGain.gain.value = 1.1;
+    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 70;
+    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10300;
     const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4; 
-    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -20; compressor.knee.value = 30; compressor.ratio.value = 17.5; compressor.attack.value = 0.005; compressor.release.value = 0.25;
 
     function generateReverb(ctx) {
-      const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+      const length = ctx.sampleRate * 1.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
       const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
       for (let i = 0; i < length; i++) {
         const decay = Math.pow(1 - i / length, 1.5); 
@@ -2585,8 +2585,8 @@ async function toggleRecording(isSinging = false) {
     }
 
     const convolver = audioCtx.createConvolver(); convolver.buffer = generateReverb(audioCtx);
-    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6; 
-    const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
+    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.4; 
+    const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? 0.3 : 0.1; 
     const dest = audioCtx.createMediaStreamDestination();
 
     source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
@@ -3712,7 +3712,7 @@ function toggleMuteCall() {
   } else {
     btn.classList.remove('active');
     // 🚀 إعادة فتح المايك بقوة التضخيم الجديدة
-    if (window.callPreGain) window.callPreGain.gain.value = 3.5; 
+    if (window.callPreGain) window.callPreGain.gain.value = 1.1; 
     if (window.localCallTrack) window.localCallTrack.setMuted(false);
   }
 }
@@ -3740,28 +3740,28 @@ async function joinAgoraVoice(channelName) {
       await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
       
       // 1. إغلاق عزل الصدى والضجيج وتفعيل التضخيم لتقوية المايك
-      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
+      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
       window.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       
             // 2. تطبيق الفلاتر
       const source = window.callAudioCtx.createMediaStreamSource(window.callRawStream);
       const preGain = window.callAudioCtx.createGain(); 
-      preGain.gain.value = callIsMuted ? 0 : 3.5; // 🚀 تضخيم الصوت 3 أضعاف ونصف لتعويض ضعف المايك
+      preGain.gain.value = callIsMuted ? 0 : 1.1; // 🚀 تضخيم الصوت بناءً على المختبر
       window.callPreGain = preGain;
       
-      const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
-      const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
+      const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 70;
+      const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10300;
       const presenceEQ = window.callAudioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4;
-      const compressor = window.callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+      const compressor = window.callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -20; compressor.knee.value = 30; compressor.ratio.value = 17.5; compressor.attack.value = 0.005; compressor.release.value = 0.25;
       
       // 3. صدى الاستوديو
-      function generateReverb(ctx) { const length = ctx.sampleRate * 2.0; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
+      function generateReverb(ctx) { const length = ctx.sampleRate * 1.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
       const convolver = window.callAudioCtx.createConvolver(); convolver.buffer = generateReverb(window.callAudioCtx);
       
       const dryGain = window.callAudioCtx.createGain(); 
-      dryGain.gain.value = 1.0; 
+      dryGain.gain.value = 0.4; 
       const wetGain = window.callAudioCtx.createGain(); 
-      wetGain.gain.value = 0.5; // كمية الصدى: 0.5
+      wetGain.gain.value = 0.1; // كمية الصدى: 0.1
       
       const dest = window.callAudioCtx.createMediaStreamDestination();
       
