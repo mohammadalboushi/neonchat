@@ -3987,6 +3987,20 @@ function checkForUpdate() {
     .then(res => res.json())
     .then(data => {
       if (parseFloat(data.version) > appVersion) {
+        title.textContent = "تحديث " + data.version;
+        desc.innerHTML = `هناك إصدار أحدث متوفر!<br><br><strong style="color:var(--text-primary)">الجديد في هذا التحديث:</strong><br>${data.changes || "تحسينات وإصلاحات عامة"}`;
+        btnUpdate.style.display = 'block';
+        btnUpdate.onclick = () => startUpdateDownload(data.apk_url);
+      } else {
+        title.textContent = "أنت على أحدث إصدار";
+        desc.textContent = "تطبيقك محدث بالكامل (الإصدار " + appVersion + ")";
+      }
+    })
+    .catch(err => {
+      title.textContent = "خطأ في الاتصال";
+      desc.textContent = "لم نتمكن من الوصول لخادم التحديثات، تأكد من الإنترنت.";
+    });
+}
 
 function closeUpdateModal() {
   const overlay = document.getElementById('update-modal-overlay');
