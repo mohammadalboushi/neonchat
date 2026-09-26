@@ -4102,14 +4102,20 @@ window.updateAppProgress = function(percent) {
   }
 };
 
+let menuActionTime = 0;
+
 function openMainMenu() {
-  const overlay = document.getElementById('main-menu-overlay');
-  if (overlay.classList.contains('open')) return;
-  overlay.classList.add('open');
+  if (Date.now() - menuActionTime < 400) return;
+  menuActionTime = Date.now();
+  
+  document.getElementById('main-menu-overlay').classList.add('open');
   if (navigator.vibrate) navigator.vibrate(20);
 }
 
 function closeMainMenu() {
+  if (Date.now() - menuActionTime < 400) return;
+  menuActionTime = Date.now();
+
   document.getElementById('main-menu-overlay').classList.remove('open');
 }
 
