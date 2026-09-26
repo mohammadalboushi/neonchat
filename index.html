@@ -619,12 +619,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=11"></script>
+  </div> <script src="script.js?v=12"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=11')
+        navigator.serviceWorker.register('sw.js?v=12')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });
