@@ -294,27 +294,11 @@ async function initMicrophone() {
 
 window.localImageCache = {}; // 🚀 السحر هون: ذاكرة تخزين مؤقتة لمنع رجفة الصورة وإعادة تحميلها
 
-window.avatarMemory = {};
-async function applySmartCache(url, elOrId) {
+function applySmartCache(url, elOrId) {
   if (!url) return;
   const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
   if (!el) return;
-  if (window.avatarMemory[url]) { el.src = window.avatarMemory[url]; return; }
-  if ('caches' in window) {
-    try {
-      const cache = await caches.open('media-cache');
-      const res = await cache.match(url);
-      if (res) {
-        const blob = await res.blob();
-        const objUrl = URL.createObjectURL(blob);
-        window.avatarMemory[url] = objUrl;
-        el.src = objUrl;
-      } else {
-        el.src = url; // للتحميل أول مرة بس
-        fetch(url).then(netRes => { if(netRes.ok) cache.put(url, netRes); }).catch(()=>{});
-      }
-    } catch(e) { el.src = url; }
-  } else { el.src = url; }
+  el.src = url;
 }
 
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.log("Auth Error:", err)).finally(() => {
@@ -366,7 +350,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=10');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=11');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -3960,7 +3944,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=10');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=11');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
