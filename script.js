@@ -2893,7 +2893,6 @@ function seekVoice(event, url, msgKey) {
   
   const rect = event.currentTarget.getBoundingClientRect();
   
-  // التقاط دقيق لإحداثيات الضغط سواء عبر الماوس أو لمس الشاشة
   let clientX = event.clientX;
   if (clientX === undefined && event.touches && event.touches.length > 0) {
     clientX = event.touches[0].clientX;
@@ -2909,11 +2908,31 @@ function seekVoice(event, url, msgKey) {
   if (perc > 1) perc = 1;
   
   const targetTime = totalDuration * perc;
-  currentAudio.currentTime = targetTime;
+
+  // 🚀 السحر هنا: حل مشكلة رجوع الفويس للأول في متصفحات كروم (WebM Duration Bug)
+  if (currentAudio.duration === Infinity || isNaN(currentAudio.duration)) {
+     const wasPlaying = !currentAudio.paused;
+     
+     // إزالة حدث onended مؤقتاً لمنع الانتقال للفويس التالي بالخطأ
+     const originalOnEnded = currentAudio.onended;
+     currentAudio.onended = null;
+     
+     // قفزة وهمية لآخر المقطع ليتعرف المتصفح على طوله الحقيقي
+     currentAudio.currentTime = 1e8; 
+     
+     currentAudio.onseeked = function() {
+         currentAudio.onseeked = null; // تنظيف الحدث
+         currentAudio.currentTime = targetTime; // العودة للوقت المطلوب الذي حدده المستخدم
+         currentAudio.onended = originalOnEnded; // إعادة التشغيل التلقائي للفويس التالي
+         if (wasPlaying) currentAudio.play();
+     };
+  } else {
+     currentAudio.currentTime = targetTime;
+  }
 
   const fill = document.getElementById('progress-' + msgKey); 
   if (fill) fill.style.width = (perc * 100) + '%';
-
+  
   const curSec = Math.floor(targetTime);
   const m = Math.floor(curSec / 60);
   const s = curSec % 60;
@@ -4084,7 +4103,9 @@ window.updateAppProgress = function(percent) {
 };
 
 function openMainMenu() {
-  document.getElementById('main-menu-overlay').classList.add('open');
+  const overlay = document.getElementById('main-menu-overlay');
+  if (overlay.classList.contains('open')) return;
+  overlay.classList.add('open');
   if (navigator.vibrate) navigator.vibrate(20);
 }
 
@@ -4298,10 +4319,16 @@ async function clearAppCache() {
   try {
     if ('caches' in window) {
       const cacheNames = await caches.keys();
-      await Promise.all(cacheNames.map(name => caches.delete(name)));
+      // استثناء media-cache لمنع حذف الصور والصوتيات المحفوظة لتوفير الإنترنت
+      await Promise.all(cacheNames.map(name => {
+        if (name !== 'media-cache') {
+          return caches.delete(name);
+        }
+      }));
     }
 
-    indexedDB.deleteDatabase('NeonChatDB');
+    // إيقاف حذف NeonChatDB للحفاظ على خلفيات المحادثات
+    // indexedDB.deleteDatabase('NeonChatDB');
 
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
