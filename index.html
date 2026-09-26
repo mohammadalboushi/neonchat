@@ -283,7 +283,7 @@
       <div class="hologram-globe"></div>
       <div class="hologram-globe-core"></div>
       <header class="app-header home-header" style="gap: 6px; padding: 0 10px;">
-        <div id="home-avatar" class="home-avatar-placeholder" onclick="showScreen('profile')" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">أ</div>
+        <div id="home-avatar" class="home-avatar-placeholder" style="width: 32px; height: 32px; font-size: 14px; flex-shrink: 0;">أ</div>
                 <div class="header-title" style="font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
           <div style="display: flex; align-items: center; gap: 6px;">
             المحادثات
@@ -619,12 +619,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=7"></script>
+  </div> <script src="script.js?v=10"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=7')
+        navigator.serviceWorker.register('sw.js?v=10')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });

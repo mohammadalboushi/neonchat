@@ -366,7 +366,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=7');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=10');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -549,10 +549,10 @@ function updateHomeHeader() {
   document.getElementById('my-id-badge').textContent = myProfile.uniqueId;
   const av = document.getElementById('home-avatar');
   if (myProfile.photo) {
-    av.outerHTML = `<img class="home-avatar" id="home-avatar" onclick="window.previewImg('${myProfile.photo}')" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\' onclick=\\'showScreen(\\&quot;profile\\&quot;)\\'>${myProfile.name.charAt(0)}</div>'"/>`;
+    av.outerHTML = `<img class="home-avatar" id="home-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" onclick="window.previewImg('${myProfile.photo}')" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\'>${myProfile.name.charAt(0)}</div>'"/>`;
     applySmartCache(myProfile.photo, 'home-avatar');
   }
-  else { av.className = 'home-avatar-placeholder'; av.textContent = myProfile.name.charAt(0); }
+  else { av.className = 'home-avatar-placeholder'; av.textContent = myProfile.name.charAt(0); av.onclick = null; }
 }
 
 function copyMyId() {
@@ -566,7 +566,7 @@ function populateProfile() {
   document.getElementById('profile-id-value').textContent = myProfile.uniqueId;
   const av = document.getElementById('profile-avatar');
   if (myProfile.photo) {
-    av.outerHTML = `<img class="profile-avatar" id="profile-avatar"/>`;
+    av.outerHTML = `<img class="profile-avatar" id="profile-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>`;
     applySmartCache(myProfile.photo, 'profile-avatar');
   }
   else av.textContent = myProfile.name.charAt(0);
@@ -756,7 +756,7 @@ function renderChatsList(filter = '') {
         
         const initials = (liveData.name || '?').charAt(0);
         const imgId = 'chat_av_' + chatId;
-        const avatarHtml = liveData.photo ? `<img id="${imgId}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
+        const avatarHtml = liveData.photo ? `<img id="${imgId}" class="chat-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
         
         // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
         const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
@@ -926,7 +926,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const snap = await db.ref('users/' + friendUid).once('value');
     friendProfile = snap.val();
   }
-  currentChat = { chatId, friendUid, friendProfile };
+    currentChat = { chatId, friendUid, friendProfile };
   // 🚀 جلب الملف الخام من قاعدة البيانات وعرضه فوراً
   getWallpaperDB().then(db => {
     const tx = db.transaction('wallpapers', 'readonly');
@@ -939,7 +939,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
-    avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
+    avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
     applySmartCache(friendProfile.photo, 'chat-header-avatar');
   } else {
     avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
@@ -972,7 +972,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const avatarEl = document.getElementById('chat-header-avatar');
     if (avatarEl) {
       if (fData.photo) {
-        avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
+        avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
         applySmartCache(fData.photo, 'chat-header-avatar');
       } else {
         avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(fData.name||'?').charAt(0)}</div>`;
@@ -981,9 +981,6 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     
     const nameEl = document.getElementById('chat-header-name');
     if (nameEl) nameEl.textContent = fData.name || 'مستخدم';
-    
-    // 🚀 تم إزالة كود تحديث جميع صور الرسائل القديمة لأنه يسبب تعليق كامل للمعالج عند فتح المحادثات الطويلة
-    // الصور ستأخذ شكلها الجديد فقط للرسائل الجديدة لتخفيف العبء عن الرام
 
     const statusEl = document.getElementById('chat-header-status');
     const val = fData.status;
@@ -3963,7 +3960,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=9');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=10');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
