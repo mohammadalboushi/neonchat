@@ -4149,14 +4149,6 @@ async function openChatSettingsMenu() {
 
       <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
 
-      <!-- إعدادات النظام الخفيفة -->
-      <button class="msg-menu-btn" onclick="clearAppCache(); closeMsgMenu();" style="background:rgba(255,255,255,0.01); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px; color:var(--text-secondary);">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><polyline points="21 3 21 8 16 8"></polyline></svg>
-        <span style="font-weight:600; font-size:14px;">تحديث وتفريغ الكاش</span>
-      </button>
-
-      <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
-
       <!-- منطقة الخطر الحمراء -->
       <button class="msg-menu-btn danger" onclick="deleteAllChatMedia(); closeMsgMenu();" style="background:rgba(255,0,144,0.04); border:1px solid rgba(255,0,144,0.15); justify-content:flex-start; gap:16px; padding:12px 16px;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
