@@ -1484,7 +1484,7 @@ function buildMsgEl(msg, isBackground = false) {
   replyIcon.style.cssText = `position:absolute; top:50%; margin-top:-11px; transform:scale(0); opacity:0; transition:all 0.2s ease-out; z-index:-1;`;
   row.style.position = 'relative'; row.appendChild(replyIcon);
   
-    let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
+  let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
     if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
@@ -1534,40 +1534,49 @@ function buildMsgEl(msg, isBackground = false) {
     }
   }, { passive: true });
 
-            bubble.addEventListener('touchend', e => {
-            if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
+  // 🚀 دالة لتنظيف حالة اللمس وإلغاء القائمة
+  const resetBubbleTouch = (e) => {
+    clearTimeout(pressTimer);
+    if (e && e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
+      e.target.style.opacity = '1'; 
+    }
+    bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
+    replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
+    bubble.hasVibrated = false;
+  };
 
-            if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
-              e.target.style.opacity = '1'; 
-            }
-            
-            clearTimeout(pressTimer);
-            bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
-            replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
-            bubble.hasVibrated = false;
+  bubble.addEventListener('touchend', e => {
+    resetBubbleTouch(e);
+    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
 
-            if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
-              prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
-                } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
-              singleTapTimer = setTimeout(() => {
-                const vidContainer = e.target.closest('.video-thumb-container');
-                if (vidContainer) {
-                   openVideoPlayer(msg.url); // 🚀 فتح الفيديو كبث مباشر (Streaming) فوراً دون تحميل
-                } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
-                  window.previewImg(e.target.src);
-                }
-              }, 250);
-            }
-            isSwiping = false; touchStartX = 0; touchStartY = 0;
-          });
+    if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
+      prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
+    } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
+      singleTapTimer = setTimeout(() => {
+        const vidContainer = e.target.closest('.video-thumb-container');
+        if (vidContainer) {
+           openVideoPlayer(msg.url);
+        } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
+          window.previewImg(e.target.src);
+        }
+      }, 250);
+    }
+    isSwiping = false; touchStartX = 0; touchStartY = 0;
+  });
 
-          // منع قائمة جوجل الافتراضية نهائياً لجميع العناصر بما فيها الروابط
-          bubble.addEventListener('contextmenu', e => { 
-            if (msg.isPending) return; 
-            e.preventDefault(); 
-            clearTimeout(pressTimer); 
-            openMsgMenu(msg, isOut); 
-          });
+  // 🚀 معالجة الإلغاء المفاجئ للمس (يحدث عند السحب السريع)
+  bubble.addEventListener('touchcancel', e => {
+    resetBubbleTouch(e);
+    isSwiping = false; touchStartX = 0; touchStartY = 0;
+  });
+
+  // 🚀 منع ظهور القائمة نهائياً إذا تم النقر المطول على الفويس أو الروابط
+  bubble.addEventListener('contextmenu', e => { 
+    if (msg.isPending || e.target.closest('.voice-waveform') || e.target.closest('button') || e.target.tagName === 'A') return; 
+    e.preventDefault(); 
+    clearTimeout(pressTimer); 
+    openMsgMenu(msg, isOut); 
+  });
 
     let ticks = '';
   if (isOut && !msg.isPending) {
@@ -2751,6 +2760,22 @@ window.pauseCurrentVoiceNote = function() {
 window.toggleCurrentVoiceNote = function() {
     if(currentAudio) {
         const senderName = (currentChat && currentChat.friendProfile) ? currentChat.friendProfile.name : 'رسالة صوتية';
+        
+        // 🚀 جلب المدة الحقيقية للفويس لإرسالها للأندرويد
+        let curSec = Math.floor(currentAudio.currentTime || 0);
+        let totSec = Math.floor(currentAudio.duration || 0);
+        if (!isFinite(totSec) && currentAudioMsgKey) {
+            const durEl = document.getElementById('dur-' + currentAudioMsgKey);
+            if (durEl) {
+                const origStr = durEl.getAttribute('data-orig');
+                if (origStr && !origStr.includes('أغنية')) {
+                    const parts = origStr.split(':');
+                    if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                }
+            }
+        }
+        if (!isFinite(totSec)) totSec = 0;
+
         if(currentAudio.paused) {
             currentAudio.play();
             document.querySelectorAll('.voice-play-btn svg').forEach(svg => {
@@ -2759,7 +2784,7 @@ window.toggleCurrentVoiceNote = function() {
                 }
             });
             if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true);
+                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
             }
         } else {
             currentAudio.pause();
@@ -2767,7 +2792,7 @@ window.toggleCurrentVoiceNote = function() {
                 b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
             });
             if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false);
+                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
             }
         }
     }
@@ -2830,11 +2855,26 @@ async function playVoice(btn, url, msgKey, isOut) {
   
   currentAudio.onplaying = () => { 
       const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+      
+      let curSec = Math.floor(currentAudio.currentTime || 0);
+      let totSec = Math.floor(currentAudio.duration || 0);
+      if (!isFinite(totSec)) {
+          const durEl = document.getElementById('dur-' + msgKey);
+          if (durEl) {
+              const origStr = durEl.getAttribute('data-orig');
+              if (origStr && !origStr.includes('أغنية')) {
+                  const parts = origStr.split(':');
+                  if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+              }
+          }
+      }
+      if (!isFinite(totSec)) totSec = 0;
+
       if (window.AndroidCall) {
           window.AndroidCall.startVoiceNoteMode();
-          // 🚀 تشغيل المشغل المخصص داخل نظام الأندرويد
+          // 🚀 تشغيل المشغل المخصص داخل نظام الأندرويد مع المدة الزمنية
           if (typeof window.AndroidCall.showMediaNotification === 'function') {
-              window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true);
+              window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
           }
       }
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
@@ -2843,8 +2883,23 @@ async function playVoice(btn, url, msgKey, isOut) {
 
   currentAudio.onpause = () => {
       const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+      
+      let curSec = Math.floor(currentAudio.currentTime || 0);
+      let totSec = Math.floor(currentAudio.duration || 0);
+      if (!isFinite(totSec)) {
+          const durEl = document.getElementById('dur-' + msgKey);
+          if (durEl) {
+              const origStr = durEl.getAttribute('data-orig');
+              if (origStr && !origStr.includes('أغنية')) {
+                  const parts = origStr.split(':');
+                  if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+              }
+          }
+      }
+      if (!isFinite(totSec)) totSec = 0;
+
       if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-          window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false);
+          window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
       }
   };
 
