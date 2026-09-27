@@ -95,7 +95,7 @@ self.addEventListener('push', function(event) {
 // مكتبة Firebase ستقوم الآن بعرض الإشعار الافتراضي بشكل تلقائي ومثالي بناءً على إعدادات Vercel
 
 // رفعنا الإصدار ليجبر المتصفح ياخد النسخة الجديدة (تم رفعه لـ 8 للتأكيد)
-const CACHE_NAME = 'app-cache-11'; 
+const CACHE_NAME = 'app-cache-13'; 
 const ASSETS = [
   './',
   './index.html',

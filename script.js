@@ -215,14 +215,14 @@ function openModal(title, text) {
 
 function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 150) + 'px'; }
 function escHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''; }
+function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function formatDate(ts) {
   if (!ts) return '';
   const d = new Date(ts), now = new Date();
   if (d.toDateString() === now.toDateString()) return 'اليوم';
   const yes = new Date(now); yes.setDate(now.getDate() - 1);
   if (d.toDateString() === yes.toDateString()) return 'أمس';
-  return d.toLocaleDateString('ar-EG', { day: '2-digit', month: 'short' });
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 /* ═══════════════════════════════════
@@ -350,7 +350,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=11');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=13');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1019,20 +1019,24 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const statusEl = document.getElementById('chat-header-status');
     if (!statusEl) return;
     
-    if (state === 'typing') {
-      statusEl.textContent = '✍️ يكتب الآن...';
-      statusEl.style.color = 'var(--neon-cyan)';
-    } else if (state === 'recording') {
-      statusEl.textContent = '🎙️ يسجل مقطع صوتي...';
-      statusEl.style.color = 'var(--neon-pink)';
-    } else {
-      statusEl.textContent = baseStatusText;
-      statusEl.style.color = baseStatusColor;
-    }
-  });
-}
+            if (state === 'typing') {
+          statusEl.textContent = '✍️ يكتب الآن...';
+          statusEl.style.color = 'var(--neon-cyan)';
+        } else if (state === 'recording') {
+          statusEl.textContent = '🎙️ يسجل مقطع صوتي...';
+          statusEl.style.color = 'var(--neon-pink)';
+        } else {
+          statusEl.textContent = baseStatusText;
+          statusEl.style.color = baseStatusColor;
+        }
+      });
 
-async function attachMessages(chatId) {
+      if (window.AndroidCall && typeof window.AndroidCall.clearChatNotification === 'function') {
+          window.AndroidCall.clearChatNotification(chatId);
+      }
+    }
+
+    async function attachMessages(chatId) {
   const area = document.getElementById('messages-area');
   area.innerHTML = '';
   lastMsgDate = '';
@@ -1188,7 +1192,7 @@ async function attachMessages(chatId) {
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
     if (!existsInCache) {
       liveMsgsCache.push(msg);
-      if (liveMsgsCache.length > 40) liveMsgsCache.shift(); // 🚀 تخفيض الكاش لـ 40 ليرتاح الرام تماماً
+      // 🔴 تم إزالة كود تقليل الكاش لـ 40 رسالة لحفظ كل تاريخ المحادثة
       chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
 
@@ -1398,25 +1402,19 @@ async function attachMessages(chatId) {
     }
   });
 
-  // 🚀 السحر هون: استشعار الحذف النهائي (الدمار الشامل للصور والفيديوهات بعد 24 ساعة) لمسحها من الشاشة فوراً
-  currentMessagesQuery.on('child_removed', snap => {
-    const bubbleEl = document.getElementById('msg-' + snap.key);
-    if (bubbleEl) {
-      const fullRow = bubbleEl.closest('.msg-row');
-      if (fullRow) fullRow.remove();
-    }
-    
-    // تنظيف الكاش المحلي كمان عشان ما ترجع تظهر
-    const idx = liveMsgsCache.findIndex(m => m.key === snap.key);
-    if (idx !== -1) {
-      liveMsgsCache.splice(idx, 1);
-      chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
-    }
-  });
+  // 🔴 تم إزالة حدث child_removed نهائياً لأنه كان يخفي الرسائل التي تتجاوز الـ 30 رسالة
 }
 
 function buildMsgEl(msg, isBackground = false) {
-  // فحص أمان: إذا الرسالة صوت أو صورة وما فيها رابط، أو نص وفاضي، منعطل ظهورها
+  // فحص أمان 1: منع ظهور الرسائل المعطوبة أو مجهولة النوع (الفقاعات الفارغة)
+  const validTypes = ['text', 'image', 'video', 'audio', 'voice', 'deleted'];
+  if (!msg.type || !validTypes.includes(msg.type)) {
+    const dummy = document.createElement('div');
+    dummy.style.display = 'none';
+    return dummy;
+  }
+
+  // فحص أمان 2: إذا الرسالة صوت أو صورة وما فيها رابط، أو نص وفاضي، منعطل ظهورها
   if ((msg.type === 'voice' || msg.type === 'audio' || msg.type === 'image' || msg.type === 'video') && !msg.url && !msg.isPending) {
     const dummy = document.createElement('div');
     dummy.style.display = 'none';
@@ -1655,8 +1653,8 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
-  } else if (msg.type === 'voice') {
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
+    } else if (msg.type === 'voice') {
  if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
@@ -1665,7 +1663,7 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
   }
   
   if (msg.isPending) {
@@ -1772,10 +1770,7 @@ async function syncPendingMessages() {
   const now = Date.now();
   
   for (const p of pending) {
-    if (now - p.time > 3600000) { 
-      await pendingDB.delete(p.key);
-      continue; 
-    } 
+    // 🔴 تم إزالة شرط الحذف التلقائي بعد ساعة نهائياً لضمان عدم اختفاء الرسائل المعلقة
     
     if (p.msg.type === 'voice' && p.msg.url && p.msg.url.startsWith('data:audio')) {
         try {
@@ -2284,7 +2279,15 @@ async function decryptImageUrl(encryptedUrl) {
         );
         const decryptedBlob = new Blob([decryptedContent], { type: 'image/jpeg' });
         const objectUrl = URL.createObjectURL(decryptedBlob);
-        if (window.localImageCache) window.localImageCache[encryptedUrl] = objectUrl;
+        if (window.localImageCache) {
+            window.localImageCache[encryptedUrl] = objectUrl;
+            // 🚀 تفريغ الذاكرة: منع تكديس أكثر من 30 صورة لتجنب امتلاء الرام
+            const keys = Object.keys(window.localImageCache);
+            if (keys.length > 30) {
+                URL.revokeObjectURL(window.localImageCache[keys[0]]); // مسح نهائي من الذاكرة
+                delete window.localImageCache[keys[0]];
+            }
+        }
         return objectUrl;
     } catch (e) {
         console.error("خطأ في فك تشفير الصورة:", e);
@@ -2825,7 +2828,8 @@ function startAudioProgress(msgKey) {
   }
   
   audioUpdateInterval = setInterval(() => {
-    if (currentAudio && !currentAudio.paused) {
+    // 🚀 الإضافة السحرية: إيقاف تحديث الواجهة التلقائي إذا كان المستخدم عم يسحب الشريط!
+    if (currentAudio && !currentAudio.paused && !window.isAudioScrubbing) {
       let realDur = currentAudio.duration;
       
       if (realDur && realDur !== Infinity && !isNaN(realDur)) {
@@ -2847,7 +2851,10 @@ function startAudioProgress(msgKey) {
         let perc = (currentAudio.currentTime / fallbackDuration) * 100; 
         if (perc > 100) perc = 100;
         let fill = document.getElementById('progress-' + msgKey); 
-        if (fill) fill.style.width = perc + '%';
+        if (fill) {
+            fill.style.transition = 'width 0.1s linear';
+            fill.style.width = perc + '%';
+        }
       }
       
             if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
@@ -2855,12 +2862,37 @@ function startAudioProgress(msgKey) {
   }, 100); // 🚀 تخفيف سرعة العداد ليرتاح المعالج ويمنع حرارة الجهاز
 }
 
-function seekVoice(event, url, msgKey) {
-  if (!currentAudio || currentAudioMsgKey !== msgKey) return;
+// 🚀 نظام السحب والتقديم المتطور للفويسات
+window.isAudioScrubbing = false;
+let wasAudioPlayingBeforeScrub = false;
+
+function getVoiceSeekPerc(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  let clientX = event.clientX;
+  if (clientX === undefined && event.touches && event.touches.length > 0) {
+    clientX = event.touches[0].clientX;
+  } else if (clientX === undefined && event.changedTouches && event.changedTouches.length > 0) {
+    clientX = event.changedTouches[0].clientX;
+  }
+  if (clientX === undefined) return 0;
+  
+  let clickX = rect.right - clientX; // لغة عربية (RTL) لذلك نحسب من اليمين
+  let perc = clickX / rect.width;
+  if (perc < 0) perc = 0;
+  if (perc > 1) perc = 1;
+  return perc;
+}
+
+function updateVoiceSeekUI(event, msgKey) {
+  const perc = getVoiceSeekPerc(event);
+  const fill = document.getElementById('progress-' + msgKey);
+  if (fill) {
+    fill.style.transition = 'none'; // تحديث فوري وسلس أثناء السحب
+    fill.style.width = (perc * 100) + '%';
+  }
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  
   let fallbackDuration = 0; 
   if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
     const parts = origStr.split(':'); 
@@ -2870,51 +2902,103 @@ function seekVoice(event, url, msgKey) {
   let realDur = currentAudio.duration; 
   let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
   
-  if (!totalDuration || totalDuration <= 0) return;
-  
-  const rect = event.currentTarget.getBoundingClientRect();
-  
-  let clientX = event.clientX;
-  if (clientX === undefined && event.touches && event.touches.length > 0) {
-    clientX = event.touches[0].clientX;
-  } else if (clientX === undefined && event.changedTouches && event.changedTouches.length > 0) {
-    clientX = event.changedTouches[0].clientX;
+  if (totalDuration > 0) {
+    const targetTime = totalDuration * perc;
+    const curSec = Math.floor(targetTime);
+    const m = Math.floor(curSec / 60);
+    const s = curSec % 60;
+    if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
   }
-  if (clientX === undefined) return;
   
-  let clickX = rect.right - clientX; 
-  let perc = clickX / rect.width; 
-  
-  if (perc < 0) perc = 0; 
-  if (perc > 1) perc = 1;
-  
-  const targetTime = totalDuration * perc;
+  return perc;
+}
 
-  // 🚀 السحر هنا: حل مشكلة رجوع الفويس للأول في متصفحات كروم (WebM Duration Bug)
-  if (currentAudio.duration === Infinity || isNaN(currentAudio.duration)) {
-     const wasPlaying = !currentAudio.paused;
-     
-     // إزالة حدث onended مؤقتاً لمنع الانتقال للفويس التالي بالخطأ
-     const originalOnEnded = currentAudio.onended;
-     currentAudio.onended = null;
-     
-     // قفزة وهمية لآخر المقطع ليتعرف المتصفح على طوله الحقيقي
-     currentAudio.currentTime = 1e8; 
-     
-     currentAudio.onseeked = function() {
-         currentAudio.onseeked = null; // تنظيف الحدث
-         currentAudio.currentTime = targetTime; // العودة للوقت المطلوب الذي حدده المستخدم
-         currentAudio.onended = originalOnEnded; // إعادة التشغيل التلقائي للفويس التالي
-         if (wasPlaying) currentAudio.play();
-     };
-  } else {
-     currentAudio.currentTime = targetTime;
+function startVoiceSeek(event, msgKey) {
+  if (!currentAudio || currentAudioMsgKey !== msgKey) return;
+  window.isAudioScrubbing = true;
+  wasAudioPlayingBeforeScrub = !currentAudio.paused;
+  
+  if (wasAudioPlayingBeforeScrub) currentAudio.pause(); // الإيقاف المؤقت أثناء السحب لمنع التشويش
+  
+  if (event.pointerId) {
+     try { event.currentTarget.setPointerCapture(event.pointerId); } catch(e){}
   }
+  
+  updateVoiceSeekUI(event, msgKey);
+}
 
-  const fill = document.getElementById('progress-' + msgKey); 
+function moveVoiceSeek(event, msgKey) {
+  if (!window.isAudioScrubbing || !currentAudio || currentAudioMsgKey !== msgKey) return;
+  updateVoiceSeekUI(event, msgKey);
+}
+
+function endVoiceSeek(event, msgKey) {
+  if (!window.isAudioScrubbing || !currentAudio || currentAudioMsgKey !== msgKey) return;
+  window.isAudioScrubbing = false;
+  
+  if (event.pointerId) {
+     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch(e){}
+  }
+  
+  const perc = updateVoiceSeekUI(event, msgKey);
+  
+  const durEl = document.getElementById('dur-' + msgKey);
+  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0; 
+  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+    const parts = origStr.split(':'); 
+    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  }
+  
+  let realDur = currentAudio.duration; 
+  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
+  
+  if (totalDuration > 0) {
+    const targetTime = totalDuration * perc;
+    
+    // 🚀 الحل الجذري: نحدث currentTime مباشرة دون حركات 1e8 المعقدة التي تسبب التصفير
+    try {
+       currentAudio.currentTime = targetTime;
+    } catch(e) {}
+  }
+  
+  const fill = document.getElementById('progress-' + msgKey);
+  if (fill) fill.style.transition = 'width 0.1s linear';
+
+  if (wasAudioPlayingBeforeScrub) {
+      let playPromise = currentAudio.play();
+      if (playPromise !== undefined) playPromise.catch(()=>{});
+  }
+}
+
+// 🚀 تم الاحتفاظ بهذه الدالة للتوافق مع الرسائل القديمة في حال لم يتم إعادة تحميل الصفحة
+function seekVoice(event, url, msgKey) {
+  if (!currentAudio || currentAudioMsgKey !== msgKey || window.isAudioScrubbing) return;
+  
+  const perc = getVoiceSeekPerc(event);
+  
+  const durEl = document.getElementById('dur-' + msgKey);
+  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+  let fallbackDuration = 0; 
+  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+    const parts = origStr.split(':'); 
+    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  }
+  
+  let realDur = currentAudio.duration; 
+  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
+  
+  if (totalDuration > 0) {
+    const targetTime = totalDuration * perc;
+    try {
+       currentAudio.currentTime = targetTime;
+    } catch(e) {}
+  }
+  
+  const fill = document.getElementById('progress-' + msgKey);
   if (fill) fill.style.width = (perc * 100) + '%';
   
-  const curSec = Math.floor(targetTime);
+  const curSec = Math.floor(totalDuration * perc);
   const m = Math.floor(curSec / 60);
   const s = curSec % 60;
   if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
@@ -3944,7 +4028,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=12');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=13');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -4127,7 +4211,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.57</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.13</div>
       </div>
     </div>
     
