@@ -2761,7 +2761,6 @@ window.toggleCurrentVoiceNote = function() {
     if(currentAudio) {
         const senderName = (currentChat && currentChat.friendProfile) ? currentChat.friendProfile.name : 'رسالة صوتية';
         
-        // 🚀 جلب المدة الحقيقية للفويس لإرسالها للأندرويد
         let curSec = Math.floor(currentAudio.currentTime || 0);
         let totSec = Math.floor(currentAudio.duration || 0);
         if (!isFinite(totSec) && currentAudioMsgKey) {
@@ -2783,23 +2782,27 @@ window.toggleCurrentVoiceNote = function() {
                    svg.outerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
                 }
             });
-            if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
-            }
+            try {
+                if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                    window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
+                }
+            } catch (e) { console.error(e); }
         } else {
             currentAudio.pause();
             document.querySelectorAll('.voice-play-btn').forEach(b => {
                 b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
             });
-            if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
-            }
+            try {
+                if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                    window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
+                }
+            } catch (e) { console.error(e); }
         }
     }
 };
 
 async function playVoice(btn, url, msgKey, isOut) {
-  if (window.isChatOpening) return; // 🚀 الحماية الحديدية من النقرات الوهمية
+  if (window.isChatOpening) return;
   if (isOut === false && currentChat) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
     const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
@@ -2808,18 +2811,14 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio && currentAudioMsgKey === msgKey) {
     if (!currentAudio.paused) { 
         currentAudio.pause(); 
-        if (window.AndroidCall) {
-            window.AndroidCall.stopVoiceNoteMode();
-        }
+        try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(e){}
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; 
         clearInterval(audioUpdateInterval); 
         return; 
     } else { 
         currentAudio.play(); 
         currentAudio.playbackRate = globalVoiceSpeed; 
-        if (window.AndroidCall) {
-            window.AndroidCall.startVoiceNoteMode();
-        }
+        try { if (window.AndroidCall) window.AndroidCall.startVoiceNoteMode(); } catch(e){}
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
         startAudioProgress(msgKey); 
         return; 
@@ -2829,9 +2828,7 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio) {
     currentAudio.pause(); 
     currentAudio.src = ''; 
-    if (window.AndroidCall) {
-        window.AndroidCall.stopVoiceNoteMode();
-    }
+    try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(e){}
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
     clearInterval(audioUpdateInterval);
@@ -2854,53 +2851,56 @@ async function playVoice(btn, url, msgKey, isOut) {
   currentAudio.playbackRate = globalVoiceSpeed;
   
   currentAudio.onplaying = () => { 
-      const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
-      
-      let curSec = Math.floor(currentAudio.currentTime || 0);
-      let totSec = Math.floor(currentAudio.duration || 0);
-      if (!isFinite(totSec)) {
-          const durEl = document.getElementById('dur-' + msgKey);
-          if (durEl) {
-              const origStr = durEl.getAttribute('data-orig');
-              if (origStr && !origStr.includes('أغنية')) {
-                  const parts = origStr.split(':');
-                  if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-              }
-          }
-      }
-      if (!isFinite(totSec)) totSec = 0;
-
-      if (window.AndroidCall) {
-          window.AndroidCall.startVoiceNoteMode();
-          // 🚀 تشغيل المشغل المخصص داخل نظام الأندرويد مع المدة الزمنية
-          if (typeof window.AndroidCall.showMediaNotification === 'function') {
-              window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
-          }
-      }
+      // 🚀 نضمن أن واجهة التطبيق تتحدث (يتحول الزر لخطين) فوراً وبدون أي عوائق!
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
       startAudioProgress(msgKey); 
+      
+      try {
+          const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+          let curSec = Math.floor(currentAudio.currentTime || 0);
+          let totSec = Math.floor(currentAudio.duration || 0);
+          if (!isFinite(totSec)) {
+              const durEl = document.getElementById('dur-' + msgKey);
+              if (durEl) {
+                  const origStr = durEl.getAttribute('data-orig');
+                  if (origStr && !origStr.includes('أغنية')) {
+                      const parts = origStr.split(':');
+                      if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                  }
+              }
+          }
+          if (!isFinite(totSec)) totSec = 0;
+
+          if (window.AndroidCall) {
+              window.AndroidCall.startVoiceNoteMode();
+              if (typeof window.AndroidCall.showMediaNotification === 'function') {
+                  window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
+              }
+          }
+      } catch (e) { console.error(e); }
   };
 
   currentAudio.onpause = () => {
-      const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
-      
-      let curSec = Math.floor(currentAudio.currentTime || 0);
-      let totSec = Math.floor(currentAudio.duration || 0);
-      if (!isFinite(totSec)) {
-          const durEl = document.getElementById('dur-' + msgKey);
-          if (durEl) {
-              const origStr = durEl.getAttribute('data-orig');
-              if (origStr && !origStr.includes('أغنية')) {
-                  const parts = origStr.split(':');
-                  if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      try {
+          const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+          let curSec = Math.floor(currentAudio.currentTime || 0);
+          let totSec = Math.floor(currentAudio.duration || 0);
+          if (!isFinite(totSec)) {
+              const durEl = document.getElementById('dur-' + msgKey);
+              if (durEl) {
+                  const origStr = durEl.getAttribute('data-orig');
+                  if (origStr && !origStr.includes('أغنية')) {
+                      const parts = origStr.split(':');
+                      if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                  }
               }
           }
-      }
-      if (!isFinite(totSec)) totSec = 0;
+          if (!isFinite(totSec)) totSec = 0;
 
-      if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-          window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
-      }
+          if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+              window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
+          }
+      } catch (e) { console.error(e); }
   };
 
   currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
