@@ -1,4 +1,25 @@
 /* ═══════════════════════════════════
+   PERFORMANCE OPTIMIZATIONS (60 FPS) & FORCED STYLES
+═══════════════════════════════════ */
+const perfStyle = document.createElement('style');
+perfStyle.innerHTML = `
+  * { -webkit-tap-highlight-color: transparent; outline: none; }
+  .msg-bubble, .msg-menu, .modal, .glass-card, .search-result-card, #video-preview-overlay { transform: translateZ(0); will-change: transform, opacity; }
+  .messages-area { contain: content; scroll-behavior: auto !important; }
+  .msg-row { contain: layout style; }
+  .voice-waveform { -webkit-user-select: none; user-select: none; touch-action: none; -webkit-touch-callout: none; pointer-events: auto; }
+  .voice-msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; pointer-events: auto; }
+  .voice-progress-fill { will-change: width; }
+  /* تخفيف الظلال المكلفة للـ GPU في الموبايل */
+  .msg-menu { box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important; }
+  .glass-card { box-shadow: 0 5px 20px rgba(0,0,0,0.3) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(10, 22, 40, 0.98) !important; }
+  /* 🚀 ألوان مريحة للعين وأنيقة جداً للبطاقات وتتجاوز الكاش تماماً */
+  .msg-row.out .msg-bubble { background: #0d3b44 !important; border: 1px solid #155865 !important; border-bottom-right-radius: 6px !important; color: #eaf6f8 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+  .msg-row.in .msg-bubble { background: #1a222c !important; border: 1px solid #283443 !important; border-bottom-left-radius: 6px !important; color: #e2e8f0 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+`;
+document.head.appendChild(perfStyle);
+
+/* ═══════════════════════════════════
    FIREBASE INIT & GLOBAL STATE
 ═══════════════════════════════════ */
 let firebaseConfig;
@@ -901,7 +922,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   renderScreenUI('chat'); 
   
   window.isChatOpening = true;
-  setTimeout(() => { window.isChatOpening = false; }, 600); // 🚀 تجميد التفاعلات نصف ثانية
+  setTimeout(() => { window.isChatOpening = false; }, 100); // 🚀 تقليل التجميد لـ 100ms لسرعة استجابة فورية
 
   detachMessages();
   wakeUpCloudinary(); // 🚀 تسخين السيرفر أول ما تفتح المحادثة
@@ -1487,7 +1508,8 @@ function buildMsgEl(msg, isBackground = false) {
   let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
-    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
+    // 🚀 منع صارم: إذا كان المستخدم يلمس المقطع الصوتي، الروابط، أو الشريط، توقف فوراً ولا تفتح أي قائمة!
+    if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg')) return;
     
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) { 
@@ -1504,11 +1526,11 @@ function buildMsgEl(msg, isBackground = false) {
 
     if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { e.target.style.opacity = '0.85'; } 
 
-    pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending) openMsgMenu(msg, isOut); }, 500);
+    pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending && !window.isAudioScrubbing) openMsgMenu(msg, isOut); }, 350);
   }, { passive: false });
 
   bubble.addEventListener('touchmove', e => {
-    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform') || !touchStartX) return;
+    if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg') || !touchStartX) return;
     const dx = e.touches[0].clientX - touchStartX, dy = e.touches[0].clientY - touchStartY;
     
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
@@ -1534,7 +1556,6 @@ function buildMsgEl(msg, isBackground = false) {
     }
   }, { passive: true });
 
-  // 🚀 دالة لتنظيف حالة اللمس وإلغاء القائمة
   const resetBubbleTouch = (e) => {
     clearTimeout(pressTimer);
     if (e && e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
@@ -1547,7 +1568,7 @@ function buildMsgEl(msg, isBackground = false) {
 
   bubble.addEventListener('touchend', e => {
     resetBubbleTouch(e);
-    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
+    if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg')) return;
 
     if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
       prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
@@ -1564,15 +1585,17 @@ function buildMsgEl(msg, isBackground = false) {
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
 
-  // 🚀 معالجة الإلغاء المفاجئ للمس (يحدث عند السحب السريع)
   bubble.addEventListener('touchcancel', e => {
     resetBubbleTouch(e);
     isSwiping = false; touchStartX = 0; touchStartY = 0;
   });
 
-  // 🚀 منع ظهور القائمة نهائياً إذا تم النقر المطول على الفويس أو الروابط
   bubble.addEventListener('contextmenu', e => { 
-    if (msg.isPending || e.target.closest('.voice-waveform') || e.target.closest('button') || e.target.tagName === 'A') return; 
+    // 🚀 جدار ناري إضافي: إذا كان الأندرويد يحاول فتح قائمة النظام أثناء لمس الفويس نلغيها فوراً!
+    if (window.isAudioScrubbing || msg.isPending || e.target.closest('.voice-msg') || e.target.closest('button') || e.target.tagName === 'A') {
+        e.preventDefault();
+        return;
+    }
     e.preventDefault(); 
     clearTimeout(pressTimer); 
     openMsgMenu(msg, isOut); 
@@ -2756,6 +2779,34 @@ window.pauseCurrentVoiceNote = function() {
     }
 };
 
+// 🚀 دالة تستقبل أمر التقديم والتأخير من شريط الستارة بالأندرويد
+window.seekCurrentVoiceNote = function(timeInSeconds) {
+    if (currentAudio) {
+        try {
+            currentAudio.currentTime = timeInSeconds;
+            
+            // تحديث المشغل بالستارة ليتزامن فوراً مع المكان الجديد
+            const senderName = (currentChat && currentChat.friendProfile) ? currentChat.friendProfile.name : 'رسالة صوتية';
+            let totSec = Math.floor(currentAudio.duration || 0);
+            if (!isFinite(totSec) && currentAudioMsgKey) {
+                const durEl = document.getElementById('dur-' + currentAudioMsgKey);
+                if (durEl) {
+                    const origStr = durEl.getAttribute('data-orig');
+                    if (origStr && !origStr.includes('أغنية')) {
+                        const parts = origStr.split(':');
+                        if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    }
+                }
+            }
+            if (!isFinite(totSec)) totSec = 0;
+
+            if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, !currentAudio.paused, totSec, Math.floor(timeInSeconds));
+            }
+        } catch (e) { console.error(e); }
+    }
+};
+
 // 🚀 دالة تستقبل الأمر من الأندرويد عند الضغط على أزرار المشغل بالستارة
 window.toggleCurrentVoiceNote = function() {
     if(currentAudio) {
@@ -2801,7 +2852,7 @@ window.toggleCurrentVoiceNote = function() {
     }
 };
 
-async function playVoice(btn, url, msgKey, isOut) {
+function playVoice(btn, url, msgKey, isOut) {
   if (window.isChatOpening) return;
   if (isOut === false && currentChat) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
@@ -2837,126 +2888,123 @@ async function playVoice(btn, url, msgKey, isOut) {
   currentAudioMsgKey = msgKey; 
   btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
   
-  let optimizedUrl = url;
-  if (optimizedUrl.includes('cloudinary.com')) {
-     optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
-  }
+  let optimizedUrl = url.includes('cloudinary.com') ? url.replace(/upload\/.*?v\d+\//, 'upload/') : url;
 
-  let playSrc = optimizedUrl;
-
-  // 🚀 الحل الاحترافي: تحويل رابط الصوت إلى ملف محلي (Blob) قبل تشغيله!
-  // هذا يحل مشكلة الـ WebM نهائياً ويجبر المتصفح على قبول التقديم والتأخير بنعومة 100%
-  try {
-      if ('caches' in window) {
-          const cache = await caches.open('media-cache');
-          let res = await cache.match(optimizedUrl);
-          if (!res) {
-              res = await fetch(optimizedUrl, { mode: 'cors' });
-              if (res.ok) cache.put(optimizedUrl, res.clone());
-          }
-          if (res && res.ok) {
-              const blob = await res.blob();
-              playSrc = URL.createObjectURL(blob);
-          }
-      }
-  } catch (e) {
-      console.log("جاري التشغيل بالوضع العادي");
-      playSrc = optimizedUrl;
-  }
-
-  if (currentAudioMsgKey !== msgKey) return;
-  
-  currentAudio = new Audio(playSrc); 
-  currentAudio.preload = 'auto'; 
-  currentAudio.playbackRate = globalVoiceSpeed;
-  
-  currentAudio.onplaying = () => { 
-      // 🚀 نضمن أن واجهة التطبيق تتحدث (يتحول الزر لخطين) فوراً وبدون أي عوائق!
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
-      startAudioProgress(msgKey); 
+  // 🚀 دالة التشغيل السريع بدون انتظار أو حجب
+  const executePlay = (playSrc) => {
+      if (currentAudioMsgKey !== msgKey) return; // تم النقر على صوت آخر أثناء التحميل
+      currentAudio = new Audio(playSrc); 
+      currentAudio.preload = 'auto'; 
+      currentAudio.playbackRate = globalVoiceSpeed;
       
-      try {
-          const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
-          let curSec = Math.floor(currentAudio.currentTime || 0);
-          let totSec = Math.floor(currentAudio.duration || 0);
-          if (!isFinite(totSec)) {
-              const durEl = document.getElementById('dur-' + msgKey);
-              if (durEl) {
-                  const origStr = durEl.getAttribute('data-orig');
-                  if (origStr && !origStr.includes('أغنية')) {
-                      const parts = origStr.split(':');
-                      if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+      currentAudio.onplaying = () => { 
+          btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+          startAudioProgress(msgKey); 
+          try {
+              const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+              let curSec = Math.floor(currentAudio.currentTime || 0);
+              let totSec = Math.floor(currentAudio.duration || 0);
+              if (!isFinite(totSec)) {
+                  const durEl = document.getElementById('dur-' + msgKey);
+                  if (durEl) {
+                      const origStr = durEl.getAttribute('data-orig');
+                      if (origStr && !origStr.includes('أغنية')) {
+                          const parts = origStr.split(':');
+                          if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                      }
                   }
               }
-          }
-          if (!isFinite(totSec)) totSec = 0;
+              if (!isFinite(totSec)) totSec = 0;
 
-          if (window.AndroidCall) {
-              window.AndroidCall.startVoiceNoteMode();
-              if (typeof window.AndroidCall.showMediaNotification === 'function') {
-                  window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
-              }
-          }
-      } catch (e) { console.error(e); }
-  };
-
-  currentAudio.onpause = () => {
-      try {
-          const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
-          let curSec = Math.floor(currentAudio.currentTime || 0);
-          let totSec = Math.floor(currentAudio.duration || 0);
-          if (!isFinite(totSec)) {
-              const durEl = document.getElementById('dur-' + msgKey);
-              if (durEl) {
-                  const origStr = durEl.getAttribute('data-orig');
-                  if (origStr && !origStr.includes('أغنية')) {
-                      const parts = origStr.split(':');
-                      if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+              if (window.AndroidCall) {
+                  window.AndroidCall.startVoiceNoteMode();
+                  if (typeof window.AndroidCall.showMediaNotification === 'function') {
+                      window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
                   }
               }
-          }
-          if (!isFinite(totSec)) totSec = 0;
+          } catch (e) { console.error(e); }
+      };
 
-          if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
-              window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
-          }
-      } catch (e) { console.error(e); }
-  };
+      currentAudio.onpause = () => {
+          try {
+              const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+              let curSec = Math.floor(currentAudio.currentTime || 0);
+              let totSec = Math.floor(currentAudio.duration || 0);
+              if (!isFinite(totSec)) {
+                  const durEl = document.getElementById('dur-' + msgKey);
+                  if (durEl) {
+                      const origStr = durEl.getAttribute('data-orig');
+                      if (origStr && !origStr.includes('أغنية')) {
+                          const parts = origStr.split(':');
+                          if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                      }
+                  }
+              }
+              if (!isFinite(totSec)) totSec = 0;
 
-  currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
-  
-  let playPromise = currentAudio.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(e => {
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-      if (window.AndroidCall) {
-          window.AndroidCall.stopVoiceNoteMode();
+              if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                  window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
+              }
+          } catch (e) { console.error(e); }
+      };
+
+      currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
+      
+      let playPromise = currentAudio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+          try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(err){}
+          clearInterval(audioUpdateInterval);
+        });
       }
-      clearInterval(audioUpdateInterval);
-    });
-  }
-  
-  startAudioProgress(msgKey);
+      
+      startAudioProgress(msgKey);
 
-  currentAudio.onended = () => {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-    const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = '0%';
-    const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
-    let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
-    while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
-    let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
-    
-    currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
-    if (window.AndroidCall) {
-        window.AndroidCall.stopVoiceNoteMode();
-        // 🚀 إخفاء المشغل من الأندرويد عند الانتهاء
-        if (typeof window.AndroidCall.hideMediaNotification === 'function') {
-            window.AndroidCall.hideMediaNotification();
-        }
-    }
-    
-    if (nextBtn) nextBtn.click();
+      currentAudio.onended = () => {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = '0%';
+        const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
+        let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
+        while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
+        let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
+        
+        currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
+        try {
+            if (window.AndroidCall) {
+                window.AndroidCall.stopVoiceNoteMode();
+                if (typeof window.AndroidCall.hideMediaNotification === 'function') {
+                    window.AndroidCall.hideMediaNotification();
+                }
+            }
+        } catch(err){}
+        
+        if (nextBtn) nextBtn.click();
+      };
   };
+
+  // 🚀 تشغيل ذكي وغير خانق (Non-Blocking Promise)
+  if (window.voiceBlobCache[optimizedUrl]) {
+      executePlay(window.voiceBlobCache[optimizedUrl]);
+  } else {
+      if ('caches' in window) {
+          caches.open('media-cache').then(cache => {
+              cache.match(optimizedUrl).then(res => {
+                  if (res) return res.blob();
+                  return fetch(optimizedUrl, { mode: 'cors' }).then(networkRes => {
+                      if (networkRes.ok) cache.put(optimizedUrl, networkRes.clone());
+                      return networkRes.blob();
+                  });
+              }).then(blob => {
+                  const blobUrl = URL.createObjectURL(blob);
+                  window.voiceBlobCache[optimizedUrl] = blobUrl;
+                  executePlay(blobUrl);
+              }).catch(() => executePlay(optimizedUrl));
+          }).catch(() => executePlay(optimizedUrl));
+      } else {
+          executePlay(optimizedUrl);
+      }
+  }
 }
 
 function startAudioProgress(msgKey) {
@@ -2993,9 +3041,15 @@ function startAudioProgress(msgKey) {
 
 window.isAudioScrubbing = false;
 let wasAudioPlayingBeforeScrub = false;
+let cachedAudioRect = null; 
+let scrubRAF = null; // 🚀 محرك الـ Frame Rate للوصول لـ 60FPS أثناء السحب
 
 function getVoiceSeekPerc(event) {
-  const rect = event.currentTarget.getBoundingClientRect();
+  if (!cachedAudioRect && event.currentTarget) {
+      cachedAudioRect = event.currentTarget.getBoundingClientRect();
+  }
+  const rect = cachedAudioRect || event.currentTarget.getBoundingClientRect();
+  
   let clientX = event.clientX;
   if (clientX === undefined && event.touches && event.touches.length > 0) {
     clientX = event.touches[0].clientX;
@@ -3012,30 +3066,33 @@ function getVoiceSeekPerc(event) {
 }
 
 function updateVoiceSeekUI(event, msgKey) {
-  const perc = getVoiceSeekPerc(event);
-  const fill = document.getElementById('progress-' + msgKey);
-  if (fill) {
-    fill.style.transition = 'none';
-    fill.style.width = (perc * 100) + '%';
-  }
+  if (scrubRAF) cancelAnimationFrame(scrubRAF);
   
-  const durEl = document.getElementById('dur-' + msgKey);
-  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let totalDuration = 0; 
-  if (origStr && !origStr.includes('أغنية')) { 
-    const parts = origStr.split(':'); 
-    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
-  }
-  
-  if (totalDuration > 0) {
-    const targetTime = totalDuration * perc;
-    const curSec = Math.floor(targetTime);
-    const m = Math.floor(curSec / 60);
-    const s = curSec % 60;
-    if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
-  }
-  
-  return perc;
+  // 🚀 وضع تحديث الشريط داخل requestAnimationFrame ليتزامن مع سرعة الشاشة بدقة ويمنع التقطيع
+  scrubRAF = requestAnimationFrame(() => {
+      const perc = getVoiceSeekPerc(event);
+      const fill = document.getElementById('progress-' + msgKey);
+      if (fill) {
+        fill.style.transition = 'none';
+        fill.style.width = (perc * 100) + '%';
+      }
+      
+      const durEl = document.getElementById('dur-' + msgKey);
+      let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
+      let totalDuration = 0; 
+      if (origStr && !origStr.includes('أغنية')) { 
+        const parts = origStr.split(':'); 
+        if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+      }
+      
+      if (totalDuration > 0) {
+        const targetTime = totalDuration * perc;
+        const curSec = Math.floor(targetTime);
+        const m = Math.floor(curSec / 60);
+        const s = curSec % 60;
+        if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
+      }
+  });
 }
 
 function startVoiceSeek(event, msgKey) {
@@ -3060,12 +3117,14 @@ function moveVoiceSeek(event, msgKey) {
 function endVoiceSeek(event, msgKey) {
   if (!window.isAudioScrubbing || !currentAudio || currentAudioMsgKey !== msgKey) return;
   window.isAudioScrubbing = false;
+  cachedAudioRect = null; 
+  if (scrubRAF) cancelAnimationFrame(scrubRAF);
   
   if (event.pointerId) {
      try { event.currentTarget.releasePointerCapture(event.pointerId); } catch(e){}
   }
   
-  const perc = updateVoiceSeekUI(event, msgKey);
+  const perc = getVoiceSeekPerc(event);
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
