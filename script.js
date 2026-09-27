@@ -2509,19 +2509,43 @@ async function toggleRecording(isSinging = false) {
     audioChunks = []; isRecordingCanceled = false;
     mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = async () => {
+        mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
       const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
       const blob = new Blob(localChunks, { type: actualMimeType });
-      const finalDuration = recordDurationStr;
       
-      if (blob.size < 3000 || finalDuration === '0:00') {
+      const timerSec = Math.floor((Date.now() - recordStart) / 1000);
+      if (blob.size < 3000 || timerSec < 1) {
          showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
       }
+
+      // 🚀 استخراج المدة الفسيولوجية الحقيقية للملف من المتصفح قبل السماح بالإرسال
+      const getRealDuration = () => new Promise(resolve => {
+          const tmpAudio = new Audio(URL.createObjectURL(blob));
+          tmpAudio.addEventListener('loadedmetadata', () => {
+              if (tmpAudio.duration === Infinity || isNaN(tmpAudio.duration)) {
+                  tmpAudio.currentTime = 1e8; // خدعة لإجبار المتصفح على حساب المدة
+                  tmpAudio.addEventListener('timeupdate', function onTimeUpdate() {
+                      tmpAudio.removeEventListener('timeupdate', onTimeUpdate);
+                      resolve(tmpAudio.duration);
+                  });
+              } else {
+                  resolve(tmpAudio.duration);
+              }
+          });
+          tmpAudio.addEventListener('error', () => resolve(timerSec)); // بحال الفشل، نستخدم العداد كخطة بديلة
+      });
+
+      let realSec = await getRealDuration();
+      if (!realSec || isNaN(realSec) || realSec === Infinity) realSec = timerSec;
+      realSec = Math.floor(realSec);
+      
+      const exM = Math.floor(realSec / 60), exS = realSec % 60;
+      const finalDuration = exM + ':' + (exS < 10 ? '0' : '') + exS;
       
       const tempId = 'temp-audio-' + Date.now();
       const area = document.getElementById('messages-area');
@@ -2710,6 +2734,7 @@ window.pauseCurrentVoiceNote = function() {
         currentAudio.pause();
         try {
             if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
+            if (window.AndroidCall && typeof window.AndroidCall.hideMediaNotification === 'function') window.AndroidCall.hideMediaNotification();
         } catch (e) {
             console.log("Not in Android App");
         }
@@ -2719,6 +2744,32 @@ window.pauseCurrentVoiceNote = function() {
            }
         });
         clearInterval(audioUpdateInterval);
+    }
+};
+
+// 🚀 دالة تستقبل الأمر من الأندرويد عند الضغط على أزرار المشغل بالستارة
+window.toggleCurrentVoiceNote = function() {
+    if(currentAudio) {
+        const senderName = (currentChat && currentChat.friendProfile) ? currentChat.friendProfile.name : 'رسالة صوتية';
+        if(currentAudio.paused) {
+            currentAudio.play();
+            document.querySelectorAll('.voice-play-btn svg').forEach(svg => {
+                if(svg.closest('.msg-row').querySelector('.voice-progress-fill').style.width !== '0%') {
+                   svg.outerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+                }
+            });
+            if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true);
+            }
+        } else {
+            currentAudio.pause();
+            document.querySelectorAll('.voice-play-btn').forEach(b => {
+                b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+            });
+            if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false);
+            }
+        }
     }
 };
 
@@ -2778,12 +2829,25 @@ async function playVoice(btn, url, msgKey, isOut) {
   currentAudio.playbackRate = globalVoiceSpeed;
   
   currentAudio.onplaying = () => { 
+      const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
       if (window.AndroidCall) {
           window.AndroidCall.startVoiceNoteMode();
+          // 🚀 تشغيل المشغل المخصص داخل نظام الأندرويد
+          if (typeof window.AndroidCall.showMediaNotification === 'function') {
+              window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true);
+          }
       }
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
       startAudioProgress(msgKey); 
   };
+
+  currentAudio.onpause = () => {
+      const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+      if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+          window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false);
+      }
+  };
+
   currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
   
   let playPromise = currentAudio.play();
@@ -2810,6 +2874,10 @@ async function playVoice(btn, url, msgKey, isOut) {
     currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
     if (window.AndroidCall) {
         window.AndroidCall.stopVoiceNoteMode();
+        // 🚀 إخفاء المشغل من الأندرويد عند الانتهاء
+        if (typeof window.AndroidCall.hideMediaNotification === 'function') {
+            window.AndroidCall.hideMediaNotification();
+        }
     }
     
     if (nextBtn) nextBtn.click();
@@ -2820,35 +2888,22 @@ function startAudioProgress(msgKey) {
   clearInterval(audioUpdateInterval);
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; 
+  let totalDuration = 0; 
   
-  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+  if (origStr && !origStr.includes('أغنية')) { 
     const parts = origStr.split(':'); 
-    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
   
   audioUpdateInterval = setInterval(() => {
-    // 🚀 الإضافة السحرية: إيقاف تحديث الواجهة التلقائي إذا كان المستخدم عم يسحب الشريط!
     if (currentAudio && !currentAudio.paused && !window.isAudioScrubbing) {
-      let realDur = currentAudio.duration;
-      
-      if (realDur && realDur !== Infinity && !isNaN(realDur)) {
-        if (origStr.includes('أغنية') || origStr === '0:00') {
-          const totM = Math.floor(realDur / 60);
-          const totS = Math.floor(realDur % 60);
-          origStr = `${totM}:${totS < 10 ? '0' : ''}${totS}`;
-          if (durEl) durEl.setAttribute('data-orig', origStr);
-        }
-        fallbackDuration = realDur;
-      }
-      
       const curSec = Math.floor(currentAudio.currentTime || 0);
       const m = Math.floor(curSec / 60);
       const s = curSec % 60;
       const currentFormatted = `${m}:${s < 10 ? '0' : ''}${s}`;
 
-      if (fallbackDuration > 0) {
-        let perc = (currentAudio.currentTime / fallbackDuration) * 100; 
+      if (totalDuration > 0) {
+        let perc = (currentAudio.currentTime / totalDuration) * 100; 
         if (perc > 100) perc = 100;
         let fill = document.getElementById('progress-' + msgKey); 
         if (fill) {
@@ -2856,13 +2911,11 @@ function startAudioProgress(msgKey) {
             fill.style.width = perc + '%';
         }
       }
-      
-            if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
+      if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
     }
-  }, 100); // 🚀 تخفيف سرعة العداد ليرتاح المعالج ويمنع حرارة الجهاز
+  }, 100);
 }
 
-// 🚀 نظام السحب والتقديم المتطور للفويسات
 window.isAudioScrubbing = false;
 let wasAudioPlayingBeforeScrub = false;
 
@@ -2876,7 +2929,7 @@ function getVoiceSeekPerc(event) {
   }
   if (clientX === undefined) return 0;
   
-  let clickX = rect.right - clientX; // لغة عربية (RTL) لذلك نحسب من اليمين
+  let clickX = rect.right - clientX;
   let perc = clickX / rect.width;
   if (perc < 0) perc = 0;
   if (perc > 1) perc = 1;
@@ -2887,20 +2940,17 @@ function updateVoiceSeekUI(event, msgKey) {
   const perc = getVoiceSeekPerc(event);
   const fill = document.getElementById('progress-' + msgKey);
   if (fill) {
-    fill.style.transition = 'none'; // تحديث فوري وسلس أثناء السحب
+    fill.style.transition = 'none';
     fill.style.width = (perc * 100) + '%';
   }
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; 
-  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+  let totalDuration = 0; 
+  if (origStr && !origStr.includes('أغنية')) { 
     const parts = origStr.split(':'); 
-    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
-  
-  let realDur = currentAudio.duration; 
-  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
   
   if (totalDuration > 0) {
     const targetTime = totalDuration * perc;
@@ -2918,7 +2968,7 @@ function startVoiceSeek(event, msgKey) {
   window.isAudioScrubbing = true;
   wasAudioPlayingBeforeScrub = !currentAudio.paused;
   
-  if (wasAudioPlayingBeforeScrub) currentAudio.pause(); // الإيقاف المؤقت أثناء السحب لمنع التشويش
+  if (wasAudioPlayingBeforeScrub) currentAudio.pause();
   
   if (event.pointerId) {
      try { event.currentTarget.setPointerCapture(event.pointerId); } catch(e){}
@@ -2944,19 +2994,14 @@ function endVoiceSeek(event, msgKey) {
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; 
-  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+  let totalDuration = 0; 
+  if (origStr && !origStr.includes('أغنية')) { 
     const parts = origStr.split(':'); 
-    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
-  
-  let realDur = currentAudio.duration; 
-  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
   
   if (totalDuration > 0) {
     const targetTime = totalDuration * perc;
-    
-    // 🚀 الحل الجذري: نحدث currentTime مباشرة دون حركات 1e8 المعقدة التي تسبب التصفير
     try {
        currentAudio.currentTime = targetTime;
     } catch(e) {}
@@ -2971,7 +3016,6 @@ function endVoiceSeek(event, msgKey) {
   }
 }
 
-// 🚀 تم الاحتفاظ بهذه الدالة للتوافق مع الرسائل القديمة في حال لم يتم إعادة تحميل الصفحة
 function seekVoice(event, url, msgKey) {
   if (!currentAudio || currentAudioMsgKey !== msgKey || window.isAudioScrubbing) return;
   
@@ -2979,14 +3023,11 @@ function seekVoice(event, url, msgKey) {
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; 
-  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+  let totalDuration = 0; 
+  if (origStr && !origStr.includes('أغنية')) { 
     const parts = origStr.split(':'); 
-    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
-  
-  let realDur = currentAudio.duration; 
-  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
   
   if (totalDuration > 0) {
     const targetTime = totalDuration * perc;
