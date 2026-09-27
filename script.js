@@ -2842,7 +2842,27 @@ async function playVoice(btn, url, msgKey, isOut) {
      optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
   }
 
-  let playSrc = window.voiceBlobCache[optimizedUrl] || optimizedUrl;
+  let playSrc = optimizedUrl;
+
+  // 🚀 الحل الاحترافي: تحويل رابط الصوت إلى ملف محلي (Blob) قبل تشغيله!
+  // هذا يحل مشكلة الـ WebM نهائياً ويجبر المتصفح على قبول التقديم والتأخير بنعومة 100%
+  try {
+      if ('caches' in window) {
+          const cache = await caches.open('media-cache');
+          let res = await cache.match(optimizedUrl);
+          if (!res) {
+              res = await fetch(optimizedUrl, { mode: 'cors' });
+              if (res.ok) cache.put(optimizedUrl, res.clone());
+          }
+          if (res && res.ok) {
+              const blob = await res.blob();
+              playSrc = URL.createObjectURL(blob);
+          }
+      }
+  } catch (e) {
+      console.log("جاري التشغيل بالوضع العادي");
+      playSrc = optimizedUrl;
+  }
 
   if (currentAudioMsgKey !== msgKey) return;
   
