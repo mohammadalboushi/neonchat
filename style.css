@@ -52,18 +52,12 @@ body {
   user-select: none;
 }
 
-/* 🚀 إجبار كرت الشاشة (GPU) على استلام الرندر لسرعة 120FPS ومنع التقطيع */
-.screen, .msg-bubble, .glass-card, .search-result-card, .modal, .msg-menu {
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  perspective: 1000px;
-  -webkit-perspective: 1000px;
-  will-change: transform, opacity;
+#bg-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
-
-/* تم إزالة bg-canvas */
 
 #app {
   position: relative;
@@ -153,13 +147,15 @@ body {
 }
 
 .glass-card {
-  background: rgba(5, 11, 18, 0.98);
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid var(--border-glow);
   border-radius: var(--radius-xl);
   padding: 32px 24px;
   width: 100%;
   max-width: 340px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .btn-google {
@@ -239,7 +235,9 @@ body {
 ═══════════════════════════════════════════════ */
 .app-header {
   height: var(--header-h);
-  background: rgba(5, 11, 18, 0.98);
+  background: rgba(5, 11, 18, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -313,51 +311,7 @@ body {
    HOME SCREEN
 ═══════════════════════════════════════════════ */
 #screen-home {
-  background: var(--bg-void);
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.hologram-globe {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 250vw;
-  height: 250vw;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background:
-    repeating-linear-gradient(0deg, transparent, transparent 25px, rgba(0, 240, 255, 0.06) 25px, rgba(0, 240, 255, 0.06) 26px),
-    repeating-linear-gradient(90deg, transparent, transparent 25px, rgba(160, 32, 240, 0.06) 25px, rgba(160, 32, 240, 0.06) 26px);
-  mask-image: radial-gradient(circle, black 25%, transparent 75%);
-  -webkit-mask-image: radial-gradient(circle, black 25%, transparent 75%);
-  animation: globeSpin 80s linear infinite;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.hologram-globe-core {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 380px;
-  height: 380px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  box-shadow:
-    inset -30px -30px 60px rgba(0,0,0,0.8),
-    inset 15px 15px 60px rgba(0, 240, 255, 0.2),
-    0 0 80px rgba(0, 240, 255, 0.1);
-  background: radial-gradient(circle at 30% 30%, rgba(160, 32, 240, 0.15), transparent 70%);
-  z-index: 0;
-  pointer-events: none;
-}
-
-@keyframes globeSpin {
-  0% { transform: translate(-50%, -50%) rotate(0deg); }
-  100% { transform: translate(-50%, -50%) rotate(360deg); }
+  background: transparent;
 }
 
 .home-header {
@@ -550,7 +504,7 @@ body {
 }
 
 .fab {
-  position: absolute;
+  position: fixed;
   left: 20px;
   bottom: calc(20px + var(--safe-bottom));
   width: 56px;
@@ -581,7 +535,10 @@ body {
    CHAT SCREEN
 ═══════════════════════════════════════════════ */
 #screen-chat {
-  background: rgba(5, 11, 18, 0.98) !important; 
+  /* تأثير الزجاج الداكن: يظهر النجوم بشكل خافت ومريح جداً للعين */
+  background: rgba(7, 13, 20, 0.88) !important; 
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
 }
 
 .chat-header {
@@ -635,9 +592,6 @@ body {
   gap: 6px;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
-  /* 🚀 عزل المنطقة بالكامل ليتكفل كرت الشاشة بالتمرير بدون الضغط على المعالج */
-  contain: content;
-  will-change: scroll-position;
 }
 
 .msg-row {
@@ -702,16 +656,14 @@ body {
 }
 
 .msg-bubble {
-  max-width: 85%; /* توسيع العرض الأقصى ليتمدد النص براحته */
-  min-width: 80px; /* لضمان عدم عصر الرسائل القصيرة مع الوقت */
-  padding: 6px 12px; /* حواف داخلية أصغر لتصغير حجم البطاقة */
-  border-radius: 16px; /* انحناء أقل متناسق مع الحجم الجديد */
-  font-size: 14px; /* خط أصغر وأرتب */
-  line-height: 1.4; /* مسافة أقل بين الأسطر */
+  max-width: 72%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.55;
   position: relative;
-  overflow-wrap: anywhere; /* السر هنا: يسمح للفقاعة بالتمدد لأقصى حد قبل كسر السطر */
+  word-break: break-word;
   white-space: pre-wrap;
-  width: fit-content; /* يجعل الفقاعة تعانق النص تماماً */
 }
 
 .msg-bubble.msg-bubble-media {
@@ -729,19 +681,19 @@ body {
 }
 
 .msg-row.out .msg-bubble {
-  background: linear-gradient(135deg, rgba(0, 240, 255, 0.1) 0%, rgba(5, 24, 32, 0.95) 100%) !important;
-  border: 1px solid rgba(0, 240, 255, 0.45) !important;
-  border-bottom-right-radius: 6px !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 15px rgba(0, 240, 255, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  background: #0d3b44;
+  border: 1px solid #155865;
+  border-bottom-right-radius: 6px;
+  color: #eaf6f8;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .msg-row.in .msg-bubble {
-  background: linear-gradient(135deg, rgba(160, 32, 240, 0.1) 0%, rgba(13, 19, 26, 0.95) 100%) !important;
-  border: 1px solid rgba(160, 32, 240, 0.45) !important;
-  border-bottom-left-radius: 6px !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 15px rgba(160, 32, 240, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  background: #1a222c;
+  border: 1px solid #283443;
+  border-bottom-left-radius: 6px;
+  color: #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 .msg-time {
@@ -916,7 +868,9 @@ body {
   min-height: var(--input-h);
   padding: 8px 12px;
   padding-bottom: calc(8px + var(--safe-bottom));
-  background: rgba(5, 11, 18, 0.98);
+  background: rgba(5, 11, 18, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -946,8 +900,6 @@ body {
   overflow-y: auto;
   max-height: 250px;
   line-height: 1.4;
-  user-select: text !important;
-  -webkit-user-select: text !important;
 }
 
 .msg-input::placeholder {
@@ -1122,7 +1074,9 @@ body {
 }
 
 .search-result-card {
-  background: rgba(10, 22, 40, 0.98);
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-glow);
   border-radius: var(--radius-lg);
   padding: 20px;
@@ -1266,7 +1220,9 @@ body {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1282,13 +1238,13 @@ body {
 }
 
 .modal {
-  background: rgba(5, 11, 18, 0.98);
+  background: var(--bg-surface);
   border: 1px solid var(--border-glow);
   border-radius: var(--radius-xl);
   padding: 28px 24px;
   width: 100%;
   max-width: 360px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), var(--shadow-neon);
   transform: translateY(20px) scale(0.96);
   transition: transform .25s;
 }
@@ -1345,7 +1301,9 @@ body {
   position: fixed;
   inset: 0;
   z-index: 150;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -1361,13 +1319,13 @@ body {
 }
 
 .msg-menu {
-  background: rgba(5, 11, 18, 0.98);
+  background: var(--bg-surface);
   border: 1px solid var(--border-glow);
   border-radius: var(--radius-xl);
   padding: 12px 8px;
   width: calc(100% - 32px);
   max-width: 380px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1424,18 +1382,20 @@ body {
   left: 50%;
   z-index: 200;
   transform: translateX(-50%) translateY(-20px);
-  background: rgba(10, 22, 40, 0.98);
+  background: rgba(10, 22, 40, 0.95);
   border: 1px solid var(--border-glow);
   border-radius: var(--radius-md);
   padding: 12px 20px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   opacity: 0;
   pointer-events: none;
   transition: all .3s;
   white-space: nowrap;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-neon);
 }
 
 .toast.show {
@@ -1571,7 +1531,7 @@ body {
   }
 
   .msg-bubble {
-    max-width: 88%; /* في الموبايل يأخذ مساحة أكبر ليطابق عرض الواتساب */
+    max-width: 80%;
   }
 }
 
@@ -1912,7 +1872,7 @@ body.light-theme .input-bar {
 
 .video-controls { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 16px calc(24px + var(--safe-bottom)); display: flex; flex-direction: column; align-items: center; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.4) 60%, transparent); }
 
-.video-glass-panel { width: 100%; max-width: 500px; background: rgba(15, 25, 40, 0.98); border: 1px solid var(--border-subtle); border-radius: 24px; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.1); }
+.video-glass-panel { width: 100%; max-width: 500px; background: rgba(15, 25, 40, 0.75); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); border: 1px solid var(--border-subtle); border-radius: 24px; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1); }
 
 .video-progress-container { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 4px; cursor: pointer; position: relative; transition: height 0.2s; display:flex; align-items:center; direction: ltr; }
 .video-progress-container:hover, .video-progress-container:active { height: 8px; }
