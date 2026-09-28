@@ -702,14 +702,16 @@ body {
 }
 
 .msg-bubble {
-  max-width: 72%;
-  padding: 10px 14px;
+  max-width: 85%; /* توسيع العرض الأقصى ليتمدد النص براحته */
+  min-width: 80px; /* لضمان عدم عصر الرسائل القصيرة مع الوقت */
+  padding: 8px 14px; /* حواف داخلية مريحة تشبه الواتساب */
   border-radius: 18px;
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 15.5px; /* تكبير الخط قليلاً ليكون مقروء ومريح */
+  line-height: 1.5;
   position: relative;
-  word-break: break-word;
+  overflow-wrap: anywhere; /* السر هنا: يسمح للفقاعة بالتمدد لأقصى حد قبل كسر السطر */
   white-space: pre-wrap;
+  width: fit-content; /* يجعل الفقاعة تعانق النص تماماً */
 }
 
 .msg-bubble.msg-bubble-media {
@@ -1567,7 +1569,7 @@ body {
   }
 
   .msg-bubble {
-    max-width: 80%;
+    max-width: 88%; /* في الموبايل يأخذ مساحة أكبر ليطابق عرض الواتساب */
   }
 }
 

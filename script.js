@@ -371,7 +371,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=14');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=15');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1529,7 +1529,17 @@ function buildMsgEl(msg, isBackground = false) {
 
     if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { e.target.style.opacity = '0.85'; } 
 
-    pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending && !window.isAudioScrubbing) openMsgMenu(msg, isOut); }, 350);
+    // 🚀 الحل القاطع: فحص المساحة الفعلية للشاشة لمعرفة إذا الكيبورد فاتح (لا يمكن للمتصفح خداعها)
+    let isKbReallyOpen = false;
+    if (window.visualViewport) {
+      isKbReallyOpen = window.visualViewport.height < window.screen.height * 0.75;
+    } else {
+      isKbReallyOpen = window.innerHeight < window.screen.height * 0.75;
+    }
+
+    if (!isKbReallyOpen) {
+      pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending && !window.isAudioScrubbing) openMsgMenu(msg, isOut); }, 350);
+    }
   }, { passive: false });
 
   bubble.addEventListener('touchmove', e => {
@@ -1594,8 +1604,15 @@ function buildMsgEl(msg, isBackground = false) {
   });
 
   bubble.addEventListener('contextmenu', e => { 
-    // 🚀 جدار ناري إضافي: إذا كان الأندرويد يحاول فتح قائمة النظام أثناء لمس الفويس نلغيها فوراً!
-    if (window.isAudioScrubbing || msg.isPending || e.target.closest('.voice-msg') || e.target.closest('button') || e.target.tagName === 'A') {
+    let isKbReallyOpen = false;
+    if (window.visualViewport) {
+      isKbReallyOpen = window.visualViewport.height < window.screen.height * 0.75;
+    } else {
+      isKbReallyOpen = window.innerHeight < window.screen.height * 0.75;
+    }
+
+    // 🚀 جدار ناري إضافي: منع القائمة إذا كان الكيبورد فاتح فعلياً أو أثناء اللمس على وسائط
+    if (window.isAudioScrubbing || msg.isPending || e.target.closest('.voice-msg') || e.target.closest('button') || e.target.tagName === 'A' || isKbReallyOpen) {
         e.preventDefault();
         return;
     }
@@ -1735,7 +1752,61 @@ function buildMsgEl(msg, isBackground = false) {
 ═══════════════════════════════════ */
 let lastTypingTime = 0; // لضبط الإرسال لفايربيز
 
-document.getElementById('msg-input').addEventListener('input', () => {
+// 🚀 السحر هنا: منع الكيبورد من الإغلاق عند التفاعل مع أي شيء داخل المحادثة (الضغط القصير، الطويل، الخيارات، المقاطع الصوتية) مع بقاء السكرول شغال 100%
+// 🚀 السحر الأقوى: منع الكيبورد من الإغلاق عند الضغط المطول أو استخدام أزرار الصوت والقوائم (دعم كامل لشاشات اللمس)
+['mousedown', 'touchend'].forEach(evt => {
+  window.addEventListener(evt, (e) => {
+    const msgInput = document.getElementById('msg-input');
+    const chatScreen = document.getElementById('screen-chat');
+    
+    // فحص المساحة الفعلية للشاشة لمعرفة إذا الكيبورد فاتح (لا يمكن للمتصفح خداعها)
+    let isKbReallyOpen = false;
+    if (window.visualViewport) {
+      isKbReallyOpen = window.visualViewport.height < window.screen.height * 0.75;
+    } else {
+      isKbReallyOpen = window.innerHeight < window.screen.height * 0.75;
+    }
+
+    if (chatScreen && chatScreen.classList.contains('active') && isKbReallyOpen && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+      const backBtn = e.target.closest('button');
+      if (backBtn && backBtn.getAttribute('onclick') === "showScreen('home')") return;
+      
+      if (evt === 'touchend') {
+        const btn = e.target.closest('button') || e.target.closest('.msg-menu-btn') || e.target.closest('.msg-reaction');
+        const link = e.target.closest('a');
+        
+        if (btn) {
+          e.preventDefault(); 
+          btn.click(); 
+        } else if (link) {
+          e.preventDefault();
+          window.open(link.href, '_blank');
+        } else {
+          e.preventDefault(); // هذا السطر سيحمي الكيبورد من الإغلاق عند الضغط المطول أو القصير على أي مكان بالشاشة
+        }
+      } else {
+         e.preventDefault();
+      }
+    }
+  }, { passive: false });
+});
+
+document.getElementById('msg-input').addEventListener('input', (e) => {
+  // 🚀 إخفاء أزرار الصوت وتوسيع مساحة الكتابة عند الطباعة
+  const textLen = e.target.value.trim().length;
+  const btnVoice = document.getElementById('btn-voice');
+  const btnMusic = document.getElementById('btn-music-voice');
+  
+  if (textLen > 0) {
+    if(btnVoice) btnVoice.style.display = 'none';
+    if(btnMusic) btnMusic.style.display = 'none';
+    e.target.style.paddingLeft = '14px';
+  } else {
+    if(btnVoice) btnVoice.style.display = 'flex';
+    if(btnMusic) btnMusic.style.display = 'flex';
+    e.target.style.paddingLeft = '85px';
+  }
+
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
   
   const now = Date.now();
@@ -1781,6 +1852,13 @@ async function sendTextMsg() {
   }
   
   inp.value = ''; autoResize(inp); 
+  
+  // 🚀 إعادة ظهور أيقونات الصوت بعد الإرسال
+  const btnVoice = document.getElementById('btn-voice');
+  const btnMusic = document.getElementById('btn-music-voice');
+  if(btnVoice) btnVoice.style.display = 'flex';
+  if(btnMusic) btnMusic.style.display = 'flex';
+  inp.style.paddingLeft = '85px';
   
   if (isKbReallyOpen) {
     inp.focus(); 
@@ -2089,7 +2167,7 @@ function addReaction(msgKey, emoji) {
 function closeMsgMenu() { document.getElementById('msg-menu-overlay').classList.remove('open'); }
 function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document.getElementById('msg-reply-preview').classList.add('active'); document.getElementById('msg-reply-text').textContent = 'رد على: ' + (msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ صوتية'); document.getElementById('msg-input').focus(); }
 function cancelReply() { replyingToMsg = null; document.getElementById('msg-reply-preview').classList.remove('active'); }
-function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
+function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.dispatchEvent(new Event('input')); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
 function confirmDeleteMsg(msgKey) {
   openModal('حذف نهائي', 'هل تريد حذف الرسالة للجميع ومن السيرفر؟').then(async ok => {
     if (ok && currentChat) {
@@ -2692,8 +2770,17 @@ async function toggleRecording(isSinging = false) {
     if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
     else { document.getElementById('btn-voice').classList.add('recording'); document.getElementById('btn-music-voice').style.display = 'none'; }
 
-    document.getElementById('msg-input-wrap').style.display = 'none'; document.getElementById('btn-attach').style.display = 'none';
-    document.getElementById('btn-cancel-voice').style.display = 'flex'; document.getElementById('recording-indicator').style.display = 'flex';
+    // 🚀 نخفي النص فقط ونبقي الحاوية عشان أزرار الصوت المدمجة تضل مبينة بمكانها
+    const msgInput = document.getElementById('msg-input');
+    msgInput.style.opacity = '0'; msgInput.style.pointerEvents = 'none';
+    
+    document.getElementById('btn-attach').style.display = 'none';
+    document.getElementById('btn-cancel-voice').style.display = 'flex'; 
+    
+    const recIndicator = document.getElementById('recording-indicator');
+    recIndicator.style.display = 'flex';
+    recIndicator.style.position = 'absolute';
+    recIndicator.style.right = '60px'; // ضبط موقع عداد الثواني ليظهر فوق الحقل الفارغ
     
     let canvas = document.getElementById('neon-visualizer');
     if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'neon-visualizer'; canvas.width = 100; canvas.height = 25; canvas.style.marginLeft = '12px'; document.getElementById('recording-indicator').appendChild(canvas); }
@@ -2728,8 +2815,18 @@ function stopRecording() {
   if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.remove(); recRef.onDisconnect().cancel(); }
   document.getElementById('btn-voice').classList.remove('recording'); document.getElementById('btn-voice').style.display = 'flex';
   const btnMusic = document.getElementById('btn-music-voice'); if (btnMusic) { btnMusic.classList.remove('recording'); btnMusic.style.display = 'flex'; }
-  document.getElementById('msg-input-wrap').style.display = 'block'; document.getElementById('btn-attach').style.display = 'flex';
-  document.getElementById('btn-cancel-voice').style.display = 'none'; document.getElementById('recording-indicator').style.display = 'none';
+  
+  // 🚀 إعادة حقل الإدخال والعداد لوضعهم الطبيعي بعد انتهاء التسجيل
+  const msgInput = document.getElementById('msg-input');
+  msgInput.style.opacity = '1'; msgInput.style.pointerEvents = 'auto';
+  
+  document.getElementById('btn-attach').style.display = 'flex';
+  document.getElementById('btn-cancel-voice').style.display = 'none'; 
+  
+  const recIndicator = document.getElementById('recording-indicator');
+  recIndicator.style.display = 'none';
+  recIndicator.style.position = 'static';
+  
   const canvas = document.getElementById('neon-visualizer'); if (canvas) canvas.style.display = 'none';
   clearInterval(recordTimerInt);
 }
@@ -4182,7 +4279,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=14');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=15');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -4870,3 +4967,4 @@ async function openMediaGallery(chatId) {
 function closeMediaGallery() {
   document.getElementById('media-gallery-overlay').classList.remove('open');
 }
+

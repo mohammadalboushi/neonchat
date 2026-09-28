@@ -400,30 +400,29 @@
         </button>
 
         <div class="msg-input-wrap" id="msg-input-wrap">
-          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)"></textarea>
+          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)" style="padding-left: 85px; transition: padding 0.2s;"></textarea>
+          
+          <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية" style="position: absolute; left: 6px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
+              <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              <line x1="12" y1="19" x2="12" y2="23"></line>
+              <line x1="8" y1="23" x2="16" y2="23"></line>
+            </svg>
+          </button>
+
+          <button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%" style="position: absolute; left: 42px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+              <path d="M9 18V5l12-2v13"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="16" r="3"></circle>
+            </svg>
+          </button>
         </div>
 
         <div id="recording-indicator" style="display:none; flex:1; text-align:center; color:var(--neon-pink); font-weight:bold; font-size:14px;">
           🔴 <span id="rec-timer-text">0:00</span>
         </div>
-
-        <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path>
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-    <line x1="12" y1="19" x2="12" y2="23"></line>
-    <line x1="8" y1="23" x2="16" y2="23"></line>
-  </svg>
-  
-</button>
-
-<button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M9 18V5l12-2v13"></path>
-    <circle cx="6" cy="18" r="3"></circle>
-    <circle cx="18" cy="16" r="3"></circle>
-  </svg>
-</button>
 
         <button class="btn-send" id="btn-send" onclick="sendTextMsg();">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -619,12 +618,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=14"></script>
+  </div> <script src="script.js?v=15"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=14')
+        navigator.serviceWorker.register('sw.js?v=15')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });
