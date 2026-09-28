@@ -14,7 +14,7 @@ perfStyle.innerHTML = `
   .msg-menu { box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important; }
   .glass-card { box-shadow: 0 5px 20px rgba(0,0,0,0.3) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(10, 22, 40, 0.98) !important; }
   /* 🚀 ألوان مريحة للعين وأنيقة جداً للبطاقات وتتجاوز الكاش تماماً */
-  .msg-row.out .msg-bubble { background: #0d3b44 !important; border: 1px solid #155865 !important; border-bottom-right-radius: 6px !important; color: #eaf6f8 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+  .msg-row.out .msg-bubble { background: #103b66 !important; border: 1px solid #1c558e !important; border-bottom-right-radius: 6px !important; color: #eaf6f8 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
   .msg-row.in .msg-bubble { background: #1a222c !important; border: 1px solid #283443 !important; border-bottom-left-radius: 6px !important; color: #e2e8f0 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
 `;
 document.head.appendChild(perfStyle);
@@ -1510,6 +1510,9 @@ function buildMsgEl(msg, isBackground = false) {
   bubble.addEventListener('touchstart', e => {
     // 🚀 منع صارم: إذا كان المستخدم يلمس المقطع الصوتي، الروابط، أو الشريط، توقف فوراً ولا تفتح أي قائمة!
     if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg')) return;
+    
+    // 🚀 السحر هون: منع التفاعل مع لقطة الشاشة أو اللمس المتعدد (3 أصابع)
+    if (e.touches && e.touches.length > 1) return;
     
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) { 

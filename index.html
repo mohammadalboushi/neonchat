@@ -247,20 +247,20 @@
       <div class="login-subtitle">تواصل بأسلوب المستقبل<br>مشفر · سريع · أنيق</div>
       
       <div class="glass-card">
-        <div class="custom-auth-form" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
-          <input type="text" id="login-email" class="text-input" placeholder="اسم المستخدم أو الإيميل" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
-          <input type="password" id="login-pass" class="text-input" placeholder="كلمة المرور" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
-          <input type="password" id="login-pass-confirm" class="text-input" placeholder="تأكيد كلمة المرور (عند الإنشاء فقط)" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
+        <form class="custom-auth-form" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;" onsubmit="event.preventDefault();">
+          <input type="email" name="username" autocomplete="username" id="login-email" class="text-input" placeholder="اسم المستخدم أو الإيميل" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
+          <input type="password" name="password" autocomplete="current-password" id="login-pass" class="text-input" placeholder="كلمة المرور" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
+          <input type="password" name="new-password" autocomplete="new-password" id="login-pass-confirm" class="text-input" placeholder="تأكيد كلمة المرور (عند الإنشاء فقط)" style="letter-spacing: normal; text-align: right; font-size: 14px; padding: 12px;">
           
           <div style="display:flex; gap:10px; margin-top: 4px;">
-            <button class="btn-primary" id="btn-custom-login" style="flex:1; padding:12px; font-size: 14px;">دخول</button>
-            <button class="btn-primary" id="btn-custom-signup" style="flex:1; padding:12px; font-size: 14px; background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink)); box-shadow: 0 4px 20px rgba(160, 32, 240, 0.35);">إنشاء حساب</button>
+            <button type="button" class="btn-primary" id="btn-custom-login" style="flex:1; padding:12px; font-size: 14px;">دخول</button>
+            <button type="button" class="btn-primary" id="btn-custom-signup" style="flex:1; padding:12px; font-size: 14px; background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink)); box-shadow: 0 4px 20px rgba(160, 32, 240, 0.35);">إنشاء حساب</button>
           </div>
           
           <div style="text-align:center; margin-top: 8px;">
             <a href="#" id="btn-forgot-pass" style="color: var(--text-secondary); font-size: 13px; text-decoration: none; transition: color 0.2s;">هل نسيت كلمة المرور؟</a>
           </div>
-        </div>
+        </form>
 
         <div class="login-features">
           <div class="login-feature">
