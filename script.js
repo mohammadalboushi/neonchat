@@ -371,7 +371,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=13');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=14');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1685,7 +1685,7 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
     } else if (msg.type === 'voice') {
  if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
@@ -1695,7 +1695,7 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
   }
   
   if (msg.isPending) {
@@ -2881,7 +2881,7 @@ function playVoice(btn, url, msgKey, isOut) {
     currentAudio.src = ''; 
     try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(e){}
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
-    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
+    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.transform = 'scaleX(0)'); 
     clearInterval(audioUpdateInterval);
   }
   
@@ -2963,7 +2963,7 @@ function playVoice(btn, url, msgKey, isOut) {
 
       currentAudio.onended = () => {
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-        const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = '0%';
+        const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.transform = 'scaleX(0)';
         const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
         let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
         while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
@@ -3026,12 +3026,12 @@ function startAudioProgress(msgKey) {
       const currentFormatted = `${m}:${s < 10 ? '0' : ''}${s}`;
 
       if (totalDuration > 0) {
-        let perc = (currentAudio.currentTime / totalDuration) * 100; 
-        if (perc > 100) perc = 100;
+        let perc = currentAudio.currentTime / totalDuration; 
+        if (perc > 1) perc = 1;
         let fill = document.getElementById('progress-' + msgKey); 
         if (fill) {
-            fill.style.transition = 'width 0.1s linear';
-            fill.style.width = perc + '%';
+            fill.style.transition = 'transform 0.1s linear';
+            fill.style.transform = `scaleX(${perc})`;
         }
       }
       if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
@@ -3039,112 +3039,88 @@ function startAudioProgress(msgKey) {
   }, 100);
 }
 
+// 🚀 نظام السحب والتقديم المتطور للفويسات (120FPS Hardware Accelerated)
 window.isAudioScrubbing = false;
 let wasAudioPlayingBeforeScrub = false;
-let cachedAudioRect = null; 
-let scrubRAF = null; // 🚀 محرك الـ Frame Rate للوصول لـ 60FPS أثناء السحب
+let scrubState = { rect: null, duration: 0, origStr: '0:00', msgKey: null, fillEl: null, durEl: null };
+let scrubRAF = null;
 
-function getVoiceSeekPerc(event) {
-  if (!cachedAudioRect && event.currentTarget) {
-      cachedAudioRect = event.currentTarget.getBoundingClientRect();
-  }
-  const rect = cachedAudioRect || event.currentTarget.getBoundingClientRect();
-  
-  let clientX = event.clientX;
-  if (clientX === undefined && event.touches && event.touches.length > 0) {
-    clientX = event.touches[0].clientX;
-  } else if (clientX === undefined && event.changedTouches && event.changedTouches.length > 0) {
-    clientX = event.changedTouches[0].clientX;
-  }
-  if (clientX === undefined) return 0;
-  
-  let clickX = rect.right - clientX;
-  let perc = clickX / rect.width;
+function calculateScrub(clientX) {
+  if (!scrubState.rect || scrubState.duration <= 0) return;
+  let clickX = scrubState.rect.right - clientX;
+  let perc = clickX / scrubState.rect.width;
   if (perc < 0) perc = 0;
   if (perc > 1) perc = 1;
-  return perc;
-}
-
-function updateVoiceSeekUI(event, msgKey) {
-  if (scrubRAF) cancelAnimationFrame(scrubRAF);
   
-  // 🚀 وضع تحديث الشريط داخل requestAnimationFrame ليتزامن مع سرعة الشاشة بدقة ويمنع التقطيع
-  scrubRAF = requestAnimationFrame(() => {
-      const perc = getVoiceSeekPerc(event);
-      const fill = document.getElementById('progress-' + msgKey);
-      if (fill) {
-        fill.style.transition = 'none';
-        fill.style.width = (perc * 100) + '%';
-      }
-      
-      const durEl = document.getElementById('dur-' + msgKey);
-      let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-      let totalDuration = 0; 
-      if (origStr && !origStr.includes('أغنية')) { 
-        const parts = origStr.split(':'); 
-        if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
-      }
-      
-      if (totalDuration > 0) {
-        const targetTime = totalDuration * perc;
-        const curSec = Math.floor(targetTime);
-        const m = Math.floor(curSec / 60);
-        const s = curSec % 60;
-        if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
-      }
-  });
+  if (scrubState.fillEl) {
+    scrubState.fillEl.style.transform = `scaleX(${perc})`;
+  }
+  
+  const curSec = Math.floor(scrubState.duration * perc);
+  const m = Math.floor(curSec / 60);
+  const s = curSec % 60;
+  if (scrubState.durEl) {
+    scrubState.durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${scrubState.origStr}`;
+  }
+  return perc;
 }
 
 function startVoiceSeek(event, msgKey) {
   if (!currentAudio || currentAudioMsgKey !== msgKey) return;
   window.isAudioScrubbing = true;
   wasAudioPlayingBeforeScrub = !currentAudio.paused;
-  
   if (wasAudioPlayingBeforeScrub) currentAudio.pause();
   
   if (event.pointerId) {
      try { event.currentTarget.setPointerCapture(event.pointerId); } catch(e){}
   }
   
-  updateVoiceSeekUI(event, msgKey);
+  scrubState.rect = event.currentTarget.getBoundingClientRect();
+  scrubState.msgKey = msgKey;
+  scrubState.fillEl = document.getElementById('progress-' + msgKey);
+  scrubState.durEl = document.getElementById('dur-' + msgKey);
+  
+  if (scrubState.fillEl) scrubState.fillEl.style.transition = 'none';
+  
+  scrubState.origStr = scrubState.durEl ? scrubState.durEl.getAttribute('data-orig') : '0:00';
+  scrubState.duration = 0; 
+  if (scrubState.origStr && !scrubState.origStr.includes('أغنية')) { 
+    const parts = scrubState.origStr.split(':'); 
+    if (parts.length === 2) scrubState.duration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  }
+  
+  let clientX = event.clientX !== undefined ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+  calculateScrub(clientX);
 }
 
 function moveVoiceSeek(event, msgKey) {
-  if (!window.isAudioScrubbing || !currentAudio || currentAudioMsgKey !== msgKey) return;
-  updateVoiceSeekUI(event, msgKey);
+  if (!window.isAudioScrubbing || scrubState.msgKey !== msgKey) return;
+  let clientX = event.clientX !== undefined ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+  
+  if (scrubRAF) cancelAnimationFrame(scrubRAF);
+  scrubRAF = requestAnimationFrame(() => calculateScrub(clientX));
 }
 
 function endVoiceSeek(event, msgKey) {
-  if (!window.isAudioScrubbing || !currentAudio || currentAudioMsgKey !== msgKey) return;
+  if (!window.isAudioScrubbing || scrubState.msgKey !== msgKey) return;
   window.isAudioScrubbing = false;
-  cachedAudioRect = null; 
   if (scrubRAF) cancelAnimationFrame(scrubRAF);
   
   if (event.pointerId) {
      try { event.currentTarget.releasePointerCapture(event.pointerId); } catch(e){}
   }
   
-  const perc = getVoiceSeekPerc(event);
+  let clientX = event.clientX !== undefined ? event.clientX : (event.changedTouches ? event.changedTouches[0].clientX : 0);
+  const perc = calculateScrub(clientX) || 0;
   
-  const durEl = document.getElementById('dur-' + msgKey);
-  let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let totalDuration = 0; 
-  if (origStr && !origStr.includes('أغنية')) { 
-    const parts = origStr.split(':'); 
-    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  if (scrubState.duration > 0 && currentAudio) {
+    try { currentAudio.currentTime = scrubState.duration * perc; } catch(e) {}
   }
   
-  if (totalDuration > 0) {
-    const targetTime = totalDuration * perc;
-    try {
-       currentAudio.currentTime = targetTime;
-    } catch(e) {}
-  }
-  
-  const fill = document.getElementById('progress-' + msgKey);
-  if (fill) fill.style.transition = 'width 0.1s linear';
+  if (scrubState.fillEl) scrubState.fillEl.style.transition = 'transform 0.1s linear';
+  scrubState = { rect: null, duration: 0, origStr: '0:00', msgKey: null, fillEl: null, durEl: null };
 
-  if (wasAudioPlayingBeforeScrub) {
+  if (wasAudioPlayingBeforeScrub && currentAudio) {
       let playPromise = currentAudio.play();
       if (playPromise !== undefined) playPromise.catch(()=>{});
   }
@@ -3152,8 +3128,11 @@ function endVoiceSeek(event, msgKey) {
 
 function seekVoice(event, url, msgKey) {
   if (!currentAudio || currentAudioMsgKey !== msgKey || window.isAudioScrubbing) return;
-  
-  const perc = getVoiceSeekPerc(event);
+  const rect = event.currentTarget.getBoundingClientRect();
+  let clientX = event.clientX !== undefined ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+  let clickX = rect.right - clientX;
+  let perc = clickX / rect.width;
+  if (perc < 0) perc = 0; if (perc > 1) perc = 1;
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
@@ -3164,14 +3143,11 @@ function seekVoice(event, url, msgKey) {
   }
   
   if (totalDuration > 0) {
-    const targetTime = totalDuration * perc;
-    try {
-       currentAudio.currentTime = targetTime;
-    } catch(e) {}
+    try { currentAudio.currentTime = totalDuration * perc; } catch(e) {}
   }
   
   const fill = document.getElementById('progress-' + msgKey);
-  if (fill) fill.style.width = (perc * 100) + '%';
+  if (fill) fill.style.transform = `scaleX(${perc})`;
   
   const curSec = Math.floor(totalDuration * perc);
   const m = Math.floor(curSec / 60);
@@ -4203,7 +4179,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=13');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=14');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -4386,7 +4362,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.13</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.14</div>
       </div>
     </div>
     

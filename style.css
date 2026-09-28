@@ -52,6 +52,17 @@ body {
   user-select: none;
 }
 
+/* 🚀 إجبار كرت الشاشة (GPU) على استلام الرندر لسرعة 120FPS ومنع التقطيع */
+.screen, .msg-bubble, .glass-card, .search-result-card, .modal, .msg-menu {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  perspective: 1000px;
+  -webkit-perspective: 1000px;
+  will-change: transform, opacity;
+}
+
 /* تم إزالة bg-canvas */
 
 #app {
@@ -624,6 +635,9 @@ body {
   gap: 6px;
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
+  /* 🚀 عزل المنطقة بالكامل ليتكفل كرت الشاشة بالتمرير بدون الضغط على المعالج */
+  contain: content;
+  will-change: scroll-position;
 }
 
 .msg-row {
