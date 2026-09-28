@@ -1752,6 +1752,19 @@ function buildMsgEl(msg, isBackground = false) {
 ═══════════════════════════════════ */
 let lastTypingTime = 0; // لضبط الإرسال لفايربيز
 
+// 🚀 تتبع لمس الشاشة لمنع فقدان التركيز عند سحب مؤشر النص لخارج البطاقة
+let isScreenTouched = false;
+window.addEventListener('touchstart', () => { isScreenTouched = true; }, {passive: true});
+window.addEventListener('touchend', () => { isScreenTouched = false; }, {passive: true});
+window.addEventListener('touchcancel', () => { isScreenTouched = false; }, {passive: true});
+
+document.getElementById('msg-input').addEventListener('blur', function() {
+  if (isScreenTouched) {
+    // السحر هون: إذا المتصفح حاول يسحب التركيز ويقفل الكيبورد وإصبعك لسا عالشاشة (متل سحب المؤشر)، منرجع التركيز فوراً
+    setTimeout(() => this.focus(), 10);
+  }
+});
+
 // 🚀 السحر هنا: منع الكيبورد من الإغلاق عند التفاعل مع أي شيء داخل المحادثة (الضغط القصير، الطويل، الخيارات، المقاطع الصوتية) مع بقاء السكرول شغال 100%
 // 🚀 السحر الأقوى: منع الكيبورد من الإغلاق عند الضغط المطول أو استخدام أزرار الصوت والقوائم (دعم كامل لشاشات اللمس)
 ['mousedown', 'touchend'].forEach(evt => {
@@ -1792,19 +1805,26 @@ let lastTypingTime = 0; // لضبط الإرسال لفايربيز
 });
 
 document.getElementById('msg-input').addEventListener('input', (e) => {
-  // 🚀 إخفاء أزرار الصوت وتوسيع مساحة الكتابة عند الطباعة
+  // 🚀 إخفاء زر الموسيقى والمرفقات لتوسيع مساحة الكتابة من الجهتين
   const textLen = e.target.value.trim().length;
   const btnVoice = document.getElementById('btn-voice');
   const btnMusic = document.getElementById('btn-music-voice');
+  const btnAttach = document.getElementById('btn-attach');
   
   if (textLen > 0) {
-    if(btnVoice) btnVoice.style.display = 'none';
+    // إخفاء زر الموسيقى والمرفقات وإزاحة زر الصوت العادي لليسار
+    if(btnVoice) { btnVoice.style.display = 'flex'; btnVoice.style.left = '6px'; }
     if(btnMusic) btnMusic.style.display = 'none';
-    e.target.style.paddingLeft = '14px';
+    if(btnAttach) btnAttach.style.display = 'none';
+    e.target.style.paddingLeft = '45px';
+    e.target.style.paddingRight = '14px';
   } else {
-    if(btnVoice) btnVoice.style.display = 'flex';
+    // إظهار الأزرار الثلاثة في مكانهم الأساسي
+    if(btnVoice) { btnVoice.style.display = 'flex'; btnVoice.style.left = '42px'; }
     if(btnMusic) btnMusic.style.display = 'flex';
+    if(btnAttach) btnAttach.style.display = 'flex';
     e.target.style.paddingLeft = '85px';
+    e.target.style.paddingRight = '45px';
   }
 
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
@@ -1853,12 +1873,15 @@ async function sendTextMsg() {
   
   inp.value = ''; autoResize(inp); 
   
-  // 🚀 إعادة ظهور أيقونات الصوت بعد الإرسال
+  // 🚀 إعادة ظهور الأيقونات لمكانها بعد الإرسال
   const btnVoice = document.getElementById('btn-voice');
   const btnMusic = document.getElementById('btn-music-voice');
-  if(btnVoice) btnVoice.style.display = 'flex';
+  const btnAttach = document.getElementById('btn-attach');
+  if(btnVoice) { btnVoice.style.display = 'flex'; btnVoice.style.left = '42px'; }
   if(btnMusic) btnMusic.style.display = 'flex';
+  if(btnAttach) btnAttach.style.display = 'flex';
   inp.style.paddingLeft = '85px';
+  inp.style.paddingRight = '45px';
   
   if (isKbReallyOpen) {
     inp.focus(); 
@@ -3718,9 +3741,7 @@ document.body.addEventListener('touchmove', (e) => {
 const msgInputEl = document.getElementById('msg-input');
 if(msgInputEl) {
   msgInputEl.addEventListener('focus', () => {
-    setTimeout(() => {
-      window.scrollTo(0, 0);
-    }, 50);
+    // تم إزالة السكرول الإجباري لأنه كان يسبب قفل الكيبورد عند النقر المزدوج لتحديد النص
   });
 }
 
@@ -4967,4 +4988,3 @@ async function openMediaGallery(chatId) {
 function closeMediaGallery() {
   document.getElementById('media-gallery-overlay').classList.remove('open');
 }
-

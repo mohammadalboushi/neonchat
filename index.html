@@ -384,14 +384,7 @@
       </div>
 
       <div class="input-bar">
-        <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-img-input').click()" title="إرسال وسائط">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-            <polyline points="21 15 16 10 5 21"></polyline>
-          </svg>
-        </button>
-
+        <!-- تم نقل زر المرفقات لداخل مربع النص -->
         <button class="btn-attach" id="btn-cancel-voice" onclick="cancelVoiceRecord()" title="إلغاء التسجيل" style="display:none; color:var(--neon-pink); border-color:var(--neon-pink); background:rgba(255,0,144,0.1);">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -400,9 +393,17 @@
         </button>
 
         <div class="msg-input-wrap" id="msg-input-wrap">
-          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)" style="padding-left: 85px; transition: padding 0.2s;"></textarea>
+          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)" style="padding-left: 85px; padding-right: 45px; transition: padding 0.2s;"></textarea>
           
-          <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية" style="position: absolute; left: 6px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+          <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-img-input').click()" title="إرسال وسائط" style="position: absolute; right: 6px; bottom: 4px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+          </button>
+          
+          <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية" style="position: absolute; left: 42px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
               <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -411,7 +412,7 @@
             </svg>
           </button>
 
-          <button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%" style="position: absolute; left: 42px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+          <button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%" style="position: absolute; left: 6px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
               <path d="M9 18V5l12-2v13"></path>
               <circle cx="6" cy="18" r="3"></circle>

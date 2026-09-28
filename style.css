@@ -704,10 +704,10 @@ body {
 .msg-bubble {
   max-width: 85%; /* توسيع العرض الأقصى ليتمدد النص براحته */
   min-width: 80px; /* لضمان عدم عصر الرسائل القصيرة مع الوقت */
-  padding: 8px 14px; /* حواف داخلية مريحة تشبه الواتساب */
-  border-radius: 18px;
-  font-size: 15.5px; /* تكبير الخط قليلاً ليكون مقروء ومريح */
-  line-height: 1.5;
+  padding: 6px 12px; /* حواف داخلية أصغر لتصغير حجم البطاقة */
+  border-radius: 16px; /* انحناء أقل متناسق مع الحجم الجديد */
+  font-size: 14px; /* خط أصغر وأرتب */
+  line-height: 1.4; /* مسافة أقل بين الأسطر */
   position: relative;
   overflow-wrap: anywhere; /* السر هنا: يسمح للفقاعة بالتمدد لأقصى حد قبل كسر السطر */
   white-space: pre-wrap;
@@ -946,6 +946,8 @@ body {
   overflow-y: auto;
   max-height: 250px;
   line-height: 1.4;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .msg-input::placeholder {
