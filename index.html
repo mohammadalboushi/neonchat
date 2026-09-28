@@ -392,10 +392,10 @@
           </svg>
         </button>
 
-        <div class="msg-input-wrap" id="msg-input-wrap">
-          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)" style="padding-left: 85px; padding-right: 45px; transition: padding 0.2s;"></textarea>
+                <div class="msg-input-wrap" id="msg-input-wrap" style="display: flex; align-items: center;">
+          <textarea class="msg-input" id="msg-input" placeholder="اكتب رسالة…" rows="1" oninput="autoResize(this)" onkeydown="handleMsgKey(event)" style="padding-left: 85px; padding-right: 45px; transition: padding 0.2s; min-height: 44px; padding-top: 12px; padding-bottom: 12px;"></textarea>
           
-          <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-img-input').click()" title="إرسال وسائط" style="position: absolute; right: 6px; bottom: 4px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+          <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-img-input').click()" title="إرسال وسائط" style="position: absolute; right: 6px; bottom: 5px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
               <rect x="3" y="3" width="18" height="18" rx="2"></rect>
               <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -403,7 +403,7 @@
             </svg>
           </button>
           
-          <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية" style="position: absolute; left: 42px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+          <button class="btn-voice" id="btn-voice" onclick="toggleRecording(false)" title="رسالة صوتية" style="position: absolute; left: 42px; bottom: 5px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
               <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"></path>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -412,7 +412,7 @@
             </svg>
           </button>
 
-          <button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%" style="position: absolute; left: 6px; bottom: 4px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
+          <button class="btn-voice" id="btn-music-voice" onclick="toggleRecording(true)" title="تسجيل غناء بالصدى 15%" style="position: absolute; left: 6px; bottom: 5px; width: 34px; height: 34px; background: transparent; border: none; box-shadow: none; color: var(--text-secondary);">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
               <path d="M9 18V5l12-2v13"></path>
               <circle cx="6" cy="18" r="3"></circle>
@@ -420,7 +420,7 @@
             </svg>
           </button>
         </div>
-
+        
         <div id="recording-indicator" style="display:none; flex:1; text-align:center; color:var(--neon-pink); font-weight:bold; font-size:14px;">
           🔴 <span id="rec-timer-text">0:00</span>
         </div>
