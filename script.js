@@ -95,6 +95,9 @@ let recordStart = 0;
 let recordTimerInt = null;
 let recordDurationStr = '0:00';
 let isSingingMode = false;
+let totalPausedTime = 0;
+let recordPausedAt = 0;
+let isRecordingPaused = false;
 
 let typingTimeout = null;
 let baseStatusText = '';
@@ -1192,7 +1195,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   messagesListener = currentMessagesQuery.on('child_added', snap => {
     const msg = { ...snap.val(), key: snap.key };
     
-    // 🚀 تنظيف فوري لأي رسالة علقت بالداتا بيز بمفتاح خاطئ عشان ما تضل تطبع بآخر الشاشة
+    // ?? تنظيف فوري لأي رسالة علقت بالداتا بيز بمفتاح خاطئ عشان ما تضل تطبع بآخر الشاشة
     if (msg.key && (msg.key.startsWith('pending_') || msg.key.startsWith('temp_'))) {
         db.ref('chats/' + chatId + '/messages/' + msg.key).remove();
         return;
@@ -1787,17 +1790,26 @@ if (window.visualViewport) {
 });
 
 document.getElementById('msg-input').addEventListener('input', (e) => {
-  // 🚀 إخفاء مايك الغناء فقط عند الكتابة لترتيب المساحة بدون التلاعب بالـ padding (بدون لاج)
   const textLen = e.target.value.trim().length;
-  const btnMusic = document.getElementById('btn-music-voice');
-  const isTyping = e.target.getAttribute('data-typing') === 'true';
+  const iconMic = document.getElementById('icon-mic');
+  const iconSend = document.getElementById('icon-send');
+  const btnSmart = document.getElementById('btn-smart');
 
-  if (textLen > 0 && !isTyping) {
-    e.target.setAttribute('data-typing', 'true');
-    if(btnMusic) btnMusic.style.display = 'none';
-  } else if (textLen === 0 && isTyping) {
-    e.target.setAttribute('data-typing', 'false');
-    if(btnMusic) btnMusic.style.display = 'flex';
+  // تحويل الزر من مايك لرسالة بدون تغيير مساحات الشاشة لـ 120 FPS
+  if (textLen > 0) {
+    if (iconMic.style.display !== 'none') {
+      iconMic.style.display = 'none';
+      iconSend.style.display = 'block';
+      btnSmart.style.background = 'linear-gradient(135deg, var(--neon-cyan), var(--neon-blue))';
+      btnSmart.style.boxShadow = '0 2px 10px rgba(0, 240, 255, 0.3)';
+    }
+  } else {
+    if (iconSend.style.display !== 'none') {
+      iconSend.style.display = 'none';
+      iconMic.style.display = 'block';
+      btnSmart.style.background = 'var(--neon-green)';
+      btnSmart.style.boxShadow = '0 2px 10px rgba(0, 255, 136, 0.3)';
+    }
   }
 
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
@@ -1821,6 +1833,16 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
   }, 2000);
 });
 
+// دالة الزر الذكي الجديد
+function handleSmartAction() {
+  const textLen = document.getElementById('msg-input').value.trim().length;
+  if (textLen > 0) {
+    sendTextMsg();
+  } else {
+    toggleRecording(false);
+  }
+}
+
 function handleMsgKey(e) { if (e.key === 'Enter' && !e.shiftKey) { return; } }
 
 async function sendTextMsg() {
@@ -1830,7 +1852,6 @@ async function sendTextMsg() {
   const inp = document.getElementById('msg-input');
   const text = inp.value.trim();
 
-  // فحص ذكي لحالة الكيبورد الحقيقية بالاعتماد على مساحة الشاشة (أدق بمليون مرة)
   let isKbReallyOpen = false;
   if (window.visualViewport) {
     isKbReallyOpen = window.visualViewport.height < window.screen.height * 0.75;
@@ -1846,15 +1867,15 @@ async function sendTextMsg() {
   inp.value = ''; 
   autoResize(inp); 
   
-  // 🚀 إرجاع زر المايك بعد الإرسال بدون أي حركة مخنوقة
-  inp.setAttribute('data-typing', 'false');
-  const btnMusic = document.getElementById('btn-music-voice');
-  if (btnMusic) btnMusic.style.display = 'flex';
+  // إرجاع شكل الزر للمايك فوراً
+  document.getElementById('icon-send').style.display = 'none';
+  document.getElementById('icon-mic').style.display = 'block';
+  document.getElementById('btn-smart').style.background = 'var(--neon-green)';
+  document.getElementById('btn-smart').style.boxShadow = '0 2px 10px rgba(0, 255, 136, 0.3)';
   
   if (isKbReallyOpen) {
-    inp.focus(); 
-  } else {
-    inp.blur(); // إجبار الكيبورد يضل مسكر
+    // 🚀 الحفاظ على الكيبورد مفتوحاً بعد الإرسال بدون أي رفة
+    inp.focus();
   }
 
   if (editingMsgKey) { await db.ref('chats/' + currentChat.chatId + '/messages/' + editingMsgKey).update({ text, isEdited: true }); updateLastMsgAfterChange(); editingMsgKey = null; showToast('تم تعديل الرسالة', 'success'); return; }
@@ -2613,43 +2634,19 @@ async function toggleRecording(isSinging = false) {
     audioChunks = []; isRecordingCanceled = false;
     mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-        mediaRecorder.onstop = async () => {
+    mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
       const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
       const blob = new Blob(localChunks, { type: actualMimeType });
+      const finalDuration = recordDurationStr;
       
-      const timerSec = Math.floor((Date.now() - recordStart) / 1000);
-      if (blob.size < 3000 || timerSec < 1) {
+      if (blob.size < 3000 || finalDuration === '0:00') {
          showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
       }
-
-      // 🚀 استخراج المدة الفسيولوجية الحقيقية للملف من المتصفح قبل السماح بالإرسال
-      const getRealDuration = () => new Promise(resolve => {
-          const tmpAudio = new Audio(URL.createObjectURL(blob));
-          tmpAudio.addEventListener('loadedmetadata', () => {
-              if (tmpAudio.duration === Infinity || isNaN(tmpAudio.duration)) {
-                  tmpAudio.currentTime = 1e8; // خدعة لإجبار المتصفح على حساب المدة
-                  tmpAudio.addEventListener('timeupdate', function onTimeUpdate() {
-                      tmpAudio.removeEventListener('timeupdate', onTimeUpdate);
-                      resolve(tmpAudio.duration);
-                  });
-              } else {
-                  resolve(tmpAudio.duration);
-              }
-          });
-          tmpAudio.addEventListener('error', () => resolve(timerSec)); // بحال الفشل، نستخدم العداد كخطة بديلة
-      });
-
-      let realSec = await getRealDuration();
-      if (!realSec || isNaN(realSec) || realSec === Infinity) realSec = timerSec;
-      realSec = Math.floor(realSec);
-      
-      const exM = Math.floor(realSec / 60), exS = realSec % 60;
-      const finalDuration = exM + ':' + (exS < 10 ? '0' : '') + exS;
       
       const tempId = 'temp-audio-' + Date.now();
       const area = document.getElementById('messages-area');
@@ -2673,7 +2670,6 @@ async function toggleRecording(isSinging = false) {
 
       await new Promise(r => setTimeout(r, 50));
       
-      // 🚀 دالة الرفع إلى Supabase (لضمان سرعة واستقرار المقاطع الطويلة بمهلة 5 دقائق)
       const tryUploadVoice = () => {
           const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
           const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
@@ -2685,7 +2681,6 @@ async function toggleRecording(isSinging = false) {
           xhr.setRequestHeader('apikey', SUPA_KEY);
           xhr.setRequestHeader('Content-Type', blob.type || 'audio/webm');
           
-          // 🚀 مهلة 5 دقائق للمقاطع الطويلة
           xhr.timeout = 300000;
 
           xhr.upload.onprogress = function(e) {
@@ -2757,72 +2752,68 @@ async function toggleRecording(isSinging = false) {
     };
     
     mediaRecorder.start(); isRecording = true; recordStart = Date.now();
+    
+    // تصفير متغيرات الإيقاف المؤقت
+    totalPausedTime = 0;
+    recordPausedAt = 0;
+    isRecordingPaused = false;
+    const btnPause = document.getElementById('btn-pause-resume');
+    if(btnPause) btnPause.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" style="width:16px; height:16px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+    const pulseDot = document.getElementById('rec-pulse-dot');
+    if(pulseDot) pulseDot.style.animation = 'pulse-record 1s infinite';
 
-    if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
-    else { document.getElementById('btn-voice').classList.add('recording'); document.getElementById('btn-music-voice').style.display = 'none'; }
-
-    // 🚀 نخفي النص فقط ونبقي الحاوية عشان أزرار الصوت المدمجة تضل مبينة بمكانها
-    const msgInput = document.getElementById('msg-input');
-    msgInput.style.opacity = '0'; msgInput.style.pointerEvents = 'none';
-    
-    document.getElementById('btn-attach').style.display = 'none';
-    document.getElementById('btn-cancel-voice').style.display = 'flex'; 
-    
-    const recIndicator = document.getElementById('recording-indicator');
-    recIndicator.style.display = 'flex';
-    recIndicator.style.position = 'absolute';
-    recIndicator.style.right = '60px'; // ضبط موقع عداد الثواني ليظهر فوق الحقل الفارغ
-    
-    let canvas = document.getElementById('neon-visualizer');
-    if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'neon-visualizer'; canvas.width = 100; canvas.height = 25; canvas.style.marginLeft = '12px'; document.getElementById('recording-indicator').appendChild(canvas); }
-    canvas.style.display = 'block'; const canvasCtx = canvas.getContext('2d'); const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    function drawVisualizer() {
-      if (!isRecording) return;
-      requestAnimationFrame(drawVisualizer); analyser.getByteFrequencyData(dataArray); canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-      let x = 0; const barWidth = (canvas.width / analyser.frequencyBinCount) * 2;
-      for (let i = 0; i < analyser.frequencyBinCount; i++) {
-        const barHeight = (dataArray[i] / 255) * canvas.height;
-        canvasCtx.fillStyle = isSingingMode ? 'rgba(255, 0, 144, 0.9)' : 'rgba(0, 240, 255, 0.9)';
-        canvasCtx.shadowBlur = 6; canvasCtx.shadowColor = isSingingMode ? '#ff0090' : '#00f0ff';
-        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight); x += barWidth + 1.5;
-      }
-    }
-    drawVisualizer();
+    // 🚀 إخفاء الشريط العادي وإظهار شريط التسجيل الفخم
+    document.getElementById('normal-ui').style.display = 'none';
+    document.getElementById('record-ui').style.display = 'flex';
 
     if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.set('recording'); recRef.onDisconnect().remove(); }
     if (typeof recordTimerInt !== 'undefined') clearInterval(recordTimerInt);
     recordDurationStr = '0:00'; const timerSpan = document.getElementById('rec-timer-text'); if (timerSpan) timerSpan.textContent = '0:00';
+    
     recordTimerInt = setInterval(() => {
-      const sec = Math.floor((Date.now() - recordStart) / 1000), m = Math.floor(sec / 60), s = sec % 60;
+      if(isRecordingPaused) return; // لا تحسب الثواني أثناء الإيقاف
+      const sec = Math.floor((Date.now() - recordStart - totalPausedTime) / 1000);
+      const m = Math.floor(sec / 60), s = sec % 60;
       recordDurationStr = m + ':' + (s < 10 ? '0' : '') + s;
       if (timerSpan) timerSpan.textContent = recordDurationStr;
     }, 1000);
   } catch (e) { showToast('تعذر الوصول للمايكروفون', 'error'); }
 }
+
 function stopRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
   isRecording = false;
   if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.remove(); recRef.onDisconnect().cancel(); }
-  document.getElementById('btn-voice').classList.remove('recording'); document.getElementById('btn-voice').style.display = 'flex';
-  const btnMusic = document.getElementById('btn-music-voice'); if (btnMusic) { btnMusic.classList.remove('recording'); btnMusic.style.display = 'flex'; }
   
-  // 🚀 إعادة حقل الإدخال والعداد لوضعهم الطبيعي بعد انتهاء التسجيل
-  const msgInput = document.getElementById('msg-input');
-  msgInput.style.opacity = '1'; msgInput.style.pointerEvents = 'auto';
-  
-  document.getElementById('btn-attach').style.display = 'flex';
-  document.getElementById('btn-cancel-voice').style.display = 'none'; 
-  
-  const recIndicator = document.getElementById('recording-indicator');
-  recIndicator.style.display = 'none';
-  recIndicator.style.position = 'static';
-  
-  const canvas = document.getElementById('neon-visualizer'); if (canvas) canvas.style.display = 'none';
+  // 🚀 إخفاء شريط التسجيل والعودة للشريط العادي
+  document.getElementById('record-ui').style.display = 'none';
+  document.getElementById('normal-ui').style.display = 'flex';
   clearInterval(recordTimerInt);
 }
 
 function cancelVoiceRecord() { isRecordingCanceled = true; stopRecording(); }
+
+function pauseResumeRecording() {
+  if (!mediaRecorder || !isRecording) return;
+  const btnPause = document.getElementById('btn-pause-resume');
+  const pulseDot = document.getElementById('rec-pulse-dot');
+  
+  if (mediaRecorder.state === 'recording') {
+    mediaRecorder.pause();
+    isRecordingPaused = true;
+    recordPausedAt = Date.now();
+    // تغيير الأيقونة إلى زر تشغيل (استئناف) وتوقيف النبض
+    if(btnPause) btnPause.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" style="width:16px; height:16px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+    if(pulseDot) pulseDot.style.animation = 'none';
+  } else if (mediaRecorder.state === 'paused') {
+    mediaRecorder.resume();
+    isRecordingPaused = false;
+    totalPausedTime += (Date.now() - recordPausedAt);
+    // العودة لأيقونة الإيقاف المؤقت وإرجاع النبض
+    if(btnPause) btnPause.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" style="width:16px; height:16px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+    if(pulseDot) pulseDot.style.animation = 'pulse-record 1s infinite';
+  }
+}
 
 /* ═══════════════════════════════════
    VOICE PLAYBACK & PROGRESS
