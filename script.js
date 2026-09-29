@@ -1,4 +1,25 @@
 /* ═══════════════════════════════════
+   PERFORMANCE OPTIMIZATIONS (60 FPS) & FORCED STYLES
+═══════════════════════════════════ */
+const perfStyle = document.createElement('style');
+perfStyle.innerHTML = `
+  * { -webkit-tap-highlight-color: transparent; outline: none; }
+  .msg-bubble, .msg-menu, .modal, .glass-card, .search-result-card, #video-preview-overlay { transform: translateZ(0); will-change: transform, opacity; }
+  .messages-area { contain: content; scroll-behavior: auto !important; }
+  .msg-row { contain: layout style; }
+  .voice-waveform { -webkit-user-select: none; user-select: none; touch-action: none; -webkit-touch-callout: none; pointer-events: auto; }
+  .voice-msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; pointer-events: auto; }
+  .voice-progress-fill { will-change: width; }
+  /* تخفيف الظلال المكلفة للـ GPU في الموبايل */
+  .msg-menu { box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important; }
+  .glass-card { box-shadow: 0 5px 20px rgba(0,0,0,0.3) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(10, 22, 40, 0.98) !important; }
+  /* 🚀 ألوان مريحة للعين وأنيقة جداً للبطاقات وتتجاوز الكاش تماماً */
+  .msg-row.out .msg-bubble { background: #103b66 !important; border: 1px solid #1c558e !important; border-bottom-right-radius: 6px !important; color: #eaf6f8 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+  .msg-row.in .msg-bubble { background: #1a222c !important; border: 1px solid #283443 !important; border-bottom-left-radius: 6px !important; color: #e2e8f0 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+`;
+document.head.appendChild(perfStyle);
+
+/* ═══════════════════════════════════
    FIREBASE INIT & GLOBAL STATE
 ═══════════════════════════════════ */
 let firebaseConfig;
@@ -99,51 +120,9 @@ const msgReadObserver = new IntersectionObserver((entries, observer) => {
 }, { threshold: 0.1 });
 
 /* ═══════════════════════════════════
-   BACKGROUND CANVAS (مُحسن للبطارية)
+   BACKGROUND CANVAS - تم الإلغاء لتوفير الشحن
 ═══════════════════════════════════ */
-(function initBg() {
-  const canvas = document.getElementById('bg-canvas');
-  const ctx = canvas.getContext('2d');
-  let W, H, particles = [];
-
-  function resize() {
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  }
-  resize();
-  window.addEventListener('resize', resize);
-
-  function mkP() {
-    return {
-      x: Math.random() * W, y: Math.random() * H,
-      r: Math.random() * 1.5 + .3,
-      vx: (Math.random() - .5) * .15, vy: (Math.random() - .5) * .15,
-      a: Math.random() * .6 + .2
-    };
-  }
-  for (let i = 0; i < 40; i++) particles.push(mkP()); 
-
-  function draw() {
-    if (document.hidden || (document.getElementById('screen-chat') && document.getElementById('screen-chat').classList.contains('active'))) {
-      setTimeout(() => requestAnimationFrame(draw), 500);
-      return;
-    }
-    ctx.clearRect(0, 0, W, H);
-    ctx.strokeStyle = 'rgba(0,240,255,0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-    particles.forEach(p => {
-      p.x += p.vx; p.y += p.vy;
-      if (p.x < 0 || p.x > W) p.vx *= -1;
-      if (p.y < 0 || p.y > H) p.vy *= -1;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(0,240,255,${p.a})`; ctx.fill();
-    });
-    requestAnimationFrame(draw);
-  }
-  draw();
-})();
+// تم مسح كود الـ Canvas القديم بالكامل للحفاظ على بطارية الهاتف ومنع الحرارة واستبداله بـ CSS
 
 /* ═══════════════════════════════════
    NAVIGATION & UTILS
@@ -174,6 +153,9 @@ window.addEventListener('popstate', e => {
   } else if (msgMenuOverlay && msgMenuOverlay.classList.contains('open')) { 
     closeMsgMenu(); 
     isPopupOpen = true; 
+  } else if (document.getElementById('main-menu-overlay') && document.getElementById('main-menu-overlay').classList.contains('open')) {
+    closeMainMenu();
+    isPopupOpen = true;
   } else if (modalOverlay && modalOverlay.classList.contains('open')) { 
     modalOverlay.classList.remove('open'); 
     isPopupOpen = true; 
@@ -252,16 +234,28 @@ function openModal(title, text) {
   });
 }
 
-function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 150) + 'px'; }
+function autoResize(el) { 
+  // 🚀 إيقاف تكسير الشاشة وقت الحذف (الـ Reflow) 
+  requestAnimationFrame(() => {
+    if (!el.value) {
+      el.style.height = 'auto';
+      return;
+    }
+    // المربع رح يتوسع بس، وما رح يرجع يصغر إلا لما تفضيه تماماً.. هاد بيعطيك 120 FPS
+    if (el.scrollHeight > el.clientHeight) {
+      el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+    }
+  });
+}
 function escHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''; }
+function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''; }
 function formatDate(ts) {
   if (!ts) return '';
   const d = new Date(ts), now = new Date();
   if (d.toDateString() === now.toDateString()) return 'اليوم';
   const yes = new Date(now); yes.setDate(now.getDate() - 1);
   if (d.toDateString() === yes.toDateString()) return 'أمس';
-  return d.toLocaleDateString('ar-EG', { day: '2-digit', month: 'short' });
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 /* ═══════════════════════════════════
@@ -333,6 +327,13 @@ async function initMicrophone() {
 
 window.localImageCache = {}; // 🚀 السحر هون: ذاكرة تخزين مؤقتة لمنع رجفة الصورة وإعادة تحميلها
 
+function applySmartCache(url, elOrId) {
+  if (!url) return;
+  const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+  if (!el) return;
+  el.src = url;
+}
+
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.log("Auth Error:", err)).finally(() => {
   auth.onAuthStateChanged(async user => {
     const loader = document.getElementById('loader-screen');
@@ -382,7 +383,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=7');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=15');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -564,8 +565,11 @@ function updateHomeHeader() {
   document.getElementById('home-subtitle').textContent = 'مرحباً، ' + myProfile.name.split(' ')[0];
   document.getElementById('my-id-badge').textContent = myProfile.uniqueId;
   const av = document.getElementById('home-avatar');
-  if (myProfile.photo) av.outerHTML = `<img class="home-avatar" src="${myProfile.photo}" onclick="showScreen('profile')" id="home-avatar" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\' onclick=\\'showScreen(\\&quot;profile\\&quot;)\\'>${myProfile.name.charAt(0)}</div>'"/>`;
-  else { av.className = 'home-avatar-placeholder'; av.textContent = myProfile.name.charAt(0); }
+  if (myProfile.photo) {
+    av.outerHTML = `<img class="home-avatar" id="home-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" onclick="window.previewImg('${myProfile.photo}')" onerror="this.outerHTML='<div class=\\'home-avatar-placeholder\\' id=\\'home-avatar\\'>${myProfile.name.charAt(0)}</div>'"/>`;
+    applySmartCache(myProfile.photo, 'home-avatar');
+  }
+  else { av.className = 'home-avatar-placeholder'; av.textContent = myProfile.name.charAt(0); av.onclick = null; }
 }
 
 function copyMyId() {
@@ -578,7 +582,10 @@ function populateProfile() {
   document.getElementById('profile-name-input').value = myProfile.name;
   document.getElementById('profile-id-value').textContent = myProfile.uniqueId;
   const av = document.getElementById('profile-avatar');
-  if (myProfile.photo) av.outerHTML = `<img class="profile-avatar" src="${myProfile.photo}" id="profile-avatar"/>`;
+  if (myProfile.photo) {
+    av.outerHTML = `<img class="profile-avatar" id="profile-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"/>`;
+    applySmartCache(myProfile.photo, 'profile-avatar');
+  }
   else av.textContent = myProfile.name.charAt(0);
 }
 
@@ -760,30 +767,33 @@ function renderChatsList(filter = '') {
   if (!filtered.length) { empty.style.display = 'flex'; list.querySelectorAll('.chat-item').forEach(e => e.remove()); return; }
   empty.style.display = 'none'; list.querySelectorAll('.chat-item').forEach(e => e.remove());
   
-  filtered.forEach(([chatId, data]) => {
-    const div = document.createElement('div'); div.className = 'chat-item';
-    const liveData = getFriendData(data.friendUid, data);
-    
-    const initials = (liveData.name || '?').charAt(0);
-    const avatarHtml = liveData.photo ? `<img src="${liveData.photo}" class="chat-avatar" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
-    
-    // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
-    const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
-    const onlineBadge = isOnline ? `<div style="position:absolute; bottom:2px; right:2px; width:13px; height:13px; background:var(--neon-green); border-radius:50%; border:2px solid var(--bg-surface); z-index:2;"></div>` : '';
-    
-    const lastMsg = data.lastMsg || 'اضغط لبدء المحادثة';
-    div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(liveData.name||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
-    
-    // التمرير السريع الفوري مع إرسال البيانات المحدثة
-    div.addEventListener('click', () => openChat(chatId, data.friendUid, { name: liveData.name, photo: liveData.photo }));
-    
-    let pressTimer;
-    div.addEventListener('touchstart', () => { pressTimer = setTimeout(() => { openHomeChatMenu(chatId, data.friendUid, liveData.name); }, 600); }, { passive: true });
-    div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
-    div.addEventListener('touchend', () => clearTimeout(pressTimer));
-    div.addEventListener('contextmenu', e => { e.preventDefault(); openHomeChatMenu(chatId, data.friendUid, liveData.name); });
-    list.appendChild(div);
-  });
+        filtered.forEach(([chatId, data]) => {
+        const div = document.createElement('div'); div.className = 'chat-item';
+        const liveData = getFriendData(data.friendUid, data);
+        
+        const initials = (liveData.name || '?').charAt(0);
+        const imgId = 'chat_av_' + chatId;
+        const avatarHtml = liveData.photo ? `<img id="${imgId}" class="chat-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="object-fit:cover; cursor:pointer;" onclick="event.stopPropagation(); window.previewImg('${liveData.photo}')" onerror="this.outerHTML='<div class=\\'chat-avatar\\'>${initials}</div>'"/>` : `<div class="chat-avatar">${initials}</div>`;
+        
+        // إذا حاظرني، ما بخليه يطلع "متصل الآن" أبداً
+        const isOnline = !blockedByThemStatus[data.friendUid] && friendsStatus[data.friendUid] === 'online';
+        const onlineBadge = isOnline ? `<div style="position:absolute; bottom:2px; right:2px; width:13px; height:13px; background:var(--neon-green); border-radius:50%; border:2px solid var(--bg-surface); z-index:2;"></div>` : '';
+        
+        const lastMsg = data.lastMsg || 'اضغط لبدء المحادثة';
+        div.innerHTML = `<div style="position:relative; display:inline-block; flex-shrink:0;">${avatarHtml}${onlineBadge}</div><div class="chat-info"><div class="chat-name">${escHtml(liveData.name||'مستخدم')}</div><div class="chat-last-msg">${escHtml(lastMsg)}</div></div><div class="chat-meta"><div class="chat-time">${data.updatedAt ? formatTime(data.updatedAt) : ''}</div>${data.unread > 0 ? `<div class="chat-badge">${data.unread}</div>` : ''}</div>`;
+        
+        // التمرير السريع الفوري مع إرسال البيانات المحدثة
+        div.addEventListener('click', () => openChat(chatId, data.friendUid, { name: liveData.name, photo: liveData.photo }));
+        
+        let pressTimer;
+        div.addEventListener('touchstart', () => { pressTimer = setTimeout(() => { openHomeChatMenu(chatId, data.friendUid, liveData.name); }, 600); }, { passive: true });
+        div.addEventListener('touchmove', () => clearTimeout(pressTimer), { passive: true });
+        div.addEventListener('touchend', () => clearTimeout(pressTimer));
+        div.addEventListener('contextmenu', e => { e.preventDefault(); openHomeChatMenu(chatId, data.friendUid, liveData.name); });
+        list.appendChild(div);
+        
+        if (liveData.photo) applySmartCache(liveData.photo, imgId);
+      });
 }
 
 function filterChats(val) { renderChatsList(val); }
@@ -833,14 +843,22 @@ async function sendFriendRequest(friendUid) {
 function initFriendRequestsListener(uid) {
   if (friendRequestsListener) db.ref('friendRequests/' + uid).off('value', friendRequestsListener);
   friendRequestsListener = db.ref('friendRequests/' + uid).on('value', snap => {
-    const list = document.getElementById('friend-requests-list'), badge = document.getElementById('home-req-badge');
-    if (!snap.exists()) { if (badge) badge.style.display = 'none'; if (list) list.innerHTML = '<div style="text-align:center;">لا توجد طلبات</div>'; return; }
+    const list = document.getElementById('friend-requests-list');
+    const badge = document.getElementById('home-req-badge');
+    const menuBadge = document.getElementById('menu-req-badge');
+    if (!snap.exists()) { 
+      if (badge) badge.style.display = 'none'; 
+      if (menuBadge) menuBadge.style.display = 'none'; 
+      if (list) list.innerHTML = '<div style="text-align:center;">لا توجد طلبات</div>'; 
+      return; 
+    }
     let count = 0, htmlStr = '';
     snap.forEach(reqSnap => {
       count++; const req = reqSnap.val();
       htmlStr += `<div class="search-result-card" style="padding:12px 16px;"><div class="search-result-avatar" style="width:40px;height:40px;">${(req.name || '?').charAt(0)}</div><div class="search-result-info"><div class="search-result-name" style="font-size:14px;margin-bottom:0;">${escHtml(req.name)}</div></div><div style="display:flex;gap:6px;"><button class="btn-primary" style="width:auto;padding:6px 12px;font-size:12px;background:var(--neon-green);box-shadow:none;" onclick="acceptFriendRequest('${req.uid}')">موافقة</button><button class="btn-danger" style="width:auto;padding:6px 12px;font-size:12px;" onclick="rejectFriendRequest('${req.uid}')">رفض</button></div></div>`;
     });
     if (badge) { badge.textContent = count; badge.style.display = count > 0 ? 'flex' : 'none'; }
+    if (menuBadge) { menuBadge.textContent = count; menuBadge.style.display = count > 0 ? 'flex' : 'none'; }
     if (list) list.innerHTML = htmlStr;
   });
 }
@@ -916,7 +934,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
   renderScreenUI('chat'); 
   
   window.isChatOpening = true;
-  setTimeout(() => { window.isChatOpening = false; }, 600); // 🚀 تجميد التفاعلات نصف ثانية
+  setTimeout(() => { window.isChatOpening = false; }, 100); // 🚀 تقليل التجميد لـ 100ms لسرعة استجابة فورية
 
   detachMessages();
   wakeUpCloudinary(); // 🚀 تسخين السيرفر أول ما تفتح المحادثة
@@ -925,7 +943,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const snap = await db.ref('users/' + friendUid).once('value');
     friendProfile = snap.val();
   }
-  currentChat = { chatId, friendUid, friendProfile };
+    currentChat = { chatId, friendUid, friendProfile };
   // 🚀 جلب الملف الخام من قاعدة البيانات وعرضه فوراً
   getWallpaperDB().then(db => {
     const tx = db.transaction('wallpapers', 'readonly');
@@ -938,7 +956,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
-    avatarEl.outerHTML = `<img src="${friendProfile.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
+    avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${friendProfile.photo}')"/>`;
+    applySmartCache(friendProfile.photo, 'chat-header-avatar');
   } else {
     avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
   }
@@ -970,7 +989,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const avatarEl = document.getElementById('chat-header-avatar');
     if (avatarEl) {
       if (fData.photo) {
-        avatarEl.outerHTML = `<img src="${fData.photo}" class="chat-header-avatar" id="chat-header-avatar" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
+        avatarEl.outerHTML = `<img class="chat-header-avatar" id="chat-header-avatar" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="object-fit:cover; cursor:pointer;" onclick="window.previewImg('${fData.photo}')" onerror="this.outerHTML='<div class=\\'chat-header-avatar\\' id=\\'chat-header-avatar\\'>${(fData.name||'?').charAt(0)}</div>'"/>`;
+        applySmartCache(fData.photo, 'chat-header-avatar');
       } else {
         avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(fData.name||'?').charAt(0)}</div>`;
       }
@@ -978,9 +998,6 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     
     const nameEl = document.getElementById('chat-header-name');
     if (nameEl) nameEl.textContent = fData.name || 'مستخدم';
-    
-    // 🚀 تم إزالة كود تحديث جميع صور الرسائل القديمة لأنه يسبب تعليق كامل للمعالج عند فتح المحادثات الطويلة
-    // الصور ستأخذ شكلها الجديد فقط للرسائل الجديدة لتخفيف العبء عن الرام
 
     const statusEl = document.getElementById('chat-header-status');
     const val = fData.status;
@@ -1035,20 +1052,24 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const statusEl = document.getElementById('chat-header-status');
     if (!statusEl) return;
     
-    if (state === 'typing') {
-      statusEl.textContent = '✍️ يكتب الآن...';
-      statusEl.style.color = 'var(--neon-cyan)';
-    } else if (state === 'recording') {
-      statusEl.textContent = '🎙️ يسجل مقطع صوتي...';
-      statusEl.style.color = 'var(--neon-pink)';
-    } else {
-      statusEl.textContent = baseStatusText;
-      statusEl.style.color = baseStatusColor;
-    }
-  });
-}
+            if (state === 'typing') {
+          statusEl.textContent = '✍️ يكتب الآن...';
+          statusEl.style.color = 'var(--neon-cyan)';
+        } else if (state === 'recording') {
+          statusEl.textContent = '🎙️ يسجل مقطع صوتي...';
+          statusEl.style.color = 'var(--neon-pink)';
+        } else {
+          statusEl.textContent = baseStatusText;
+          statusEl.style.color = baseStatusColor;
+        }
+      });
 
-async function attachMessages(chatId) {
+      if (window.AndroidCall && typeof window.AndroidCall.clearChatNotification === 'function') {
+          window.AndroidCall.clearChatNotification(chatId);
+      }
+    }
+
+    async function attachMessages(chatId) {
   const area = document.getElementById('messages-area');
   area.innerHTML = '';
   lastMsgDate = '';
@@ -1204,7 +1225,7 @@ async function attachMessages(chatId) {
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
     if (!existsInCache) {
       liveMsgsCache.push(msg);
-      if (liveMsgsCache.length > 40) liveMsgsCache.shift(); // 🚀 تخفيض الكاش لـ 40 ليرتاح الرام تماماً
+      // 🔴 تم إزالة كود تقليل الكاش لـ 40 رسالة لحفظ كل تاريخ المحادثة
       chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
 
@@ -1414,25 +1435,19 @@ async function attachMessages(chatId) {
     }
   });
 
-  // 🚀 السحر هون: استشعار الحذف النهائي (الدمار الشامل للصور والفيديوهات بعد 24 ساعة) لمسحها من الشاشة فوراً
-  currentMessagesQuery.on('child_removed', snap => {
-    const bubbleEl = document.getElementById('msg-' + snap.key);
-    if (bubbleEl) {
-      const fullRow = bubbleEl.closest('.msg-row');
-      if (fullRow) fullRow.remove();
-    }
-    
-    // تنظيف الكاش المحلي كمان عشان ما ترجع تظهر
-    const idx = liveMsgsCache.findIndex(m => m.key === snap.key);
-    if (idx !== -1) {
-      liveMsgsCache.splice(idx, 1);
-      chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
-    }
-  });
+  // 🔴 تم إزالة حدث child_removed نهائياً لأنه كان يخفي الرسائل التي تتجاوز الـ 30 رسالة
 }
 
 function buildMsgEl(msg, isBackground = false) {
-  // فحص أمان: إذا الرسالة صوت أو صورة وما فيها رابط، أو نص وفاضي، منعطل ظهورها
+  // فحص أمان 1: منع ظهور الرسائل المعطوبة أو مجهولة النوع (الفقاعات الفارغة)
+  const validTypes = ['text', 'image', 'video', 'audio', 'voice', 'deleted'];
+  if (!msg.type || !validTypes.includes(msg.type)) {
+    const dummy = document.createElement('div');
+    dummy.style.display = 'none';
+    return dummy;
+  }
+
+  // فحص أمان 2: إذا الرسالة صوت أو صورة وما فيها رابط، أو نص وفاضي، منعطل ظهورها
   if ((msg.type === 'voice' || msg.type === 'audio' || msg.type === 'image' || msg.type === 'video') && !msg.url && !msg.isPending) {
     const dummy = document.createElement('div');
     dummy.style.display = 'none';
@@ -1470,7 +1485,7 @@ function buildMsgEl(msg, isBackground = false) {
   let bgStyle = isOut ? 'background:linear-gradient(135deg, var(--neon-cyan), var(--neon-blue));' : 'background:linear-gradient(135deg, var(--neon-blue), var(--neon-purple));';
   
   if (profile.photo) {
-    avatarNode.src = profile.photo;
+    applySmartCache(profile.photo, avatarNode);
     avatarNode.style.cssText = commonStyle + 'cursor:pointer;';
     avatarNode.onclick = (e) => {
       e.stopPropagation();
@@ -1502,10 +1517,14 @@ function buildMsgEl(msg, isBackground = false) {
   replyIcon.style.cssText = `position:absolute; top:50%; margin-top:-11px; transform:scale(0); opacity:0; transition:all 0.2s ease-out; z-index:-1;`;
   row.style.position = 'relative'; row.appendChild(replyIcon);
   
-    let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
+  let lastTap = 0, pressTimer, singleTapTimer, touchStartX = 0, touchStartY = 0, isSwiping = false, isVertical = false;
 
   bubble.addEventListener('touchstart', e => {
-    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
+    // 🚀 منع صارم: إذا كان المستخدم يلمس المقطع الصوتي، الروابط، أو الشريط، توقف فوراً ولا تفتح أي قائمة!
+    if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg')) return;
+    
+    // 🚀 السحر هون: منع التفاعل مع لقطة الشاشة أو اللمس المتعدد (3 أصابع)
+    if (e.touches && e.touches.length > 1) return;
     
     const now = Date.now();
     if (now - lastTap < 300 && now - lastTap > 0) { 
@@ -1522,11 +1541,12 @@ function buildMsgEl(msg, isBackground = false) {
 
     if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container')) { e.target.style.opacity = '0.85'; } 
 
-    pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending) openMsgMenu(msg, isOut); }, 500);
+    // فتح القائمة بسلاسة بدون فحص الكيبورد اللي كان يعمل تضارب
+    pressTimer = setTimeout(() => { if (!isSwiping && !isVertical && !msg.isPending && !window.isAudioScrubbing) openMsgMenu(msg, isOut); }, 350);
   }, { passive: false });
 
   bubble.addEventListener('touchmove', e => {
-    if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform') || !touchStartX) return;
+    if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg') || !touchStartX) return;
     const dx = e.touches[0].clientX - touchStartX, dy = e.touches[0].clientY - touchStartY;
     
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
@@ -1552,40 +1572,50 @@ function buildMsgEl(msg, isBackground = false) {
     }
   }, { passive: true });
 
-            bubble.addEventListener('touchend', e => {
-            if (e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-waveform')) return;
+  const resetBubbleTouch = (e) => {
+    clearTimeout(pressTimer);
+    if (e && e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
+      e.target.style.opacity = '1'; 
+    }
+    bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
+    replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
+    bubble.hasVibrated = false;
+  };
 
-            if (e.target.tagName === 'IMG' && !e.target.closest('.video-thumb-container') && !e.target.closest('.link-preview-container')) { 
-              e.target.style.opacity = '1'; 
-            }
-            
-            clearTimeout(pressTimer);
-            bubble.style.transition = 'transform 0.2s ease-out'; bubble.style.transform = 'translateX(0)';
-            replyIcon.style.transition = 'all 0.2s ease-out'; replyIcon.style.transform = `scale(0)`; replyIcon.style.opacity = '0';
-            bubble.hasVibrated = false;
+  bubble.addEventListener('touchend', e => {
+    resetBubbleTouch(e);
+    if (window.isAudioScrubbing || e.target.tagName === 'A' || e.target.closest('button') || e.target.closest('.voice-msg')) return;
 
-            if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
-              prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
-                } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
-              singleTapTimer = setTimeout(() => {
-                const vidContainer = e.target.closest('.video-thumb-container');
-                if (vidContainer) {
-                   openVideoPlayer(msg.url); // 🚀 فتح الفيديو كبث مباشر (Streaming) فوراً دون تحميل
-                } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
-                  window.previewImg(e.target.src);
-                }
-              }, 250);
-            }
-            isSwiping = false; touchStartX = 0; touchStartY = 0;
-          });
+    if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
+      prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
+    } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
+      singleTapTimer = setTimeout(() => {
+        const vidContainer = e.target.closest('.video-thumb-container');
+        if (vidContainer) {
+           openVideoPlayer(msg.url);
+        } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
+          window.previewImg(e.target.src);
+        }
+      }, 250);
+    }
+    isSwiping = false; touchStartX = 0; touchStartY = 0;
+  });
 
-          // منع قائمة جوجل الافتراضية نهائياً لجميع العناصر بما فيها الروابط
-          bubble.addEventListener('contextmenu', e => { 
-            if (msg.isPending) return; 
-            e.preventDefault(); 
-            clearTimeout(pressTimer); 
-            openMsgMenu(msg, isOut); 
-          });
+  bubble.addEventListener('touchcancel', e => {
+    resetBubbleTouch(e);
+    isSwiping = false; touchStartX = 0; touchStartY = 0;
+  });
+
+  bubble.addEventListener('contextmenu', e => { 
+    // 🚀 جدار ناري إضافي: منع القائمة أثناء اللمس على وسائط أو أزرار
+    if (window.isAudioScrubbing || msg.isPending || e.target.closest('.voice-msg') || e.target.closest('button') || e.target.tagName === 'A') {
+        e.preventDefault();
+        return;
+    }
+    e.preventDefault(); 
+    clearTimeout(pressTimer); 
+    openMsgMenu(msg, isOut); 
+  });
 
     let ticks = '';
   if (isOut && !msg.isPending) {
@@ -1671,8 +1701,8 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
-  } else if (msg.type === 'voice') {
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
+    } else if (msg.type === 'voice') {
  if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
@@ -1681,7 +1711,7 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer;" onclick="seekVoice(event, '${msg.url}', '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:0%; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: width 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
   }
   
   if (msg.isPending) {
@@ -1718,15 +1748,56 @@ function buildMsgEl(msg, isBackground = false) {
 ═══════════════════════════════════ */
 let lastTypingTime = 0; // لضبط الإرسال لفايربيز
 
-document.getElementById('msg-input').addEventListener('input', () => {
+// 🚀 السحر هنا: منع الكيبورد من الإغلاق عند التفاعل مع أي شيء داخل المحادثة (الضغط القصير، الطويل، الخيارات، المقاطع الصوتية) مع بقاء السكرول شغال 100%
+// 🚀 السحر الأقوى: منع الكيبورد من الإغلاق عند الضغط المطول أو استخدام أزرار الصوت والقوائم (دعم كامل لشاشات اللمس)
+// حساب حالة الكيبورد مرة وحدة بالخلفية بدل ما تنحسب مع كل لمسة شاشة
+let globalKbOpen = false;
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    globalKbOpen = window.visualViewport.height < window.screen.height * 0.75;
+  });
+}
+
+['mousedown', 'touchend'].forEach(evt => {
+  window.addEventListener(evt, (e) => {
+    const chatScreen = document.getElementById('screen-chat');
+    
+    // استخدام المتغير الجاهز فوراً بدون إرهاق المعالج
+    let isKbReallyOpen = globalKbOpen || (window.innerHeight < window.screen.height * 0.75);
+
+    if (chatScreen && chatScreen.classList.contains('active') && isKbReallyOpen && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+      const backBtn = e.target.closest('button');
+      if (backBtn && backBtn.getAttribute('onclick') === "showScreen('home')") return;
+      
+      if (evt === 'touchend') {
+        const btn = e.target.closest('button') || e.target.closest('.msg-menu-btn') || e.target.closest('.msg-reaction');
+        const link = e.target.closest('a');
+        
+        if (btn) {
+          e.preventDefault(); 
+          btn.click(); 
+        } else if (link) {
+          e.preventDefault();
+          window.open(link.href, '_blank');
+        } else {
+          e.preventDefault(); // هذا السطر سيحمي الكيبورد من الإغلاق عند الضغط المطول أو القصير على أي مكان بالشاشة
+        }
+      } else {
+         e.preventDefault();
+      }
+    }
+  }, { passive: false });
+});
+
+document.getElementById('msg-input').addEventListener('input', (e) => {
+  // 🚀 مسحنا كل أكواد الإخفاء والإظهار، الأزرار الـ 3 رح يضلو ثابتين دائماً
+  
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
   
   const now = Date.now();
-  const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
-  
   if (now - lastTypingTime > 1500) {
+    const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
     typingRef.set('typing');
-    // هون السحر: لو فصل النت أو تسكر التطبيق فجأة، السيرفر بيمسح جاري الكتابة لحاله
     typingRef.onDisconnect().remove(); 
     lastTypingTime = now;
   }
@@ -1734,8 +1805,9 @@ document.getElementById('msg-input').addEventListener('input', () => {
   clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     if (currentChat) {
+      const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
       typingRef.remove();
-      typingRef.onDisconnect().cancel(); // نلغي أمر الحذف التلقائي لأننا حذفناه نظامي
+      typingRef.onDisconnect().cancel();
     }
     lastTypingTime = 0;
   }, 2000);
@@ -1765,6 +1837,8 @@ async function sendTextMsg() {
   
   inp.value = ''; autoResize(inp); 
   
+  // 🚀 الأزرار صارت ثابتة وما عاد في داعي نغير شي بالستايل بعد الإرسال
+  
   if (isKbReallyOpen) {
     inp.focus(); 
   } else {
@@ -1788,10 +1862,7 @@ async function syncPendingMessages() {
   const now = Date.now();
   
   for (const p of pending) {
-    if (now - p.time > 3600000) { 
-      await pendingDB.delete(p.key);
-      continue; 
-    } 
+    // 🔴 تم إزالة شرط الحذف التلقائي بعد ساعة نهائياً لضمان عدم اختفاء الرسائل المعلقة
     
     if (p.msg.type === 'voice' && p.msg.url && p.msg.url.startsWith('data:audio')) {
         try {
@@ -2075,7 +2146,7 @@ function addReaction(msgKey, emoji) {
 function closeMsgMenu() { document.getElementById('msg-menu-overlay').classList.remove('open'); }
 function prepareReply(msg) { replyingToMsg = msg; editingMsgKey = null; document.getElementById('msg-reply-preview').classList.add('active'); document.getElementById('msg-reply-text').textContent = 'رد على: ' + (msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : '🎙️ صوتية'); document.getElementById('msg-input').focus(); }
 function cancelReply() { replyingToMsg = null; document.getElementById('msg-reply-preview').classList.remove('active'); }
-function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
+function prepareEdit(msgKey, oldText) { editingMsgKey = msgKey; cancelReply(); const inp = document.getElementById('msg-input'); inp.value = oldText; autoResize(inp); inp.dispatchEvent(new Event('input')); inp.focus(); showToast('وضع التعديل مفعل ✏️'); }
 function confirmDeleteMsg(msgKey) {
   openModal('حذف نهائي', 'هل تريد حذف الرسالة للجميع ومن السيرفر؟').then(async ok => {
     if (ok && currentChat) {
@@ -2300,7 +2371,15 @@ async function decryptImageUrl(encryptedUrl) {
         );
         const decryptedBlob = new Blob([decryptedContent], { type: 'image/jpeg' });
         const objectUrl = URL.createObjectURL(decryptedBlob);
-        if (window.localImageCache) window.localImageCache[encryptedUrl] = objectUrl;
+        if (window.localImageCache) {
+            window.localImageCache[encryptedUrl] = objectUrl;
+            // 🚀 تفريغ الذاكرة: منع تكديس أكثر من 30 صورة لتجنب امتلاء الرام
+            const keys = Object.keys(window.localImageCache);
+            if (keys.length > 30) {
+                URL.revokeObjectURL(window.localImageCache[keys[0]]); // مسح نهائي من الذاكرة
+                delete window.localImageCache[keys[0]];
+            }
+        }
         return objectUrl;
     } catch (e) {
         console.error("خطأ في فك تشفير الصورة:", e);
@@ -2482,7 +2561,7 @@ async function toggleRecording(isSinging = false) {
   if (!navigator.mediaDevices) { showToast('المتصفح لا يدعم التسجيل', 'error'); return; }
   try {
     isSingingMode = isSinging; 
-    let audioConstraints = { echoCancellation: false, noiseSuppression: true, autoGainControl: true, sampleRate: 48000, channelCount: 2 };
+    let audioConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 2 };
     if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
     const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     
@@ -2495,14 +2574,14 @@ async function toggleRecording(isSinging = false) {
     const source = audioCtx.createMediaStreamSource(rawStream);
     const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
 
-    const preGain = audioCtx.createGain(); preGain.gain.value = 1.1;
-    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 70;
-    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10300;
+    const preGain = audioCtx.createGain(); preGain.gain.value = 1.5;
+    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
+    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
     const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4; 
-    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -20; compressor.knee.value = 30; compressor.ratio.value = 17.5; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
 
     function generateReverb(ctx) {
-      const length = ctx.sampleRate * 1.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+      const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
       const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
       for (let i = 0; i < length; i++) {
         const decay = Math.pow(1 - i / length, 1.5); 
@@ -2512,8 +2591,8 @@ async function toggleRecording(isSinging = false) {
     }
 
     const convolver = audioCtx.createConvolver(); convolver.buffer = generateReverb(audioCtx);
-    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.4; 
-    const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? 0.3 : 0.1; 
+    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6; 
+    const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
     const dest = audioCtx.createMediaStreamDestination();
 
     source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
@@ -2522,19 +2601,43 @@ async function toggleRecording(isSinging = false) {
     audioChunks = []; isRecordingCanceled = false;
     mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = async () => {
+        mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
       const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
       const blob = new Blob(localChunks, { type: actualMimeType });
-      const finalDuration = recordDurationStr;
       
-      if (blob.size < 3000 || finalDuration === '0:00') {
+      const timerSec = Math.floor((Date.now() - recordStart) / 1000);
+      if (blob.size < 3000 || timerSec < 1) {
          showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
       }
+
+      // 🚀 استخراج المدة الفسيولوجية الحقيقية للملف من المتصفح قبل السماح بالإرسال
+      const getRealDuration = () => new Promise(resolve => {
+          const tmpAudio = new Audio(URL.createObjectURL(blob));
+          tmpAudio.addEventListener('loadedmetadata', () => {
+              if (tmpAudio.duration === Infinity || isNaN(tmpAudio.duration)) {
+                  tmpAudio.currentTime = 1e8; // خدعة لإجبار المتصفح على حساب المدة
+                  tmpAudio.addEventListener('timeupdate', function onTimeUpdate() {
+                      tmpAudio.removeEventListener('timeupdate', onTimeUpdate);
+                      resolve(tmpAudio.duration);
+                  });
+              } else {
+                  resolve(tmpAudio.duration);
+              }
+          });
+          tmpAudio.addEventListener('error', () => resolve(timerSec)); // بحال الفشل، نستخدم العداد كخطة بديلة
+      });
+
+      let realSec = await getRealDuration();
+      if (!realSec || isNaN(realSec) || realSec === Infinity) realSec = timerSec;
+      realSec = Math.floor(realSec);
+      
+      const exM = Math.floor(realSec / 60), exS = realSec % 60;
+      const finalDuration = exM + ':' + (exS < 10 ? '0' : '') + exS;
       
       const tempId = 'temp-audio-' + Date.now();
       const area = document.getElementById('messages-area');
@@ -2646,8 +2749,17 @@ async function toggleRecording(isSinging = false) {
     if (isSingingMode) { document.getElementById('btn-music-voice').classList.add('recording'); document.getElementById('btn-voice').style.display = 'none'; } 
     else { document.getElementById('btn-voice').classList.add('recording'); document.getElementById('btn-music-voice').style.display = 'none'; }
 
-    document.getElementById('msg-input-wrap').style.display = 'none'; document.getElementById('btn-attach').style.display = 'none';
-    document.getElementById('btn-cancel-voice').style.display = 'flex'; document.getElementById('recording-indicator').style.display = 'flex';
+    // 🚀 نخفي النص فقط ونبقي الحاوية عشان أزرار الصوت المدمجة تضل مبينة بمكانها
+    const msgInput = document.getElementById('msg-input');
+    msgInput.style.opacity = '0'; msgInput.style.pointerEvents = 'none';
+    
+    document.getElementById('btn-attach').style.display = 'none';
+    document.getElementById('btn-cancel-voice').style.display = 'flex'; 
+    
+    const recIndicator = document.getElementById('recording-indicator');
+    recIndicator.style.display = 'flex';
+    recIndicator.style.position = 'absolute';
+    recIndicator.style.right = '60px'; // ضبط موقع عداد الثواني ليظهر فوق الحقل الفارغ
     
     let canvas = document.getElementById('neon-visualizer');
     if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'neon-visualizer'; canvas.width = 100; canvas.height = 25; canvas.style.marginLeft = '12px'; document.getElementById('recording-indicator').appendChild(canvas); }
@@ -2682,8 +2794,18 @@ function stopRecording() {
   if (currentChat) { const recRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid); recRef.remove(); recRef.onDisconnect().cancel(); }
   document.getElementById('btn-voice').classList.remove('recording'); document.getElementById('btn-voice').style.display = 'flex';
   const btnMusic = document.getElementById('btn-music-voice'); if (btnMusic) { btnMusic.classList.remove('recording'); btnMusic.style.display = 'flex'; }
-  document.getElementById('msg-input-wrap').style.display = 'block'; document.getElementById('btn-attach').style.display = 'flex';
-  document.getElementById('btn-cancel-voice').style.display = 'none'; document.getElementById('recording-indicator').style.display = 'none';
+  
+  // 🚀 إعادة حقل الإدخال والعداد لوضعهم الطبيعي بعد انتهاء التسجيل
+  const msgInput = document.getElementById('msg-input');
+  msgInput.style.opacity = '1'; msgInput.style.pointerEvents = 'auto';
+  
+  document.getElementById('btn-attach').style.display = 'flex';
+  document.getElementById('btn-cancel-voice').style.display = 'none'; 
+  
+  const recIndicator = document.getElementById('recording-indicator');
+  recIndicator.style.display = 'none';
+  recIndicator.style.position = 'static';
+  
   const canvas = document.getElementById('neon-visualizer'); if (canvas) canvas.style.display = 'none';
   clearInterval(recordTimerInt);
 }
@@ -2723,6 +2845,7 @@ window.pauseCurrentVoiceNote = function() {
         currentAudio.pause();
         try {
             if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode();
+            if (window.AndroidCall && typeof window.AndroidCall.hideMediaNotification === 'function') window.AndroidCall.hideMediaNotification();
         } catch (e) {
             console.log("Not in Android App");
         }
@@ -2735,8 +2858,81 @@ window.pauseCurrentVoiceNote = function() {
     }
 };
 
-async function playVoice(btn, url, msgKey, isOut) {
-  if (window.isChatOpening) return; // 🚀 الحماية الحديدية من النقرات الوهمية
+// 🚀 دالة تستقبل أمر التقديم والتأخير من شريط الستارة بالأندرويد
+window.seekCurrentVoiceNote = function(timeInSeconds) {
+    if (currentAudio) {
+        try {
+            currentAudio.currentTime = timeInSeconds;
+            
+            // تحديث المشغل بالستارة ليتزامن فوراً مع المكان الجديد
+            const senderName = (currentChat && currentChat.friendProfile) ? currentChat.friendProfile.name : 'رسالة صوتية';
+            let totSec = Math.floor(currentAudio.duration || 0);
+            if (!isFinite(totSec) && currentAudioMsgKey) {
+                const durEl = document.getElementById('dur-' + currentAudioMsgKey);
+                if (durEl) {
+                    const origStr = durEl.getAttribute('data-orig');
+                    if (origStr && !origStr.includes('أغنية')) {
+                        const parts = origStr.split(':');
+                        if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                    }
+                }
+            }
+            if (!isFinite(totSec)) totSec = 0;
+
+            if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, !currentAudio.paused, totSec, Math.floor(timeInSeconds));
+            }
+        } catch (e) { console.error(e); }
+    }
+};
+
+// 🚀 دالة تستقبل الأمر من الأندرويد عند الضغط على أزرار المشغل بالستارة
+window.toggleCurrentVoiceNote = function() {
+    if(currentAudio) {
+        const senderName = (currentChat && currentChat.friendProfile) ? currentChat.friendProfile.name : 'رسالة صوتية';
+        
+        let curSec = Math.floor(currentAudio.currentTime || 0);
+        let totSec = Math.floor(currentAudio.duration || 0);
+        if (!isFinite(totSec) && currentAudioMsgKey) {
+            const durEl = document.getElementById('dur-' + currentAudioMsgKey);
+            if (durEl) {
+                const origStr = durEl.getAttribute('data-orig');
+                if (origStr && !origStr.includes('أغنية')) {
+                    const parts = origStr.split(':');
+                    if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                }
+            }
+        }
+        if (!isFinite(totSec)) totSec = 0;
+
+        if(currentAudio.paused) {
+            currentAudio.play();
+            document.querySelectorAll('.voice-play-btn svg').forEach(svg => {
+                if(svg.closest('.msg-row').querySelector('.voice-progress-fill').style.width !== '0%') {
+                   svg.outerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+                }
+            });
+            try {
+                if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                    window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
+                }
+            } catch (e) { console.error(e); }
+        } else {
+            currentAudio.pause();
+            document.querySelectorAll('.voice-play-btn').forEach(b => {
+                b.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+            });
+            try {
+                if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                    window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
+                }
+            } catch (e) { console.error(e); }
+        }
+    }
+};
+
+function playVoice(btn, url, msgKey, isOut) {
+  if (window.isChatOpening) return;
   if (isOut === false && currentChat) {
     db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ listened: true });
     const dot = document.getElementById('unplayed-' + msgKey); if (dot) { dot.style.background = 'transparent'; dot.style.boxShadow = 'none'; }
@@ -2745,18 +2941,14 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio && currentAudioMsgKey === msgKey) {
     if (!currentAudio.paused) { 
         currentAudio.pause(); 
-        if (window.AndroidCall) {
-            window.AndroidCall.stopVoiceNoteMode();
-        }
+        try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(e){}
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`; 
         clearInterval(audioUpdateInterval); 
         return; 
     } else { 
         currentAudio.play(); 
         currentAudio.playbackRate = globalVoiceSpeed; 
-        if (window.AndroidCall) {
-            window.AndroidCall.startVoiceNoteMode();
-        }
+        try { if (window.AndroidCall) window.AndroidCall.startVoiceNoteMode(); } catch(e){}
         btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
         startAudioProgress(msgKey); 
         return; 
@@ -2766,152 +2958,281 @@ async function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio) {
     currentAudio.pause(); 
     currentAudio.src = ''; 
-    if (window.AndroidCall) {
-        window.AndroidCall.stopVoiceNoteMode();
-    }
+    try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(e){}
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
-    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.width = '0%'); 
+    document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.transform = 'scaleX(0)'); 
     clearInterval(audioUpdateInterval);
   }
   
   currentAudioMsgKey = msgKey; 
   btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`;
   
-  let optimizedUrl = url;
-  if (optimizedUrl.includes('cloudinary.com')) {
-     optimizedUrl = optimizedUrl.replace(/upload\/.*?v\d+\//, 'upload/');
-  }
+  let optimizedUrl = url.includes('cloudinary.com') ? url.replace(/upload\/.*?v\d+\//, 'upload/') : url;
 
-  let playSrc = window.voiceBlobCache[optimizedUrl] || optimizedUrl;
+  // 🚀 دالة التشغيل السريع بدون انتظار أو حجب
+  const executePlay = (playSrc) => {
+      if (currentAudioMsgKey !== msgKey) return; // تم النقر على صوت آخر أثناء التحميل
+      currentAudio = new Audio(playSrc); 
+      currentAudio.preload = 'auto'; 
+      currentAudio.playbackRate = globalVoiceSpeed;
+      
+      currentAudio.onplaying = () => { 
+          btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
+          startAudioProgress(msgKey); 
+          try {
+              const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+              let curSec = Math.floor(currentAudio.currentTime || 0);
+              let totSec = Math.floor(currentAudio.duration || 0);
+              if (!isFinite(totSec)) {
+                  const durEl = document.getElementById('dur-' + msgKey);
+                  if (durEl) {
+                      const origStr = durEl.getAttribute('data-orig');
+                      if (origStr && !origStr.includes('أغنية')) {
+                          const parts = origStr.split(':');
+                          if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                      }
+                  }
+              }
+              if (!isFinite(totSec)) totSec = 0;
 
-  if (currentAudioMsgKey !== msgKey) return;
-  
-  currentAudio = new Audio(playSrc); 
-  currentAudio.preload = 'auto'; 
-  currentAudio.playbackRate = globalVoiceSpeed;
-  
-  currentAudio.onplaying = () => { 
-      if (window.AndroidCall) {
-          window.AndroidCall.startVoiceNoteMode();
+              if (window.AndroidCall) {
+                  window.AndroidCall.startVoiceNoteMode();
+                  if (typeof window.AndroidCall.showMediaNotification === 'function') {
+                      window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, true, totSec, curSec);
+                  }
+              }
+          } catch (e) { console.error(e); }
+      };
+
+      currentAudio.onpause = () => {
+          try {
+              const senderName = isOut ? 'رسالتي الصوتية' : (currentChat && currentChat.friendProfile ? currentChat.friendProfile.name : 'رسالة صوتية');
+              let curSec = Math.floor(currentAudio.currentTime || 0);
+              let totSec = Math.floor(currentAudio.duration || 0);
+              if (!isFinite(totSec)) {
+                  const durEl = document.getElementById('dur-' + msgKey);
+                  if (durEl) {
+                      const origStr = durEl.getAttribute('data-orig');
+                      if (origStr && !origStr.includes('أغنية')) {
+                          const parts = origStr.split(':');
+                          if (parts.length === 2) totSec = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+                      }
+                  }
+              }
+              if (!isFinite(totSec)) totSec = 0;
+
+              if (window.AndroidCall && typeof window.AndroidCall.showMediaNotification === 'function') {
+                  window.AndroidCall.showMediaNotification("مقطع صوتي 🎵", senderName, false, totSec, curSec);
+              }
+          } catch (e) { console.error(e); }
+      };
+
+      currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
+      
+      let playPromise = currentAudio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+          try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(err){}
+          clearInterval(audioUpdateInterval);
+        });
       }
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`; 
-      startAudioProgress(msgKey); 
-  };
-  currentAudio.onwaiting = () => { btn.innerHTML = `<div style="width:16px;height:16px;border:2px solid rgba(0, 240, 255, 0.3);border-top-color:var(--bg-void);border-radius:50%;animation:spin .8s linear infinite;"></div>`; };
-  
-  let playPromise = currentAudio.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(e => {
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-      if (window.AndroidCall) {
-          window.AndroidCall.stopVoiceNoteMode();
-      }
-      clearInterval(audioUpdateInterval);
-    });
-  }
-  
-  startAudioProgress(msgKey);
+      
+      startAudioProgress(msgKey);
 
-  currentAudio.onended = () => {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-    const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.width = '0%';
-    const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
-    let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
-    while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
-    let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
-    
-    currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
-    if (window.AndroidCall) {
-        window.AndroidCall.stopVoiceNoteMode();
-    }
-    
-    if (nextBtn) nextBtn.click();
+      currentAudio.onended = () => {
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        const fill = document.getElementById('progress-' + msgKey); if (fill) fill.style.transform = 'scaleX(0)';
+        const durEl = document.getElementById('dur-' + msgKey); if (durEl) durEl.textContent = durEl.getAttribute('data-orig');
+        let currentRow = btn.closest('.msg-row'), nextRow = currentRow ? currentRow.nextElementSibling : null;
+        while (nextRow && nextRow.classList.contains('date-sep')) nextRow = nextRow.nextElementSibling;
+        let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
+        
+        currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
+        try {
+            if (window.AndroidCall) {
+                window.AndroidCall.stopVoiceNoteMode();
+                if (typeof window.AndroidCall.hideMediaNotification === 'function') {
+                    window.AndroidCall.hideMediaNotification();
+                }
+            }
+        } catch(err){}
+        
+        if (nextBtn) nextBtn.click();
+      };
   };
+
+  // 🚀 تشغيل ذكي وغير خانق (Non-Blocking Promise)
+  if (window.voiceBlobCache[optimizedUrl]) {
+      executePlay(window.voiceBlobCache[optimizedUrl]);
+  } else {
+      if ('caches' in window) {
+          caches.open('media-cache').then(cache => {
+              cache.match(optimizedUrl).then(res => {
+                  if (res) return res.blob();
+                  return fetch(optimizedUrl, { mode: 'cors' }).then(networkRes => {
+                      if (networkRes.ok) cache.put(optimizedUrl, networkRes.clone());
+                      return networkRes.blob();
+                  });
+              }).then(blob => {
+                  const blobUrl = URL.createObjectURL(blob);
+                  window.voiceBlobCache[optimizedUrl] = blobUrl;
+                  executePlay(blobUrl);
+              }).catch(() => executePlay(optimizedUrl));
+          }).catch(() => executePlay(optimizedUrl));
+      } else {
+          executePlay(optimizedUrl);
+      }
+  }
 }
 
 function startAudioProgress(msgKey) {
   clearInterval(audioUpdateInterval);
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  let fallbackDuration = 0; 
+  let totalDuration = 0; 
   
-  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+  if (origStr && !origStr.includes('أغنية')) { 
     const parts = origStr.split(':'); 
-    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
   
+  let lastTextTime = 0;
   audioUpdateInterval = setInterval(() => {
-    if (currentAudio && !currentAudio.paused) {
-      let realDur = currentAudio.duration;
-      
-      if (realDur && realDur !== Infinity && !isNaN(realDur)) {
-        if (origStr.includes('أغنية') || origStr === '0:00') {
-          const totM = Math.floor(realDur / 60);
-          const totS = Math.floor(realDur % 60);
-          origStr = `${totM}:${totS < 10 ? '0' : ''}${totS}`;
-          if (durEl) durEl.setAttribute('data-orig', origStr);
-        }
-        fallbackDuration = realDur;
-      }
-      
-      const curSec = Math.floor(currentAudio.currentTime || 0);
-      const m = Math.floor(curSec / 60);
-      const s = curSec % 60;
-      const currentFormatted = `${m}:${s < 10 ? '0' : ''}${s}`;
-
-      if (fallbackDuration > 0) {
-        let perc = (currentAudio.currentTime / fallbackDuration) * 100; 
-        if (perc > 100) perc = 100;
+    if (currentAudio && !currentAudio.paused && !window.isAudioScrubbing) {
+      if (totalDuration > 0) {
+        let perc = currentAudio.currentTime / totalDuration; 
+        if (perc > 1) perc = 1;
         let fill = document.getElementById('progress-' + msgKey); 
-        if (fill) fill.style.width = perc + '%';
+        if (fill) {
+            fill.style.transition = 'none'; // السحر: حركة فورية متزامنة مع الشاشة
+            fill.style.transform = `scaleX(${perc})`; 
+        }
       }
       
-            if (durEl) durEl.textContent = `${currentFormatted} / ${origStr}`;
+      const now = Date.now();
+      if (now - lastTextTime > 250) { // تحديث الأرقام كل ربع ثانية لتخفيف الضغط
+        const curSec = Math.floor(currentAudio.currentTime || 0);
+        const m = Math.floor(curSec / 60);
+        const s = curSec % 60;
+        if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
+        lastTextTime = now;
+      }
     }
-  }, 100); // 🚀 تخفيف سرعة العداد ليرتاح المعالج ويمنع حرارة الجهاز
+  }, 8); // 8ms = 120 FPS 🔥
+}
+
+// 🚀 نظام السحب والتقديم المتطور للفويسات (120FPS Hardware Accelerated)
+window.isAudioScrubbing = false;
+let wasAudioPlayingBeforeScrub = false;
+let scrubState = { rect: null, duration: 0, origStr: '0:00', msgKey: null, fillEl: null, durEl: null };
+let scrubRAF = null;
+
+function calculateScrub(clientX) {
+  if (!scrubState.rect || scrubState.duration <= 0) return;
+  let clickX = scrubState.rect.right - clientX;
+  let perc = clickX / scrubState.rect.width;
+  if (perc < 0) perc = 0;
+  if (perc > 1) perc = 1;
+  
+  if (scrubState.fillEl) {
+    scrubState.fillEl.style.transform = `scaleX(${perc})`;
+  }
+  
+  const curSec = Math.floor(scrubState.duration * perc);
+  const m = Math.floor(curSec / 60);
+  const s = curSec % 60;
+  if (scrubState.durEl) {
+    scrubState.durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${scrubState.origStr}`;
+  }
+  return perc;
+}
+
+function startVoiceSeek(event, msgKey) {
+  if (!currentAudio || currentAudioMsgKey !== msgKey) return;
+  window.isAudioScrubbing = true;
+  wasAudioPlayingBeforeScrub = !currentAudio.paused;
+  if (wasAudioPlayingBeforeScrub) currentAudio.pause();
+  
+  if (event.pointerId) {
+     try { event.currentTarget.setPointerCapture(event.pointerId); } catch(e){}
+  }
+  
+  scrubState.rect = event.currentTarget.getBoundingClientRect();
+  scrubState.msgKey = msgKey;
+  scrubState.fillEl = document.getElementById('progress-' + msgKey);
+  scrubState.durEl = document.getElementById('dur-' + msgKey);
+  
+  if (scrubState.fillEl) scrubState.fillEl.style.transition = 'none';
+  
+  scrubState.origStr = scrubState.durEl ? scrubState.durEl.getAttribute('data-orig') : '0:00';
+  scrubState.duration = 0; 
+  if (scrubState.origStr && !scrubState.origStr.includes('أغنية')) { 
+    const parts = scrubState.origStr.split(':'); 
+    if (parts.length === 2) scrubState.duration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+  }
+  
+  let clientX = event.clientX !== undefined ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+  calculateScrub(clientX);
+}
+
+function moveVoiceSeek(event, msgKey) {
+  if (!window.isAudioScrubbing || scrubState.msgKey !== msgKey) return;
+  let clientX = event.clientX !== undefined ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+  
+  if (scrubRAF) cancelAnimationFrame(scrubRAF);
+  scrubRAF = requestAnimationFrame(() => calculateScrub(clientX));
+}
+
+function endVoiceSeek(event, msgKey) {
+  if (!window.isAudioScrubbing || scrubState.msgKey !== msgKey) return;
+  window.isAudioScrubbing = false;
+  if (scrubRAF) cancelAnimationFrame(scrubRAF);
+  
+  if (event.pointerId) {
+     try { event.currentTarget.releasePointerCapture(event.pointerId); } catch(e){}
+  }
+  
+  let clientX = event.clientX !== undefined ? event.clientX : (event.changedTouches ? event.changedTouches[0].clientX : 0);
+  const perc = calculateScrub(clientX) || 0;
+  
+  if (scrubState.duration > 0 && currentAudio) {
+    try { currentAudio.currentTime = scrubState.duration * perc; } catch(e) {}
+  }
+  
+  if (scrubState.fillEl) scrubState.fillEl.style.transition = 'transform 0.1s linear';
+  scrubState = { rect: null, duration: 0, origStr: '0:00', msgKey: null, fillEl: null, durEl: null };
+
+  if (wasAudioPlayingBeforeScrub && currentAudio) {
+      let playPromise = currentAudio.play();
+      if (playPromise !== undefined) playPromise.catch(()=>{});
+  }
 }
 
 function seekVoice(event, url, msgKey) {
-  if (!currentAudio || currentAudioMsgKey !== msgKey) return;
+  if (!currentAudio || currentAudioMsgKey !== msgKey || window.isAudioScrubbing) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  let clientX = event.clientX !== undefined ? event.clientX : (event.touches ? event.touches[0].clientX : 0);
+  let clickX = rect.right - clientX;
+  let perc = clickX / rect.width;
+  if (perc < 0) perc = 0; if (perc > 1) perc = 1;
   
   const durEl = document.getElementById('dur-' + msgKey);
   let origStr = durEl ? durEl.getAttribute('data-orig') : '0:00';
-  
-  let fallbackDuration = 0; 
-  if (origStr && !origStr.includes('أغنية') && origStr !== '0:00') { 
+  let totalDuration = 0; 
+  if (origStr && !origStr.includes('أغنية')) { 
     const parts = origStr.split(':'); 
-    if (parts.length === 2) fallbackDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
+    if (parts.length === 2) totalDuration = parseInt(parts[0]) * 60 + parseInt(parts[1]); 
   }
   
-  let realDur = currentAudio.duration; 
-  let totalDuration = (realDur && realDur !== Infinity && !isNaN(realDur)) ? realDur : fallbackDuration;
-  
-  if (!totalDuration || totalDuration <= 0) return;
-  
-  const rect = event.currentTarget.getBoundingClientRect();
-  
-  // التقاط دقيق لإحداثيات الضغط سواء عبر الماوس أو لمس الشاشة
-  let clientX = event.clientX;
-  if (clientX === undefined && event.touches && event.touches.length > 0) {
-    clientX = event.touches[0].clientX;
-  } else if (clientX === undefined && event.changedTouches && event.changedTouches.length > 0) {
-    clientX = event.changedTouches[0].clientX;
+  if (totalDuration > 0) {
+    try { currentAudio.currentTime = totalDuration * perc; } catch(e) {}
   }
-  if (clientX === undefined) return;
   
-  let clickX = rect.right - clientX; 
-  let perc = clickX / rect.width; 
+  const fill = document.getElementById('progress-' + msgKey);
+  if (fill) fill.style.transform = `scaleX(${perc})`;
   
-  if (perc < 0) perc = 0; 
-  if (perc > 1) perc = 1;
-  
-  const targetTime = totalDuration * perc;
-  currentAudio.currentTime = targetTime;
-
-  const fill = document.getElementById('progress-' + msgKey); 
-  if (fill) fill.style.width = (perc * 100) + '%';
-
-  const curSec = Math.floor(targetTime);
+  const curSec = Math.floor(totalDuration * perc);
   const m = Math.floor(curSec / 60);
   const s = curSec % 60;
   if (durEl) durEl.textContent = `${m}:${s < 10 ? '0' : ''}${s} / ${origStr}`;
@@ -3380,9 +3701,7 @@ document.body.addEventListener('touchmove', (e) => {
 const msgInputEl = document.getElementById('msg-input');
 if(msgInputEl) {
   msgInputEl.addEventListener('focus', () => {
-    setTimeout(() => {
-      window.scrollTo(0, 0);
-    }, 50);
+    // تم إزالة السكرول الإجباري لأنه كان يسبب قفل الكيبورد عند النقر المزدوج لتحديد النص
   });
 }
 
@@ -3633,7 +3952,7 @@ function toggleMuteCall() {
   } else {
     btn.classList.remove('active');
     // 🚀 إعادة فتح المايك بقوة التضخيم الجديدة
-    if (window.callPreGain) window.callPreGain.gain.value = 1.1; 
+    if (window.callPreGain) window.callPreGain.gain.value = 3.5; 
     if (window.localCallTrack) window.localCallTrack.setMuted(false);
   }
 }
@@ -3661,28 +3980,28 @@ async function joinAgoraVoice(channelName) {
       await window.rtcCallClient.join(AGORA_APP_ID, channelName, null, currentUser.uid);
       
       // 1. إغلاق عزل الصدى والضجيج وتفعيل التضخيم لتقوية المايك
-      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+      window.callRawStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
       window.callAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       
             // 2. تطبيق الفلاتر
       const source = window.callAudioCtx.createMediaStreamSource(window.callRawStream);
       const preGain = window.callAudioCtx.createGain(); 
-      preGain.gain.value = callIsMuted ? 0 : 1.1; // 🚀 تضخيم الصوت بناءً على المختبر
+      preGain.gain.value = callIsMuted ? 0 : 3.5; // 🚀 تضخيم الصوت 3 أضعاف ونصف لتعويض ضعف المايك
       window.callPreGain = preGain;
       
-      const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 70;
-      const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10300;
+      const lowCutFilter = window.callAudioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
+      const highCutFilter = window.callAudioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
       const presenceEQ = window.callAudioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4;
-      const compressor = window.callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -20; compressor.knee.value = 30; compressor.ratio.value = 17.5; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+      const compressor = window.callAudioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
       
       // 3. صدى الاستوديو
-      function generateReverb(ctx) { const length = ctx.sampleRate * 1.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
+      function generateReverb(ctx) { const length = ctx.sampleRate * 2.0; const impulse = ctx.createBuffer(2, length, ctx.sampleRate); const left = impulse.getChannelData(0); const right = impulse.getChannelData(1); for (let i = 0; i < length; i++) { const decay = Math.pow(1 - i / length, 1.5); left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay; } return impulse; }
       const convolver = window.callAudioCtx.createConvolver(); convolver.buffer = generateReverb(window.callAudioCtx);
       
       const dryGain = window.callAudioCtx.createGain(); 
-      dryGain.gain.value = 0.4; 
+      dryGain.gain.value = 1.0; 
       const wetGain = window.callAudioCtx.createGain(); 
-      wetGain.gain.value = 0.1; // كمية الصدى: 0.1
+      wetGain.gain.value = 0.5; // كمية الصدى: 0.5
       
       const dest = window.callAudioCtx.createMediaStreamDestination();
       
@@ -3941,7 +4260,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=9');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=15');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -3971,6 +4290,7 @@ function checkForUpdate() {
   const desc = document.getElementById('update-modal-desc');
   const btnUpdate = document.getElementById('btn-start-update');
   const progContainer = document.getElementById('update-progress-container');
+  const installActions = document.getElementById('install-actions');
   
   if(!overlay) return;
   overlay.classList.add('open');
@@ -3978,6 +4298,8 @@ function checkForUpdate() {
   desc.textContent = "يرجى الانتظار، جاري الاتصال بخادم التحديثات...";
   progContainer.style.display = 'none';
   btnUpdate.style.display = 'none';
+  document.getElementById('update-modal-actions').style.display = 'flex';
+  if(installActions) installActions.style.display = 'none';
 
   // جلب رقم الإصدار من الأندرويد مباشرة، وإذا لم يجده يعتبره 1.0
   const appVersion = window.CURRENT_APP_VERSION || 1.0;
@@ -4070,11 +4392,29 @@ window.updateAppProgress = function(percent) {
   
   if (percent >= 100) {
     document.getElementById('update-modal-title').textContent = "اكتمل التحميل!";
-    document.getElementById('update-modal-desc').innerHTML = "جاري فتح نافذة التثبيت...<br><span style='color:var(--neon-green)'>ملاحظة: إذا طلب منك الهاتف صلاحية لتثبيت التطبيقات من مصادر غير معروفة، يرجى الموافقة.</span>";
+    document.getElementById('update-modal-desc').innerHTML = "إذا لم تفتح نافذة التثبيت تلقائياً، اضغط على <b>تثبيت التحديث</b>.<br><br><span style='color:var(--neon-pink)'>ملاحظة:</span> إذا احتجت لمنح صلاحية التثبيت من مصادر غير معروفة، افتح الإعدادات من الزر أدناه ثم عُد واضغط تثبيت.";
+    document.getElementById('update-modal-actions').style.display = 'none';
     document.getElementById('update-progress-container').style.display = 'none';
-    setTimeout(closeUpdateModal, 4000);
+    document.getElementById('install-actions').style.display = 'flex';
   }
 };
+
+let menuActionTime = 0;
+
+function openMainMenu() {
+  if (Date.now() - menuActionTime < 400) return;
+  menuActionTime = Date.now();
+  
+  document.getElementById('main-menu-overlay').classList.add('open');
+  if (navigator.vibrate) navigator.vibrate(20);
+}
+
+function closeMainMenu() {
+  if (Date.now() - menuActionTime < 400) return;
+  menuActionTime = Date.now();
+
+  document.getElementById('main-menu-overlay').classList.remove('open');
+}
 
 /* ═══════════════════════════════════
    CHAT SETTINGS MENU & CUSTOM WALLPAPER
@@ -4103,7 +4443,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.57</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.14</div>
       </div>
     </div>
     
@@ -4134,14 +4474,6 @@ async function openChatSettingsMenu() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </div>
       </div>
-
-      <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
-
-      <!-- إعدادات النظام الخفيفة -->
-      <button class="msg-menu-btn" onclick="clearAppCache(); closeMsgMenu();" style="background:rgba(255,255,255,0.01); border:1px solid var(--border-subtle); justify-content:flex-start; gap:16px; padding:12px 16px; color:var(--text-secondary);">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><polyline points="21 3 21 8 16 8"></polyline></svg>
-        <span style="font-weight:600; font-size:14px;">تحديث وتفريغ الكاش</span>
-      </button>
 
       <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
 
@@ -4290,10 +4622,16 @@ async function clearAppCache() {
   try {
     if ('caches' in window) {
       const cacheNames = await caches.keys();
-      await Promise.all(cacheNames.map(name => caches.delete(name)));
+      // استثناء media-cache لمنع حذف الصور والصوتيات المحفوظة لتوفير الإنترنت
+      await Promise.all(cacheNames.map(name => {
+        if (name !== 'media-cache') {
+          return caches.delete(name);
+        }
+      }));
     }
 
-    indexedDB.deleteDatabase('NeonChatDB');
+    // إيقاف حذف NeonChatDB للحفاظ على خلفيات المحادثات
+    // indexedDB.deleteDatabase('NeonChatDB');
 
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -4537,7 +4875,7 @@ async function openMediaGallery(chatId) {
   grid.innerHTML = '<div style="color:var(--neon-cyan); padding:40px 20px; text-align:center; width:100%; grid-column: 1 / -1; font-weight:bold;">جاري جلب الوسائط... ⏳</div>';
   overlay.classList.add('open');
   
-  // 🚀 تسجيل فتح المعرض في ذاكرة الرجوع تبع الموبايل
+  // ?? تسجيل فتح المعرض في ذاكرة الرجوع تبع الموبايل
   try { history.pushState({ overlay: 'gallery' }, '', ''); } catch(e){}
   
   try {
