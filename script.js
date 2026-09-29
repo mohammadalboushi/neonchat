@@ -234,17 +234,14 @@ function openModal(title, text) {
   });
 }
 
+let _resizeQ = false;
 function autoResize(el) { 
-  // 🚀 إيقاف تكسير الشاشة وقت الحذف (الـ Reflow) 
+  if (_resizeQ) return;
+  _resizeQ = true;
   requestAnimationFrame(() => {
-    if (!el.value) {
-      el.style.height = 'auto';
-      return;
-    }
-    // المربع رح يتوسع بس، وما رح يرجع يصغر إلا لما تفضيه تماماً.. هاد بيعطيك 120 FPS
-    if (el.scrollHeight > el.clientHeight) {
-      el.style.height = Math.min(el.scrollHeight, 150) + 'px';
-    }
+    el.style.height = 'auto'; 
+    el.style.height = Math.min(el.scrollHeight, 150) + 'px'; 
+    _resizeQ = false;
   });
 }
 function escHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -1790,8 +1787,19 @@ if (window.visualViewport) {
 });
 
 document.getElementById('msg-input').addEventListener('input', (e) => {
-  // 🚀 مسحنا كل أكواد الإخفاء والإظهار، الأزرار الـ 3 رح يضلو ثابتين دائماً
-  
+  // 🚀 إخفاء مايك الغناء فقط عند الكتابة لترتيب المساحة بدون التلاعب بالـ padding (بدون لاج)
+  const textLen = e.target.value.trim().length;
+  const btnMusic = document.getElementById('btn-music-voice');
+  const isTyping = e.target.getAttribute('data-typing') === 'true';
+
+  if (textLen > 0 && !isTyping) {
+    e.target.setAttribute('data-typing', 'true');
+    if(btnMusic) btnMusic.style.display = 'none';
+  } else if (textLen === 0 && isTyping) {
+    e.target.setAttribute('data-typing', 'false');
+    if(btnMusic) btnMusic.style.display = 'flex';
+  }
+
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
   
   const now = Date.now();
@@ -1835,9 +1843,13 @@ async function sendTextMsg() {
     return;
   }
   
-  inp.value = ''; autoResize(inp); 
+  inp.value = ''; 
+  autoResize(inp); 
   
-  // 🚀 الأزرار صارت ثابتة وما عاد في داعي نغير شي بالستايل بعد الإرسال
+  // 🚀 إرجاع زر المايك بعد الإرسال بدون أي حركة مخنوقة
+  inp.setAttribute('data-typing', 'false');
+  const btnMusic = document.getElementById('btn-music-voice');
+  if (btnMusic) btnMusic.style.display = 'flex';
   
   if (isKbReallyOpen) {
     inp.focus(); 
