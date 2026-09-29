@@ -95,6 +95,7 @@ let recordStart = 0;
 let recordTimerInt = null;
 let recordDurationStr = '0:00';
 let isSingingMode = false;
+let cachedReverbBuffer = null;
 let totalPausedTime = 0;
 let recordPausedAt = 0;
 let isRecordingPaused = false;
@@ -2598,9 +2599,6 @@ async function toggleRecording(isSinging = false) {
     if (internalMicId) audioConstraints.deviceId = { exact: internalMicId };
     const rawStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
     
-    // 🚀 السحر هون: نعطي المايك والمتصفح 300 ميلي ثانية لـ "يسخن" قبل ما نبدأ نعالج الصوت
-    await new Promise(r => setTimeout(r, 300));
-    
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') await audioCtx.resume();
     
@@ -2613,17 +2611,19 @@ async function toggleRecording(isSinging = false) {
     const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4; 
     const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
 
-    function generateReverb(ctx) {
-      const length = ctx.sampleRate * 3.5; const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
-      const left = impulse.getChannelData(0); const right = impulse.getChannelData(1);
-      for (let i = 0; i < length; i++) {
-        const decay = Math.pow(1 - i / length, 1.5); 
-        left[i] = (Math.random() * 2 - 1) * decay; right[i] = (Math.random() * 2 - 1) * decay;
-      }
-      return impulse;
+    if (!cachedReverbBuffer) {
+        const length = audioCtx.sampleRate * 3.5; 
+        cachedReverbBuffer = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
+        const left = cachedReverbBuffer.getChannelData(0); 
+        const right = cachedReverbBuffer.getChannelData(1);
+        for (let i = 0; i < length; i++) {
+            const decay = Math.pow(1 - i / length, 1.5); 
+            left[i] = (Math.random() * 2 - 1) * decay; 
+            right[i] = (Math.random() * 2 - 1) * decay;
+        }
     }
-
-    const convolver = audioCtx.createConvolver(); convolver.buffer = generateReverb(audioCtx);
+    const convolver = audioCtx.createConvolver(); 
+    convolver.buffer = cachedReverbBuffer;
     const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6; 
     const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
     const dest = audioCtx.createMediaStreamDestination();
@@ -3681,18 +3681,7 @@ function scrollToMessage(msgKey) {
 document.body.style.overscrollBehavior = 'none';
 document.documentElement.style.overscrollBehavior = 'none';
 
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
-    const appEl = document.getElementById('app');
-    appEl.style.height = window.visualViewport.height + 'px';
-    appEl.style.position = 'fixed';
-    appEl.style.top = '0';
-    appEl.style.width = '100%';
-    window.scrollTo(0, 0);
-    const area = document.getElementById('messages-area');
-    if (area) area.scrollTop = area.scrollHeight;
-  });
-}
+// تم إزالة حساب حجم الشاشة برمجياً لتخفيف الضغط على المعالج وتسريع الكيبورد
 
 document.body.addEventListener('touchmove', (e) => {
   const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results') || e.target.closest('#msg-input') || e.target.closest('#media-gallery-grid');
