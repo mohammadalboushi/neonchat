@@ -384,7 +384,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=16');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=17');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1106,6 +1106,12 @@ async function openChat(chatId, friendUid, friendProfile = null) {
             // 🚀 جلب الكاش من IndexedDB بدلاً من LocalStorage لضمان استيعاب مئات الميغابايتات دون انهيار
           let liveMsgsCache = await chatCacheDB.get(chatId);
           
+          // 🚀 تنظيف الكاش المتضخم: تحميل آخر 50 رسالة فقط لفتح المحادثة بصاروخية (الباقي بينسحب عند التمرير للأعلى)
+          if (liveMsgsCache && liveMsgsCache.length > 50) {
+              liveMsgsCache = liveMsgsCache.slice(liveMsgsCache.length - 50);
+              chatCacheDB.save(chatId, liveMsgsCache);
+          }
+          
           if (liveMsgsCache && liveMsgsCache.length > 0) {
             try {
               const fragment = document.createDocumentFragment();
@@ -1125,6 +1131,10 @@ async function openChat(chatId, friendUid, friendProfile = null) {
               
               area.appendChild(fragment);
               area.scrollTop = area.scrollHeight;
+              
+              // 🚀 إجبار المتصفح ينزل لآخر نقطة بعد ما يفرش الرسائل بالشاشة عشان ما يعلق فوق
+              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 100);
+              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 300);
               
               lastMsgDate = tempLastDate;
               oldestMsgKey = liveMsgsCache[0].key;
@@ -1149,6 +1159,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
          area.scrollTop = area.scrollHeight;
        }
     });
+    // 🚀 تأكيد النزول بعد طباعة الرسائل المعلقة
+    setTimeout(() => { area.scrollTop = area.scrollHeight; }, 150);
   });
               messagesRef = db.ref('chats/' + chatId + '/messages');
   
@@ -1226,7 +1238,10 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
     if (!existsInCache) {
       liveMsgsCache.push(msg);
-      // 🔴 تم إزالة كود تقليل الكاش لـ 40 رسالة لحفظ كل تاريخ المحادثة
+      // 🚀 السحر هون: الكاش بيظل خفيف (50 رسالة ماكسيموم) مشان الرامات ما تعبّي، وتاريخ المحادثة بأمان بفايربيس
+      if (liveMsgsCache.length > 50) {
+          liveMsgsCache = liveMsgsCache.slice(liveMsgsCache.length - 50);
+      }
       chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
     }
 
@@ -1255,8 +1270,8 @@ async function openChat(chatId, friendUid, friendProfile = null) {
       lastMsgDate = dateStr;
     }
     
-    // فحص إذا المستخدم قريب من الأسفل قبل إضافة الرسالة
-    const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 150;
+    // فحص إذا المستخدم قريب من الأسفل قبل إضافة الرسالة (وسّعنا المسافة لـ 400 بيكسل لضمان السلاسة)
+    const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 400;
     
     area.appendChild(buildMsgEl(msg, false)); 
     
@@ -1282,24 +1297,35 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   });
 
-  area.addEventListener('scroll', async () => {
-    // تم إزالة أمر إغلاق القائمة التلقائي من هنا لمنع تضاربه مع النزول التلقائي للرسائل الجديدة
+  let lastScrollState = false;
+  let scrollTicking = false;
 
-    // 🚀 التحكم بظهور زر النزول السريع وإخفاؤه
-    const fab = document.getElementById('scroll-bottom-fab');
-    const badge = document.getElementById('scroll-fab-badge');
-    if (fab && badge) {
-      if (area.scrollHeight - area.scrollTop - area.clientHeight < 150) {
-        fab.style.opacity = '0';
-        fab.style.pointerEvents = 'none';
-        fab.style.transform = 'translateY(20px) scale(0.9)';
-        badge.style.display = 'none';
-        badge.textContent = '0';
-      } else {
-        fab.style.opacity = '1';
-        fab.style.pointerEvents = 'all';
-        fab.style.transform = 'translateY(0) scale(1)';
-      }
+  area.addEventListener('scroll', async () => {
+    // 🚀 تنظيم السكرول بنظام الـ AnimationFrame لعدم هدر الإطارات (FPS)
+    if (!scrollTicking) {
+      window.requestAnimationFrame(() => {
+        const fab = document.getElementById('scroll-bottom-fab');
+        const badge = document.getElementById('scroll-fab-badge');
+        if (fab && badge) {
+          const isAtBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 150;
+          if (isAtBottom !== lastScrollState) {
+            lastScrollState = isAtBottom;
+            if (isAtBottom) {
+              fab.style.opacity = '0';
+              fab.style.pointerEvents = 'none';
+              fab.style.transform = 'translateY(20px) scale(0.9)';
+              badge.style.display = 'none';
+              badge.textContent = '0';
+            } else {
+              fab.style.opacity = '1';
+              fab.style.pointerEvents = 'all';
+              fab.style.transform = 'translateY(0) scale(1)';
+            }
+          }
+        }
+        scrollTicking = false;
+      });
+      scrollTicking = true;
     }
 
     if (area.scrollTop <= 5 && !isLoadingHistory && hasMoreHistory && oldestMsgKey) {
@@ -1567,9 +1593,8 @@ function buildMsgEl(msg, isBackground = false) {
       else { replyIcon.style.right = '20px'; replyIcon.style.left = 'auto'; }
       
       if (pullPerc > 0.85) {
-        replyIcon.style.filter = `drop-shadow(0 0 8px var(--neon-cyan))`;
         if (navigator.vibrate && !bubble.hasVibrated) { navigator.vibrate(15); bubble.hasVibrated = true; }
-      } else { replyIcon.style.filter = 'none'; bubble.hasVibrated = false; }
+      } else { bubble.hasVibrated = false; }
     }
   }, { passive: true });
 
@@ -1680,6 +1705,11 @@ function buildMsgEl(msg, isBackground = false) {
                     imgEl.onload = () => {
                         loaderEl.style.display = 'none';
                         imgEl.style.display = 'block';
+                        // 🚀 إذا الصورة حملت وكبرت مساحة الشاشة، اجبره يضل تحت عشان ما يتركك بنص المحادثة
+                        const area = document.getElementById('messages-area');
+                        if (area && area.scrollHeight - area.scrollTop - area.clientHeight < 600) {
+                            area.scrollTop = area.scrollHeight;
+                        }
                     };
                 }
             }, 50);
@@ -1819,7 +1849,8 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
   if (now - lastTypingTime > 1500) {
     const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
     typingRef.set('typing');
-    typingRef.onDisconnect().remove(); 
+    // 🚀 ربط أمر الحذف مرة واحدة فقط عند بدء الكتابة لمنع تجميد السيرفر
+    if (lastTypingTime === 0) typingRef.onDisconnect().remove(); 
     lastTypingTime = now;
   }
   
@@ -3101,15 +3132,17 @@ function startAudioProgress(msgKey) {
   }
   
   let lastTextTime = 0;
+  // 🚀 سحب العنصر من الـ HTML مرة واحدة فقط قبل بدء التشغيل لتخفيف الحمل 90%
+  const cachedFillEl = document.getElementById('progress-' + msgKey);
+  if (cachedFillEl) cachedFillEl.style.transition = 'none';
+
   audioUpdateInterval = setInterval(() => {
     if (currentAudio && !currentAudio.paused && !window.isAudioScrubbing) {
       if (totalDuration > 0) {
         let perc = currentAudio.currentTime / totalDuration; 
         if (perc > 1) perc = 1;
-        let fill = document.getElementById('progress-' + msgKey); 
-        if (fill) {
-            fill.style.transition = 'none'; // السحر: حركة فورية متزامنة مع الشاشة
-            fill.style.transform = `scaleX(${perc})`; 
+        if (cachedFillEl) {
+            cachedFillEl.style.transform = `scaleX(${perc})`; 
         }
       }
       
@@ -3122,7 +3155,7 @@ function startAudioProgress(msgKey) {
         lastTextTime = now;
       }
     }
-  }, 8); // 8ms = 120 FPS 🔥
+  }, 16); // 16ms = 60FPS صافي بدون حرق المعالج
 }
 
 // 🚀 نظام السحب والتقديم المتطور للفويسات (120FPS Hardware Accelerated)
@@ -4252,7 +4285,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=16');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=17');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -4435,7 +4468,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.16</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.17</div>
       </div>
     </div>
     
