@@ -4153,7 +4153,7 @@ function openHomeChatMenu(chatId, friendUid, friendName) {
   <button class="msg-menu-btn" onclick="clearChatHistory('${chatId}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg> مسح المحادثة الداخلية</button>
   <button class="msg-menu-btn danger" onclick="removeChatFromList('${chatId}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5c-1.1 0-2 .9-2 2v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg> حذف من الشاشة الرئيسية</button>
   <button class="msg-menu-btn danger" onclick="blockUser('${friendUid}'); closeMsgMenu();"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> حظر الشخص</button>`;
-  document.getElementById('msg-menu-overlay').classList.add('open'); if (navigator.vibrate) navigator.vibrate(50);
+  document.getElementById('msg-menu-overlay').classList.add('open');
 }
 function clearChatHistory(chatId) {
   openModal('مسح', 'مسح رسائل هذه المحادثة من جهازك؟').then(ok => {
@@ -4431,7 +4431,6 @@ function openMainMenu() {
   menuActionTime = Date.now();
   
   document.getElementById('main-menu-overlay').classList.add('open');
-  if (navigator.vibrate) navigator.vibrate(20);
 }
 
 function closeMainMenu() {
@@ -4521,7 +4520,6 @@ async function openChatSettingsMenu() {
     </div>
   `;
   document.getElementById('msg-menu-overlay').classList.add('open');
-  if (navigator.vibrate) navigator.vibrate(20);
 }
 
 // توجيه الأوامر للمحادثة المفتوحة حالياً
