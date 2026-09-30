@@ -185,13 +185,16 @@ function renderScreenUI(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById('screen-' + name);
   if (el) el.classList.add('active');
-  if (name === 'home') loadChats();
-  if (name === 'profile') populateProfile();
-  if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
-  if (name === 'blocked-users') loadBlockedUsers();
-  
-  // 🚀 عدم فصل المحادثة إذا كنا في شاشة المكالمة لتظل متصلة بالخلفية
+  // 🚀 فصل المحادثة فوراً لتسريع الإغلاق
   if (name !== 'chat' && name !== 'call') detachMessages();
+  
+  // 🚀 الحل الهندسي النظامي: استخدام requestAnimationFrame لضمان رسم الانتقال بـ 120 فريم قبل تحميل البيانات الثقيلة
+  window.requestAnimationFrame(() => {
+    if (name === 'home') loadChats();
+    if (name === 'profile') populateProfile();
+    if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
+    if (name === 'blocked-users') loadBlockedUsers();
+  });
   
   // 🚀 إظهار أيقونة عائمة للعودة للمكالمة عند تصغيرها
     // 🚀 إظهار أيقونة عائمة للعودة للمكالمة أو إنهائها عند تصغيرها
