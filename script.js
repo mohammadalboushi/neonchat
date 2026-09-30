@@ -3715,7 +3715,16 @@ function scrollToMessage(msgKey) {
 document.body.style.overscrollBehavior = 'none';
 document.documentElement.style.overscrollBehavior = 'none';
 
-// تم إزالة حساب حجم الشاشة برمجياً لتخفيف الضغط على المعالج وتسريع الكيبورد
+// 🚀 إعادة ميزة السكرول التلقائي عند فتح الكيبورد للحفاظ على آخر رسالة مرئية دائماً
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', () => {
+    if (document.getElementById('screen-chat').classList.contains('active')) {
+      const area = document.getElementById('messages-area');
+      // مجرد ما يتغير حجم الشاشة (فتح أو إغلاق الكيبورد)، اجبر السكرول ينزل لآخر رسالة
+      if (area) area.scrollTop = area.scrollHeight;
+    }
+  });
+}
 
 document.body.addEventListener('touchmove', (e) => {
   const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results') || e.target.closest('#msg-input') || e.target.closest('#media-gallery-grid');
