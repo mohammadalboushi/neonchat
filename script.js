@@ -185,7 +185,8 @@ function renderScreenUI(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById('screen-' + name);
   if (el) el.classList.add('active');
-  // 🚀 فصل المحادثة فوراً لتسريع الإغلاق
+  
+  // 🚀 فصل المحادثة فوراً لتسريع زر الرجوع
   if (name !== 'chat' && name !== 'call') detachMessages();
   
   // 🚀 الحل الهندسي النظامي: استخدام requestAnimationFrame لضمان رسم الانتقال بـ 120 فريم قبل تحميل البيانات الثقيلة
@@ -196,8 +197,7 @@ function renderScreenUI(name) {
     if (name === 'blocked-users') loadBlockedUsers();
   });
   
-  // 🚀 إظهار أيقونة عائمة للعودة للمكالمة عند تصغيرها
-    // 🚀 إظهار أيقونة عائمة للعودة للمكالمة أو إنهائها عند تصغيرها
+  // 🚀 إظهار أيقونة عائمة للعودة للمكالمة أو إنهائها عند تصغيرها
   let bubble = document.getElementById('active-call-bubble');
   if (window.currentCallId && name !== 'call') {
     if (!bubble) {
@@ -969,7 +969,10 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
 
-  attachMessages(chatId);
+  // 🚀 إعطاء مهلة 150 ملي ثانية (نفس مدة حركة الانتقال البصري) قبل طباعة الرسائل لمنع تجميد الشاشة
+  setTimeout(() => {
+      attachMessages(chatId);
+  }, 150);
 
   const statusEl = document.getElementById('chat-header-status');
   statusEl.textContent = 'جاري التحقق...';
@@ -2090,6 +2093,10 @@ function toggleReaction(msgKey) {
   if (reactEl) {
     reactEl.style.display = newEmoji ? 'flex' : 'none';
     reactEl.textContent = newEmoji || '';
+    // 🚀 تشغيل الحركة فقط لحظة التفاعل لمنع الرفة عند فتح المحادثة
+    reactEl.classList.remove('animate-pop');
+    void reactEl.offsetWidth; 
+    if (newEmoji) reactEl.classList.add('animate-pop');
   }
   db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: newEmoji });
 }
@@ -2208,6 +2215,10 @@ function addReaction(msgKey, emoji) {
   if (reactEl) {
     reactEl.style.display = 'flex';
     reactEl.textContent = emoji;
+    // 🚀 تشغيل الحركة فقط لحظة التفاعل
+    reactEl.classList.remove('animate-pop');
+    void reactEl.offsetWidth;
+    reactEl.classList.add('animate-pop');
   }
   db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: emoji });
 }

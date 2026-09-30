@@ -849,6 +849,9 @@ body {
   z-index: 2;
   cursor: pointer;
   user-select: none;
+}
+
+.msg-reaction.animate-pop {
   animation: popIn 0.2s ease;
 }
 
