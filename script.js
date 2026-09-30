@@ -186,16 +186,12 @@ function renderScreenUI(name) {
   const el = document.getElementById('screen-' + name);
   if (el) el.classList.add('active');
   
-  // 🚀 فصل المحادثة فوراً لتسريع زر الرجوع
-  if (name !== 'chat' && name !== 'call') detachMessages();
+  if (name === 'home') loadChats();
+  if (name === 'profile') populateProfile();
+  if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
+  if (name === 'blocked-users') loadBlockedUsers();
   
-  // 🚀 الحل الهندسي النظامي: استخدام requestAnimationFrame لضمان رسم الانتقال بـ 120 فريم قبل تحميل البيانات الثقيلة
-  window.requestAnimationFrame(() => {
-    if (name === 'home') loadChats();
-    if (name === 'profile') populateProfile();
-    if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
-    if (name === 'blocked-users') loadBlockedUsers();
-  });
+  if (name !== 'chat' && name !== 'call') detachMessages();
   
   // 🚀 إظهار أيقونة عائمة للعودة للمكالمة أو إنهائها عند تصغيرها
   let bubble = document.getElementById('active-call-bubble');
@@ -969,10 +965,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
 
   db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
 
-  // 🚀 إعطاء مهلة 150 ملي ثانية (نفس مدة حركة الانتقال البصري) قبل طباعة الرسائل لمنع تجميد الشاشة
-  setTimeout(() => {
-      attachMessages(chatId);
-  }, 150);
+  attachMessages(chatId);
 
   const statusEl = document.getElementById('chat-header-status');
   statusEl.textContent = 'جاري التحقق...';
@@ -1138,10 +1131,6 @@ async function openChat(chatId, friendUid, friendProfile = null) {
               area.appendChild(fragment);
               area.scrollTop = area.scrollHeight;
               
-              // 🚀 إجبار المتصفح ينزل لآخر نقطة بعد ما يفرش الرسائل بالشاشة عشان ما يعلق فوق
-              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 100);
-              setTimeout(() => { area.scrollTop = area.scrollHeight; }, 300);
-              
               lastMsgDate = tempLastDate;
               oldestMsgKey = liveMsgsCache[0].key;
               oldestMsgTimestamp = liveMsgsCache[0].timestamp;
@@ -1165,8 +1154,6 @@ async function openChat(chatId, friendUid, friendProfile = null) {
          area.scrollTop = area.scrollHeight;
        }
     });
-    // 🚀 تأكيد النزول بعد طباعة الرسائل المعلقة
-    setTimeout(() => { area.scrollTop = area.scrollHeight; }, 150);
   });
               messagesRef = db.ref('chats/' + chatId + '/messages');
   
