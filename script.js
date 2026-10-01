@@ -2993,7 +2993,7 @@ function playVoice(btn, url, msgKey, isOut) {
   if (currentAudio) {
     currentAudio.pause(); 
     currentAudio.src = ''; 
-    try { if (window.AndroidCall) window.AndroidCall.stopVoiceNoteMode(); } catch(e){}
+    // 🚀 تم إزالة الكود الذي يغلق وضع الحساس من هنا لضمان استمرار عمل سماعة الأذن عند التنقل اليدوي السريع
     document.querySelectorAll('.voice-play-btn').forEach(b => b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`);
     document.querySelectorAll('.voice-progress-fill').forEach(f => f.style.transform = 'scaleX(0)'); 
     clearInterval(audioUpdateInterval);
@@ -3084,16 +3084,21 @@ function playVoice(btn, url, msgKey, isOut) {
         let nextBtn = nextRow && nextRow.classList.contains('msg-row') ? nextRow.querySelector('.voice-play-btn') : null;
         
         currentAudio = null; currentAudioMsgKey = null; clearInterval(audioUpdateInterval);
-        try {
-            if (window.AndroidCall) {
-                window.AndroidCall.stopVoiceNoteMode();
-                if (typeof window.AndroidCall.hideMediaNotification === 'function') {
-                    window.AndroidCall.hideMediaNotification();
-                }
-            }
-        } catch(err){}
         
-        if (nextBtn) nextBtn.click();
+        if (nextBtn) {
+            // 🚀 الانتقال الذكي: تشغيل الفويس التالي فوراً بدون إغلاق وضع الحساس لمنع تسرب الصوت للسبيكر
+            nextBtn.click();
+        } else {
+            // لا يوجد فويس تالي، ننهي وضع الاستماع بأمان
+            try {
+                if (window.AndroidCall) {
+                    window.AndroidCall.stopVoiceNoteMode();
+                    if (typeof window.AndroidCall.hideMediaNotification === 'function') {
+                        window.AndroidCall.hideMediaNotification();
+                    }
+                }
+            } catch(err){}
+        }
       };
   };
 
