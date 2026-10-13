@@ -383,7 +383,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=17');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=18');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -2635,14 +2635,49 @@ async function toggleRecording(isSinging = false) {
     if (audioCtx.state === 'suspended') await audioCtx.resume();
     
     const source = audioCtx.createMediaStreamSource(rawStream);
-    const analyser = audioCtx.createAnalyser(); analyser.fftSize = 64; source.connect(analyser);
 
-    const preGain = audioCtx.createGain(); preGain.gain.value = 1.5;
-    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 160;
-    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 10000;
-    const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 4; 
-    const compressor = audioCtx.createDynamicsCompressor(); compressor.threshold.value = -15; compressor.knee.value = 30; compressor.ratio.value = 3; compressor.attack.value = 0.005; compressor.release.value = 0.25;
+    // 1. فلاتر الهواء (تصفية الرمبل والهسيس)
+    const lowCutFilter = audioCtx.createBiquadFilter(); lowCutFilter.type = "highpass"; lowCutFilter.frequency.value = 80; 
+    const highCutFilter = audioCtx.createBiquadFilter(); highCutFilter.type = "lowpass"; highCutFilter.frequency.value = 12000;
 
+    // 2. مضخم الصوت الإذاعي (Radio EQ)
+    const radioEQ = audioCtx.createBiquadFilter(); radioEQ.type = "lowshelf"; radioEQ.frequency.value = 130; radioEQ.gain.value = 6;
+    const presenceEQ = audioCtx.createBiquadFilter(); presenceEQ.type = "peaking"; presenceEQ.frequency.value = 3500; presenceEQ.Q.value = 1; presenceEQ.gain.value = 3; 
+
+    // 3. ضاغط الصوت (Compressor)
+    const compressor = audioCtx.createDynamicsCompressor(); 
+    compressor.threshold.value = -18; compressor.knee.value = 30; compressor.ratio.value = 4; compressor.attack.value = 0.005; compressor.release.value = 0.2;
+
+    // 4. بوابة الضجيج (Noise Gate)
+    const analyser = audioCtx.createAnalyser(); analyser.fftSize = 512;
+    const noiseFilter = audioCtx.createGain(); noiseFilter.gain.value = 1;
+    let isRecTalking = true;
+
+    const checkRecGate = () => {
+      if (!isRecording) return;
+      requestAnimationFrame(checkRecGate);
+      const data = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(data);
+      let maxVol = 0;
+      for(let i=0; i<data.length; i++) {
+          let vol = Math.abs(data[i] - 128);
+          if(vol > maxVol) maxVol = vol;
+      }
+      let threshold = 6; // الحساسية الذهبية لعزل الضجيج
+      if (maxVol > threshold) {
+          if (!isRecTalking) {
+              isRecTalking = true;
+              noiseFilter.gain.setTargetAtTime(1, audioCtx.currentTime, 0.02);
+          }
+      } else {
+          if (isRecTalking) {
+              isRecTalking = false;
+              noiseFilter.gain.setTargetAtTime(0, audioCtx.currentTime, 0.2);
+          }
+      }
+    };
+
+    // 5. الصدى (Reverb)
     if (!cachedReverbBuffer) {
         const length = audioCtx.sampleRate * 3.5; 
         cachedReverbBuffer = audioCtx.createBuffer(2, length, audioCtx.sampleRate);
@@ -2656,12 +2691,20 @@ async function toggleRecording(isSinging = false) {
     }
     const convolver = audioCtx.createConvolver(); 
     convolver.buffer = cachedReverbBuffer;
-    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6; 
+    
+    const dryGain = audioCtx.createGain(); dryGain.gain.value = 0.8; 
     const wetGain = audioCtx.createGain(); wetGain.gain.value = isSingingMode ? (10 / 100) * 3 : (3 / 100) * 3; 
     const dest = audioCtx.createMediaStreamDestination();
 
-    source.connect(preGain); preGain.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(presenceEQ); presenceEQ.connect(compressor);
-    compressor.connect(dryGain); dryGain.connect(dest); compressor.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
+    // هندسة التوصيل الجديدة
+    source.connect(lowCutFilter); lowCutFilter.connect(highCutFilter); highCutFilter.connect(radioEQ); radioEQ.connect(presenceEQ); presenceEQ.connect(compressor);
+    compressor.connect(analyser); // رايح للتحليل عشان بوابة الضجيج
+    compressor.connect(noiseFilter); // رايح للبوابة
+    noiseFilter.connect(dryGain); dryGain.connect(dest); 
+    noiseFilter.connect(convolver); convolver.connect(wetGain); wetGain.connect(dest);
+
+    // تشغيل مراقب بوابة الضجيج
+    checkRecGate();
 
     audioChunks = []; isRecordingCanceled = false;
     mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
@@ -4300,7 +4343,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=17');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=18');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
