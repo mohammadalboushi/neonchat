@@ -385,7 +385,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=44');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=45');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -3542,6 +3542,7 @@ function openVideoPlayer(url) {
   // (هذا هو السر اللي بيمنع تعليق 0% في الأندرويد)
   setTimeout(() => {
     videoEl.src = url;
+    videoEl.load(); // 🚀 إجباري لمحرك أندرويد الداخلي ليتعرف على الرابط الجديد
     let playPromise = videoEl.play();
     if (playPromise !== undefined) {
       playPromise.catch(() => {
@@ -4377,7 +4378,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=44');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=45');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
