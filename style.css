@@ -1846,6 +1846,8 @@ body.light-theme .input-bar {
 .vid-spinner { width:40px; height:40px; border:3px solid rgba(0,240,255,0.2); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin 1s linear infinite; }
 
 #custom-video-el { width: 100%; max-height: 100vh; height: 100%; object-fit: contain; }
+#custom-video-el::-webkit-media-controls { display: none !important; }
+#custom-video-el::-webkit-media-controls-start-playback-button { display: none !important; -webkit-appearance: none; }
 
 .video-controls { position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 16px calc(24px + var(--safe-bottom)); display: flex; flex-direction: column; align-items: center; background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.4) 60%, transparent); }
 

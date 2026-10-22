@@ -283,6 +283,7 @@ if(btnLogin) {
       // 🚀 إجبار الحفظ الداخلي قبل الدخول مباشرة
       await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       await auth.signInWithEmailAndPassword(email, pass); 
+      if (window.AndroidAuth) window.AndroidAuth.saveCredentials(email, pass);
     } 
     catch (e) { showToast(e.code === 'auth/wrong-password' ? 'كلمة المرور غير صحيحة!' : 'تأكد من البيانات', 'error'); } 
     finally { btnLogin.disabled = false; btnLogin.textContent = 'دخول'; }
@@ -301,6 +302,7 @@ if(btnSignup) {
       // 🚀 إجبار الحفظ الداخلي قبل إنشاء الحساب مباشرة
       await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       const userCred = await auth.createUserWithEmailAndPassword(email, pass);
+      if (window.AndroidAuth) window.AndroidAuth.saveCredentials(email, pass);
       if (!rawEmail.includes('@')) await userCred.user.updateProfile({ displayName: rawEmail });
       showToast('تم إنشاء الحساب بنجاح!', 'success');
     } catch (e) { showToast('فشل الإنشاء', 'error'); } 
@@ -383,7 +385,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=18');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=21');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -421,6 +423,19 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       wakeUpCloudinary(); 
       showScreen('home');
     } else {
+      // 🚀 محاولة الدخول الصامت باستخدام بيانات الأندرويد المحمية
+      if (window.AndroidAuth) {
+        const savedEmail = window.AndroidAuth.getSavedEmail();
+        const savedPass = window.AndroidAuth.getSavedPassword();
+        if (savedEmail && savedPass) {
+          auth.signInWithEmailAndPassword(savedEmail, savedPass).catch(() => {
+            currentUser = null; myProfile = null;
+            renderScreenUI('login');
+          });
+          return;
+        }
+      }
+
       if (!navigator.onLine && localStorage.getItem('myProfile')) return; 
       currentUser = null; myProfile = null;
       renderScreenUI('login');
@@ -548,6 +563,10 @@ function confirmLogout() {
       // 🚀 مسح الـ UID من الذاكرة الدائمة للأندرويد لمنع تداخل الإشعارات مستقبلاً
       if (window.AndroidCall && typeof window.AndroidCall.saveUid === 'function') {
         window.AndroidCall.saveUid("");
+      }
+      
+      if (window.AndroidAuth) {
+        window.AndroidAuth.clearCredentials();
       }
 
       auth.signOut().then(() => {
@@ -3490,45 +3509,43 @@ function downloadVideoLocally(msg, containerEl) {
 }
 
 function openVideoPlayer(url) {
-  if (window.isChatOpening) return; // 🚀 الحماية الحديدية من النقرات الوهمية
+  if (window.isChatOpening) return;
   const overlay = document.getElementById('video-preview-overlay');
   
-  // إعادة ضبط الستايلات في حال كان مصغر سابقاً
   overlay.classList.remove('floating');
   overlay.style.removeProperty('left'); overlay.style.removeProperty('top'); overlay.style.removeProperty('transform');
   
-  // 🚀 أزلنا f_auto,q_auto لأنها تجبر السيرفر على معالجة الفيديو قبل إرساله وتسبب التعليق
-  // الرابط الخام يدعم البث المباشر فوراً!
+  // 🚀 تنظيف أي مخلفات من التشغيل السابق لضمان عدم تعليق المعالج (Decoder Hang)
+  if (videoEl.src) {
+    videoEl.pause();
+    videoEl.removeAttribute('src');
+    videoEl.load();
+  }
+  
   videoEl.src = url;
   
   overlay.classList.add('open');
   document.getElementById('video-center-loader').style.display = 'flex';
   document.getElementById('video-buffer-percent').textContent = '0%';
   
-  videoEl.load();
+  // 🚀 السحر هنا: حذفنا videoEl.load() لأنها تقطع الاتصال فوراً بعد بدء التحميل وتسبب التعليق!
   let playPromise = videoEl.play();
-  if (playPromise !== undefined) playPromise.catch(() => { document.getElementById('video-center-loader').style.display = 'none'; });
+  if (playPromise !== undefined) {
+    playPromise.catch(() => {
+      // إذا المتصفح يحتاج وقت لتهيئة الفيديو، نجعله ينتظر بهدوء
+      videoEl.addEventListener('canplay', function onCanPlay() {
+        videoEl.play();
+        videoEl.removeEventListener('canplay', onCanPlay);
+      });
+    });
+  }
+  
   updateVideoControls(); 
   videoUpdateInt = setInterval(updateVideoControls, 250);
   try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
 }
 
-// 🚀 دوال التحويل بين الشاشة الكاملة والمصغرة
-// 🚀 دوال التحويل بين الشاشة الكاملة والمصغرة
-function minimizeVideoPlayer() {
-  const overlay = document.getElementById('video-preview-overlay');
-  overlay.classList.add('floating');
-  // تثبيت الموقع الابتدائي عبر تحويل المحاور
-  overlay.style.transform = 'translate(20px, 70px)';
-  overlay.style.touchAction = 'none';
-}
-
-function restoreVideoPlayer() {
-  const overlay = document.getElementById('video-preview-overlay');
-  overlay.classList.remove('floating');
-  overlay.style.removeProperty('transform');
-  overlay.style.removeProperty('touch-action');
-}
+// ... كود ...
 
 function closeVideoPlayer() {
   const overlay = document.getElementById('video-preview-overlay');
@@ -3539,7 +3556,11 @@ function closeVideoPlayer() {
   
   videoEl.pause();
   if (videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
-  videoEl.src = '';
+  
+  // 🚀 الطريقة الهندسية الصحيحة لتفريغ الرام وفصل الفيديو دون إحداث خطأ في المتصفح
+  videoEl.removeAttribute('src');
+  videoEl.load();
+  
   clearInterval(videoUpdateInt);
 }
 
@@ -4343,7 +4364,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=18');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=21');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
