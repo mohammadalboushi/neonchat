@@ -1846,12 +1846,13 @@ body.light-theme .input-bar {
 .vid-spinner { width:40px; height:40px; border:3px solid rgba(0,240,255,0.2); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin 1s linear infinite; }
 
 #custom-video-el { width: 100%; max-height: 100vh; height: 100%; object-fit: contain; }
-#custom-video-el::-webkit-media-controls,
-#custom-video-el::-webkit-media-controls-enclosure,
-#custom-video-el::-webkit-media-controls-overlay-play-button,
-#custom-video-el::-webkit-media-controls-start-playback-button { 
-  display: none !important; 
-  -webkit-appearance: none !important; 
+video::-webkit-media-controls,
+video::-webkit-media-controls-enclosure,
+video::-webkit-media-controls-overlay-play-button,
+video::-webkit-media-controls-start-playback-button,
+*::-webkit-media-controls-overlay-play-button {
+  display: none !important;
+  -webkit-appearance: none !important;
   opacity: 0 !important;
   pointer-events: none !important;
   z-index: -100 !important;

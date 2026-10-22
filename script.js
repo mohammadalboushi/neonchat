@@ -385,7 +385,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=46');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=47');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -3532,27 +3532,32 @@ function openVideoPlayer(url) {
   // 1. تفريغ المشغل القديم بالكامل
   videoEl.pause();
   videoEl.removeAttribute('src');
+  
+  // 🚀 إزالة خاصة (Controls) بالكامل لمنع ظهور زر الأندرويد الأسود
+  videoEl.controls = false; 
+  videoEl.removeAttribute('controls');
+  
   videoEl.load(); 
   
   overlay.classList.add('open');
   document.getElementById('video-center-loader').style.display = 'flex';
   document.getElementById('video-buffer-percent').textContent = '0%';
   
-  // 2. إعطاء المتصفح استراحة 50 جزء من الثانية لفك ارتباط المعالج بالفيديو القديم!
-  // (هذا هو السر اللي بيمنع تعليق 0% في الأندرويد)
-  setTimeout(() => {
-    videoEl.src = url;
-    // 🚀 مسحنا الـ load() من هون لأن الـ play() لحالها بتجبر المتصفح يسحب الرابط الجديد بدون تضارب
-    let playPromise = videoEl.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        videoEl.addEventListener('canplay', function onCanPlay() {
-          videoEl.play();
-          videoEl.removeEventListener('canplay', onCanPlay);
-        }, { once: true });
-      });
-    }
-  }, 50);
+      // 2. إعطاء المتصفح استراحة 50 جزء من الثانية لفك ارتباط المعالج بالفيديو القديم!
+      // (هذا هو السر اللي بيمنع تعليق 0% في الأندرويد)
+      setTimeout(() => {
+        videoEl.src = url;
+        videoEl.load(); // 🚀 إجبار المتصفح على بدء التحميل فوراً لفك التعليق عند 0%
+        let playPromise = videoEl.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            videoEl.addEventListener('canplay', function onCanPlay() {
+              videoEl.play();
+              videoEl.removeEventListener('canplay', onCanPlay);
+            }, { once: true });
+          });
+        }
+      }, 50);
   
   updateVideoControls(); 
   clearInterval(videoUpdateInt);
@@ -4378,7 +4383,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=46');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=47');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
