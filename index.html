@@ -30,7 +30,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
 
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 
 <body>
@@ -616,12 +616,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=45"></script>
+  </div> <script src="script.js?v=46"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=45')
+        navigator.serviceWorker.register('sw.js?v=46')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });
