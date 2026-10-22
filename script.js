@@ -385,7 +385,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=21');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=22');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -3515,28 +3515,28 @@ function openVideoPlayer(url) {
   overlay.classList.remove('floating');
   overlay.style.removeProperty('left'); overlay.style.removeProperty('top'); overlay.style.removeProperty('transform');
   
-  // 🚀 تنظيف أي مخلفات من التشغيل السابق لضمان عدم تعليق المعالج (Decoder Hang)
-  if (videoEl.src) {
-    videoEl.pause();
-    videoEl.removeAttribute('src');
-    videoEl.load();
-  }
+  // 🚀 تنظيف جذري لضمان عدم تعليق محرك الفيديو (Decoder)
+  videoEl.pause();
+  videoEl.removeAttribute('src');
+  videoEl.src = '';
+  videoEl.load();
   
+  // 🚀 تمرير الرابط الجديد وإجبار المتصفح على بناء اتصال جديد
   videoEl.src = url;
+  videoEl.load(); // ضروري جداً للموبايل لمنع التعليق الأبدي على 0%
   
   overlay.classList.add('open');
   document.getElementById('video-center-loader').style.display = 'flex';
   document.getElementById('video-buffer-percent').textContent = '0%';
   
-  // 🚀 السحر هنا: حذفنا videoEl.load() لأنها تقطع الاتصال فوراً بعد بدء التحميل وتسبب التعليق!
   let playPromise = videoEl.play();
   if (playPromise !== undefined) {
     playPromise.catch(() => {
-      // إذا المتصفح يحتاج وقت لتهيئة الفيديو، نجعله ينتظر بهدوء
+      // إذا احتاج المتصفح وقتاً لتهيئة الفيديو، ننتظر حدث الجهوزية
       videoEl.addEventListener('canplay', function onCanPlay() {
         videoEl.play();
         videoEl.removeEventListener('canplay', onCanPlay);
-      });
+      }, { once: true });
     });
   }
   
@@ -3544,8 +3544,6 @@ function openVideoPlayer(url) {
   videoUpdateInt = setInterval(updateVideoControls, 250);
   try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
 }
-
-// ... كود ...
 
 function closeVideoPlayer() {
   const overlay = document.getElementById('video-preview-overlay');
@@ -3555,10 +3553,11 @@ function closeVideoPlayer() {
   overlay.style.removeProperty('touch-action');
   
   videoEl.pause();
-  if (videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
+  if (videoEl.src && videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
   
-  // 🚀 الطريقة الهندسية الصحيحة لتفريغ الرام وفصل الفيديو دون إحداث خطأ في المتصفح
+  // 🚀 التفريغ الصحيح للذاكرة والمشغل لمنع التعليق عند الفتح القادم
   videoEl.removeAttribute('src');
+  videoEl.src = '';
   videoEl.load();
   
   clearInterval(videoUpdateInt);
@@ -4364,7 +4363,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=21');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=22');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
