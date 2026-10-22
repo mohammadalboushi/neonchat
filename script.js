@@ -385,7 +385,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=22');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=23');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -3508,39 +3508,53 @@ function downloadVideoLocally(msg, containerEl) {
   window.activeVidDownloads[msgKey] = xhr; xhr.send();
 }
 
+function minimizeVideoPlayer() {
+  const overlay = document.getElementById('video-preview-overlay');
+  overlay.classList.add('floating');
+}
+
+function restoreVideoPlayer() {
+  const overlay = document.getElementById('video-preview-overlay');
+  overlay.classList.remove('floating');
+  overlay.style.removeProperty('transform');
+  currentTranslateX = 20;
+  currentTranslateY = 70;
+  try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
+}
+
 function openVideoPlayer(url) {
   if (window.isChatOpening) return;
   const overlay = document.getElementById('video-preview-overlay');
   
   overlay.classList.remove('floating');
-  overlay.style.removeProperty('left'); overlay.style.removeProperty('top'); overlay.style.removeProperty('transform');
+  overlay.style.removeProperty('transform');
   
-  // 🚀 تنظيف جذري لضمان عدم تعليق محرك الفيديو (Decoder)
+  // 1. تفريغ المشغل القديم بالكامل
   videoEl.pause();
   videoEl.removeAttribute('src');
-  videoEl.src = '';
-  videoEl.load();
-  
-  // 🚀 تمرير الرابط الجديد وإجبار المتصفح على بناء اتصال جديد
-  videoEl.src = url;
-  videoEl.load(); // ضروري جداً للموبايل لمنع التعليق الأبدي على 0%
+  videoEl.load(); 
   
   overlay.classList.add('open');
   document.getElementById('video-center-loader').style.display = 'flex';
   document.getElementById('video-buffer-percent').textContent = '0%';
   
-  let playPromise = videoEl.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(() => {
-      // إذا احتاج المتصفح وقتاً لتهيئة الفيديو، ننتظر حدث الجهوزية
-      videoEl.addEventListener('canplay', function onCanPlay() {
-        videoEl.play();
-        videoEl.removeEventListener('canplay', onCanPlay);
-      }, { once: true });
-    });
-  }
+  // 2. إعطاء المتصفح استراحة 50 جزء من الثانية لفك ارتباط المعالج بالفيديو القديم!
+  // (هذا هو السر اللي بيمنع تعليق 0% في الأندرويد)
+  setTimeout(() => {
+    videoEl.src = url;
+    let playPromise = videoEl.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        videoEl.addEventListener('canplay', function onCanPlay() {
+          videoEl.play();
+          videoEl.removeEventListener('canplay', onCanPlay);
+        }, { once: true });
+      });
+    }
+  }, 50);
   
   updateVideoControls(); 
+  clearInterval(videoUpdateInt);
   videoUpdateInt = setInterval(updateVideoControls, 250);
   try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
 }
@@ -3555,9 +3569,9 @@ function closeVideoPlayer() {
   videoEl.pause();
   if (videoEl.src && videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
   
-  // 🚀 التفريغ الصحيح للذاكرة والمشغل لمنع التعليق عند الفتح القادم
+  // 🚀 تحرير المعالج والمشغل بشكل نظيف
   videoEl.removeAttribute('src');
-  videoEl.src = '';
+  videoEl.src = ''; // تأكيد تفريغ المسار للأندرويد
   videoEl.load();
   
   clearInterval(videoUpdateInt);
@@ -4363,7 +4377,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=22');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=23');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
