@@ -4,12 +4,15 @@
 const perfStyle = document.createElement('style');
 perfStyle.innerHTML = `
   * { -webkit-tap-highlight-color: transparent; outline: none; }
-  .msg-bubble, .msg-menu, .modal, .glass-card, .search-result-card, #video-preview-overlay { transform: translateZ(0); will-change: transform, opacity; }
+  .msg-menu, .modal, #video-preview-overlay { transform: translateZ(0); will-change: transform, opacity; }
+  .msg-bubble, .glass-card, .search-result-card { will-change: auto !important; transform: none !important; perspective: none !important; -webkit-perspective: none !important; contain: layout style; }
+  #screen-chat { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
   .messages-area { contain: content; scroll-behavior: auto !important; }
+  .input-bar { contain: layout style; }
   .msg-row { contain: layout style; }
   .voice-waveform { -webkit-user-select: none; user-select: none; touch-action: none; -webkit-touch-callout: none; pointer-events: auto; }
   .voice-msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; pointer-events: auto; }
-  .voice-progress-fill { will-change: width; }
+  .voice-progress-fill { will-change: transform; }
   /* تخفيف الظلال المكلفة للـ GPU في الموبايل */
   .msg-menu { box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important; }
   .glass-card { box-shadow: 0 5px 20px rgba(0,0,0,0.3) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(10, 22, 40, 0.98) !important; }
@@ -238,12 +241,34 @@ function openModal(title, text) {
 }
 
 let _resizeQ = false;
-function autoResize(el) { 
+let _lastInputLen = 0;
+function autoResize(el) {
+  const val = el.value;
+  const len = val.length;
+  if (len === 0) {
+    _lastInputLen = 0;
+    if (el.style.height !== '45px' && el.style.height !== 'auto') {
+      el.style.height = '45px';
+    }
+    return;
+  }
+  if (len < 28 && !val.includes('\n') && el.clientHeight <= 50) {
+    _lastInputLen = len;
+    return;
+  }
   if (_resizeQ) return;
   _resizeQ = true;
+  const isShrinking = len < _lastInputLen;
+  _lastInputLen = len;
   requestAnimationFrame(() => {
-    el.style.height = 'auto'; 
-    el.style.height = Math.min(el.scrollHeight, 150) + 'px'; 
+    if (isShrinking && el.clientHeight > 50) {
+      el.style.height = '45px';
+    }
+    const sh = el.scrollHeight;
+    const targetH = Math.min(sh, 150);
+    if (Math.abs(el.clientHeight - targetH) > 2) {
+      el.style.height = targetH + 'px';
+    }
     _resizeQ = false;
   });
 }
@@ -280,9 +305,16 @@ if(btnLogin) {
     const email = formatEmail(rawEmail);
     btnLogin.disabled = true; btnLogin.textContent = 'جاري الدخول...';
     try { 
-      // 🚀 إجبار الحفظ الداخلي قبل الدخول مباشرة
-      await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-      await auth.signInWithEmailAndPassword(email, pass); 
+      try {
+        await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+        await auth.signInWithEmailAndPassword(email, pass);
+      } catch (persistErr) {
+        if (persistErr && (persistErr.code === 'auth/wrong-password' || persistErr.code === 'auth/user-not-found' || persistErr.code === 'auth/invalid-credential' || persistErr.code === 'auth/invalid-email')) {
+          throw persistErr;
+        }
+        await auth.setPersistence(firebase.auth.Auth.Persistence.NONE);
+        await auth.signInWithEmailAndPassword(email, pass);
+      }
       if (window.AndroidAuth) window.AndroidAuth.saveCredentials(email, pass);
     } 
     catch (e) { showToast(e.code === 'auth/wrong-password' ? 'كلمة المرور غير صحيحة!' : 'تأكد من البيانات', 'error'); } 
@@ -385,7 +417,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=47');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=48');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -423,15 +455,30 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
       wakeUpCloudinary(); 
       showScreen('home');
     } else {
-      // 🚀 محاولة الدخول الصامت باستخدام بيانات الأندرويد المحمية
       if (window.AndroidAuth) {
         const savedEmail = window.AndroidAuth.getSavedEmail();
         const savedPass = window.AndroidAuth.getSavedPassword();
         if (savedEmail && savedPass) {
-          auth.signInWithEmailAndPassword(savedEmail, savedPass).catch(() => {
-            currentUser = null; myProfile = null;
-            renderScreenUI('login');
-          });
+          const attemptSilentLogin = async () => {
+            try {
+              await auth.signInWithEmailAndPassword(savedEmail, savedPass);
+            } catch (err) {
+              const code = err && err.code ? err.code : '';
+              if (code === 'auth/wrong-password' || code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/user-disabled') {
+                window.AndroidAuth.clearCredentials();
+                currentUser = null; myProfile = null;
+                renderScreenUI('login');
+                return;
+              }
+              try {
+                await auth.setPersistence(firebase.auth.Auth.Persistence.NONE);
+                await auth.signInWithEmailAndPassword(savedEmail, savedPass);
+              } catch (retryErr) {
+                setTimeout(attemptSilentLogin, 3000);
+              }
+            }
+          };
+          attemptSilentLogin();
           return;
         }
       }
@@ -766,6 +813,8 @@ function loadChats() {
 }
 
 function renderChatsList(filter = '') {
+  const homeScreen = document.getElementById('screen-home');
+  if (!filter && homeScreen && !homeScreen.classList.contains('active')) return;
   const list = document.getElementById('chats-list'), empty = document.getElementById('chats-empty');
   const items = Object.entries(chatsData).sort((a, b) => (b[1].updatedAt || 0) - (a[1].updatedAt || 0));
   
@@ -1287,6 +1336,25 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     
     area.appendChild(buildMsgEl(msg, false)); 
     
+    if (isNearBottom || msg.senderUid === currentUser.uid) {
+      const rows = area.querySelectorAll('.msg-row');
+      if (rows.length > 55) {
+        const toRemove = rows.length - 50;
+        for (let i = 0; i < toRemove; i++) {
+          msgReadObserver.unobserve(rows[i]);
+          rows[i].remove();
+        }
+        while (area.firstElementChild && area.firstElementChild.classList.contains('date-sep') && (!area.firstElementChild.nextElementSibling || area.firstElementChild.nextElementSibling.classList.contains('date-sep'))) {
+          area.firstElementChild.remove();
+        }
+        const firstBubble = area.querySelector('.msg-row .msg-bubble[id^="msg-"]');
+        if (firstBubble) {
+          oldestMsgKey = firstBubble.id.replace('msg-', '');
+          hasMoreHistory = true;
+        }
+      }
+    }
+
     clearTimeout(scrollTimeout);
     scrollTimeout = setTimeout(() => {
       // بينزل لتحت بس إذا كنت أصلاً تحت أو أنت اللي بعتت الرسالة
@@ -1746,7 +1814,6 @@ function buildMsgEl(msg, isBackground = false) {
     
     bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'🎵 أغنية'}">${msg.duration||'🎵 أغنية'}</span></div></div>${timeEl}${reactHtml}`;
     } else if (msg.type === 'voice') {
- if ('caches' in window && !msg.isPending) caches.open('media-cache').then(c => c.match(msg.url).then(cached => { if (!cached) fetch(msg.url).then(res => c.put(msg.url, res)).catch(()=>{}); }));
     const bars = Array.from({ length: 20 }, () => `<div class="voice-bar" style="height:${Math.floor(Math.random()*70)+20}%"></div>`).join('');
     let unplayedDot = (!isOut && !msg.isPending && !msg.listened) ? `<div id="unplayed-${msg.key}" style="width:10px;height:10px;background:var(--neon-green);border-radius:50%;margin-left:8px;box-shadow:0 0 6px var(--neon-green);flex-shrink:0;"></div>` : '';
     
@@ -1832,22 +1899,21 @@ if (window.visualViewport) {
   }, { passive: false });
 });
 
+let _isSendIconShown = false;
 document.getElementById('msg-input').addEventListener('input', (e) => {
-  const textLen = e.target.value.trim().length;
-  const iconMic = document.getElementById('icon-mic');
-  const iconSend = document.getElementById('icon-send');
-  const btnSmart = document.getElementById('btn-smart');
+  const hasText = e.target.value.trim().length > 0;
 
-  // تحويل الزر من مايك لرسالة بدون تغيير مساحات الشاشة لـ 120 FPS
-  if (textLen > 0) {
-    if (iconMic.style.display !== 'none') {
+  if (hasText !== _isSendIconShown) {
+    _isSendIconShown = hasText;
+    const iconMic = document.getElementById('icon-mic');
+    const iconSend = document.getElementById('icon-send');
+    const btnSmart = document.getElementById('btn-smart');
+    if (hasText) {
       iconMic.style.display = 'none';
       iconSend.style.display = 'block';
       btnSmart.style.background = 'linear-gradient(135deg, var(--neon-cyan), var(--neon-blue))';
       btnSmart.style.boxShadow = '0 2px 10px rgba(0, 240, 255, 0.3)';
-    }
-  } else {
-    if (iconSend.style.display !== 'none') {
+    } else {
       iconSend.style.display = 'none';
       iconMic.style.display = 'block';
       btnSmart.style.background = 'var(--neon-green)';
@@ -1857,13 +1923,11 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
 
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
   
-  const now = Date.now();
-  if (now - lastTypingTime > 1500) {
+  if (lastTypingTime === 0) {
     const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
     typingRef.set('typing');
-    // 🚀 ربط أمر الحذف مرة واحدة فقط عند بدء الكتابة لمنع تجميد السيرفر
-    if (lastTypingTime === 0) typingRef.onDisconnect().remove(); 
-    lastTypingTime = now;
+    typingRef.onDisconnect().remove();
+    lastTypingTime = Date.now();
   }
   
   clearTimeout(typingTimeout);
@@ -1874,7 +1938,7 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
       typingRef.onDisconnect().cancel();
     }
     lastTypingTime = 0;
-  }, 2000);
+  }, 2500);
 });
 
 // دالة الزر الذكي الجديد
@@ -3173,12 +3237,23 @@ function playVoice(btn, url, msgKey, isOut) {
               cache.match(optimizedUrl).then(res => {
                   if (res) return res.blob();
                   return fetch(optimizedUrl, { mode: 'cors' }).then(networkRes => {
-                      if (networkRes.ok) cache.put(optimizedUrl, networkRes.clone());
+                      if (networkRes.ok) {
+                          cache.put(optimizedUrl, networkRes.clone()).then(() => {
+                              cache.keys().then(keys => {
+                                  if (keys.length > 20) cache.delete(keys[0]);
+                              }).catch(()=>{});
+                          }).catch(()=>{});
+                      }
                       return networkRes.blob();
                   });
               }).then(blob => {
                   const blobUrl = URL.createObjectURL(blob);
                   window.voiceBlobCache[optimizedUrl] = blobUrl;
+                  const memKeys = Object.keys(window.voiceBlobCache);
+                  if (memKeys.length > 15) {
+                      URL.revokeObjectURL(window.voiceBlobCache[memKeys[0]]);
+                      delete window.voiceBlobCache[memKeys[0]];
+                  }
                   executePlay(blobUrl);
               }).catch(() => executePlay(optimizedUrl));
           }).catch(() => executePlay(optimizedUrl));
@@ -4383,7 +4458,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=47');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=48');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -4565,7 +4640,7 @@ async function openChatSettingsMenu() {
       <div style="font-size:15px; font-weight:800; color:var(--text-primary);">إعدادات المحادثة</div>
       <div style="display:flex; gap:8px; align-items:center;">
         <div onclick="navigator.clipboard.writeText('${friendId}').then(()=>showToast('تم نسخ الـ ID','success'))" style="background:var(--bg-glass2); border:1px solid var(--border-subtle); padding:4px 10px; border-radius:8px; font-family:var(--font-en); font-size:11px; font-weight:bold; color:var(--neon-cyan); letter-spacing:1px; cursor:pointer;" title="نسخ الـ ID">ID: ${friendId}</div>
-        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.17</div>
+        <div style="font-family:var(--font-en); font-size:10px; color:var(--text-muted); font-weight:bold; background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:6px;">v1.1</div>
       </div>
     </div>
     
