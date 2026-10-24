@@ -9,6 +9,7 @@ perfStyle.innerHTML = `
   #screen-chat { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
   .messages-area { contain: content; scroll-behavior: auto !important; }
   .input-bar { contain: layout style; }
+  .msg-input { transform: translateZ(0); will-change: contents; } /* 🚀 السر الأول: عزل حقل الكتابة بكرت الشاشة */
   .msg-row { contain: layout style; }
   .voice-waveform { -webkit-user-select: none; user-select: none; touch-action: none; -webkit-touch-callout: none; pointer-events: auto; }
   .voice-msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; pointer-events: auto; }
@@ -189,12 +190,22 @@ function renderScreenUI(name) {
   const el = document.getElementById('screen-' + name);
   if (el) el.classList.add('active');
   
-  if (name === 'home') loadChats();
+  if (name === 'home') {
+    // 🚀 ضمان انتهاء حركة الرجوع البطيئة في المتصفح قبل بناء القائمة
+    setTimeout(() => loadChats(), 350);
+  }
   if (name === 'profile') populateProfile();
   if (name === 'add-friend') { document.getElementById('friend-id-input').value = ''; document.getElementById('search-result-area').innerHTML = ''; }
   if (name === 'blocked-users') loadBlockedUsers();
   
-  if (name !== 'chat' && name !== 'call') detachMessages();
+  if (name !== 'chat' && name !== 'call') {
+    detachMessages();
+    // 🚀 تنظيف شجرة العناصر من الرسائل بعد الخروج لتفريغ الرام وجعل التطبيق أخف
+    setTimeout(() => {
+      const area = document.getElementById('messages-area');
+      if (area) area.innerHTML = '';
+    }, 350);
+  }
   
   // 🚀 إظهار أيقونة عائمة للعودة للمكالمة أو إنهائها عند تصغيرها
   let bubble = document.getElementById('active-call-bubble');
@@ -241,36 +252,23 @@ function openModal(title, text) {
 }
 
 let _resizeQ = false;
-let _lastInputLen = 0;
 function autoResize(el) {
-  const val = el.value;
-  const len = val.length;
-  if (len === 0) {
-    _lastInputLen = 0;
-    if (el.style.height !== '45px' && el.style.height !== 'auto') {
-      el.style.height = '45px';
-    }
-    return;
-  }
-  if (len < 28 && !val.includes('\n') && el.clientHeight <= 50) {
-    _lastInputLen = len;
-    return;
-  }
   if (_resizeQ) return;
   _resizeQ = true;
-  const isShrinking = len < _lastInputLen;
-  _lastInputLen = len;
-  requestAnimationFrame(() => {
-    if (isShrinking && el.clientHeight > 50) {
-      el.style.height = '45px';
-    }
-    const sh = el.scrollHeight;
-    const targetH = Math.min(sh, 150);
-    if (Math.abs(el.clientHeight - targetH) > 2) {
-      el.style.height = targetH + 'px';
-    }
-    _resizeQ = false;
-  });
+  // 🚀 إزاحة مسار المعالجة: نترك المتصفح يطبع الحرف أولاً، ثم نغير الحجم لمنع التقطيع
+  setTimeout(() => {
+    requestAnimationFrame(() => {
+      if (el.value.length === 0) {
+        if (el.style.height !== '45px') el.style.height = '45px';
+      } else {
+        el.style.height = '1px'; 
+        let sh = el.scrollHeight;
+        let targetH = Math.min(Math.max(sh, 45), 150);
+        el.style.height = targetH + 'px';
+      }
+      _resizeQ = false;
+    });
+  }, 0);
 }
 function escHtml(str) { return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function formatTime(ts) { return ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''; }
@@ -417,7 +415,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=48');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=49');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -998,29 +996,25 @@ function wakeUpCloudinary() {
 
 window.isChatOpening = false;
 async function openChat(chatId, friendUid, friendProfile = null) {
-  history.pushState({ screen: 'chat' }, '', ''); // 🚀 إصلاح الهيستوري لتبقى داخل المحادثة
+  history.pushState({ screen: 'chat' }, '', ''); 
+  
+  // 🚀 تفريغ الشاشة القديمة فوراً قبل بدء الأنيميشن لتخفيف وزن الـ DOM على المعالج
+  const area = document.getElementById('messages-area');
+  if (area) area.innerHTML = '';
+  
   renderScreenUI('chat'); 
   
   window.isChatOpening = true;
-  setTimeout(() => { window.isChatOpening = false; }, 100); // 🚀 تقليل التجميد لـ 100ms لسرعة استجابة فورية
+  setTimeout(() => { window.isChatOpening = false; }, 200);
 
   detachMessages();
-  wakeUpCloudinary(); // 🚀 تسخين السيرفر أول ما تفتح المحادثة
+  wakeUpCloudinary(); 
 
   if (!friendProfile) {
     const snap = await db.ref('users/' + friendUid).once('value');
     friendProfile = snap.val();
   }
-    currentChat = { chatId, friendUid, friendProfile };
-  // 🚀 جلب الملف الخام من قاعدة البيانات وعرضه فوراً
-  getWallpaperDB().then(db => {
-    const tx = db.transaction('wallpapers', 'readonly');
-    const req = tx.objectStore('wallpapers').get(chatId);
-    req.onsuccess = () => {
-      if (req.result) applyChatWallpaper(URL.createObjectURL(req.result));
-      else applyChatWallpaper(null);
-    };
-  }).catch(() => applyChatWallpaper(null));
+  currentChat = { chatId, friendUid, friendProfile };
 
   const avatarEl = document.getElementById('chat-header-avatar');
   if (friendProfile.photo) {
@@ -1030,14 +1024,26 @@ async function openChat(chatId, friendUid, friendProfile = null) {
     avatarEl.outerHTML = `<div class="chat-header-avatar" id="chat-header-avatar">${(friendProfile.name||'?').charAt(0)}</div>`;
   }
   document.getElementById('chat-header-name').textContent = friendProfile.name;
-
-  db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
-
-  attachMessages(chatId);
-
+  
   const statusEl = document.getElementById('chat-header-status');
   statusEl.textContent = 'جاري التحقق...';
   statusEl.style.color = 'var(--text-muted)';
+
+  // 🚀 السر الأسطوري (Event Loop Yielding)
+  // تم زيادة الوقت لـ 350 ليتطابق مع سرعة CSS في المتصفحات ولتجنب الاصطدام في منتصف الحركة
+  setTimeout(() => {
+    getWallpaperDB().then(db => {
+      const tx = db.transaction('wallpapers', 'readonly');
+      const req = tx.objectStore('wallpapers').get(chatId);
+      req.onsuccess = () => {
+        if (req.result) applyChatWallpaper(URL.createObjectURL(req.result));
+        else applyChatWallpaper(null);
+      };
+    }).catch(() => applyChatWallpaper(null));
+
+    db.ref('userChats/' + currentUser.uid + '/' + chatId + '/unread').set(0);
+    attachMessages(chatId);
+  }, 350);
 
   friendStatusRef = db.ref('users/' + friendUid + '/status');
   
@@ -1197,7 +1203,15 @@ async function openChat(chatId, friendUid, friendProfile = null) {
               });
               
               area.appendChild(fragment);
+              
+              // 🚀 الإصلاح الجذري: تثبيت السكرول في الأسفل بقوة لتعويض التمدد البصري (Layout Shift)
               area.scrollTop = area.scrollHeight;
+              let _scrollLockCount = 0;
+              const _scrollLockInt = setInterval(() => {
+                if (area) area.scrollTop = area.scrollHeight;
+                _scrollLockCount++;
+                if (_scrollLockCount > 10) clearInterval(_scrollLockInt); // التثبيت يستمر لنصف ثانية فقط ريثما تكتمل الصور
+              }, 50);
               
               lastMsgDate = tempLastDate;
               oldestMsgKey = liveMsgsCache[0].key;
@@ -1908,6 +1922,11 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
     const iconMic = document.getElementById('icon-mic');
     const iconSend = document.getElementById('icon-send');
     const btnSmart = document.getElementById('btn-smart');
+    
+    // 🚀 إضافة حركة (Pop) سلسة جداً للزر عند التحول
+    btnSmart.style.transform = 'scale(0.8)';
+    setTimeout(() => { btnSmart.style.transform = 'scale(1)'; }, 120);
+
     if (hasText) {
       iconMic.style.display = 'none';
       iconSend.style.display = 'block';
@@ -1975,21 +1994,34 @@ async function sendTextMsg() {
   inp.value = ''; 
   autoResize(inp); 
   
-  // إرجاع شكل الزر للمايك فوراً
+  // إرجاع شكل الزر للمايك فوراً مع حركة سلسة وتحديث الذاكرة لمنع أي خطأ برمجي
+  const btnSmart = document.getElementById('btn-smart');
+  btnSmart.style.transform = 'scale(0.8)';
+  setTimeout(() => { btnSmart.style.transform = 'scale(1)'; }, 120);
+
   document.getElementById('icon-send').style.display = 'none';
   document.getElementById('icon-mic').style.display = 'block';
-  document.getElementById('btn-smart').style.background = 'var(--neon-green)';
-  document.getElementById('btn-smart').style.boxShadow = '0 2px 10px rgba(0, 255, 136, 0.3)';
+  btnSmart.style.background = 'var(--neon-green)';
+  btnSmart.style.boxShadow = '0 2px 10px rgba(0, 255, 136, 0.3)';
+  _isSendIconShown = false;
   
   if (isKbReallyOpen) {
     // 🚀 الحفاظ على الكيبورد مفتوحاً بعد الإرسال بدون أي رفة
     inp.focus();
   }
 
-  if (editingMsgKey) { await db.ref('chats/' + currentChat.chatId + '/messages/' + editingMsgKey).update({ text, isEdited: true }); updateLastMsgAfterChange(); editingMsgKey = null; showToast('تم تعديل الرسالة', 'success'); return; }
+  if (editingMsgKey) { 
+    db.ref('chats/' + currentChat.chatId + '/messages/' + editingMsgKey).update({ text, isEdited: true }); 
+    updateLastMsgAfterChange(); 
+    editingMsgKey = null; 
+    showToast('تم تعديل الرسالة', 'success'); 
+    return; 
+  }
   let replyData = null;
   if (replyingToMsg) { replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : '🎙️ صوت' }; cancelReply(); }
-  await pushMessage({ type: 'text', text, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+  
+  // 🚀 إزالة كلمة (await) لرمي الرسالة في الخلفية فوراً دون انتظار استجابة السيرفر وتجميد الشاشة
+  pushMessage({ type: 'text', text, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
 }
 
 async function syncPendingMessages() {
@@ -3298,7 +3330,7 @@ function startAudioProgress(msgKey) {
         lastTextTime = now;
       }
     }
-  }, 16); // 16ms = 60FPS صافي بدون حرق المعالج
+  }, 40); // 🚀 تم تخفيف الحمل لـ 40ms مما يحافظ على السلاسة بصرياً ويحرر المعالج بالكامل للكيبورد
 }
 
 // 🚀 نظام السحب والتقديم المتطور للفويسات (120FPS Hardware Accelerated)
@@ -3878,23 +3910,27 @@ function scrollToMessage(msgKey) {
 document.body.style.overscrollBehavior = 'none';
 document.documentElement.style.overscrollBehavior = 'none';
 
-// 🚀 إعادة ميزة السكرول التلقائي عند فتح الكيبورد للحفاظ على آخر رسالة مرئية دائماً
+// 🚀 إعادة ميزة السكرول التلقائي بذكاء: الانتظار حتى يكتمل فتح الكيبورد لمنع تجميد المعالج
+let _kbScrollTimer = null;
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', () => {
     if (document.getElementById('screen-chat').classList.contains('active')) {
-      const area = document.getElementById('messages-area');
-      // مجرد ما يتغير حجم الشاشة (فتح أو إغلاق الكيبورد)، اجبر السكرول ينزل لآخر رسالة
-      if (area) area.scrollTop = area.scrollHeight;
+      clearTimeout(_kbScrollTimer);
+      _kbScrollTimer = setTimeout(() => {
+        const area = document.getElementById('messages-area');
+        if (area && (area.scrollHeight - area.scrollTop - area.clientHeight < 300)) {
+          area.scrollTop = area.scrollHeight;
+        }
+      }, 150); // تأخير بسيط ليأخذ الكيبورد راحته بالفتح
     }
   });
 }
 
+// 🚀 إزالة الفحص الثقيل الذي كان يحرق المعالج مع كل حركة إصبع
+// وتحويل المستمع إلى Passive لتحرير الـ Main Thread بالكامل لصالح الكيبورد
 document.body.addEventListener('touchmove', (e) => {
-  const isScrollable = e.target.closest('#messages-area') || e.target.closest('.chats-list') || e.target.closest('.add-friend-body') || e.target.closest('.profile-body') || e.target.closest('#firebase-search-results') || e.target.closest('#msg-input') || e.target.closest('#media-gallery-grid');
-  if (!isScrollable) {
-    e.preventDefault();
-  }
-}, { passive: false });
+  // تركنا الوظيفة فارغة لأننا عالجنا السحب الإضافي عبر CSS مسبقاً (overscroll-behavior)
+}, { passive: true });
 
 const msgInputEl = document.getElementById('msg-input');
 if(msgInputEl) {
@@ -4458,7 +4494,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=48');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=49');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
