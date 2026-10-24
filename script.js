@@ -415,7 +415,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=49');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=50');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1914,6 +1914,8 @@ if (window.visualViewport) {
 });
 
 let _isSendIconShown = false;
+let _isTypingNow = false; // 🚀 متغير جديد لمراقبة حالة الكتابة الحقيقية لحظة بلحظة
+
 document.getElementById('msg-input').addEventListener('input', (e) => {
   const hasText = e.target.value.trim().length > 0;
 
@@ -1923,7 +1925,7 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
     const iconSend = document.getElementById('icon-send');
     const btnSmart = document.getElementById('btn-smart');
     
-    // 🚀 إضافة حركة (Pop) سلسة جداً للزر عند التحول
+    // 🚀 إضافة حركة (Pop) سلسة جداً لزر الإرسال
     btnSmart.style.transform = 'scale(0.8)';
     setTimeout(() => { btnSmart.style.transform = 'scale(1)'; }, 120);
 
@@ -1942,22 +1944,28 @@ document.getElementById('msg-input').addEventListener('input', (e) => {
 
   if (!currentChat || isRecording || myBlockedUsers[currentChat.friendUid]) return;
   
-  if (lastTypingTime === 0) {
+  // 🚀 المنطق الذكي والاحترافي لجاري الكتابة (Instant Trigger & Debounce)
+  
+  // 1. الاستجابة الفورية: إذا كانت هذه أول لمسة (أو بعد توقف)، أرسل الإشارة فوراً للسيرفر
+  if (!_isTypingNow) {
+    _isTypingNow = true;
     const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
     typingRef.set('typing');
     typingRef.onDisconnect().remove();
-    lastTypingTime = Date.now();
   }
   
+  // 2. تجديد المهلة: مسح العداد القديم مع كل حرف جديد تكتبه
   clearTimeout(typingTimeout);
+  
+  // 3. التوقف الدقيق: إذا لم تضغط أي حرف لمدة ثانية ونصف، أخفِ "جاري الكتابة"
   typingTimeout = setTimeout(() => {
     if (currentChat) {
       const typingRef = db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid);
       typingRef.remove();
       typingRef.onDisconnect().cancel();
     }
-    lastTypingTime = 0;
-  }, 2500);
+    _isTypingNow = false; // تصفير الحالة لتكون جاهزة للرسالة القادمة
+  }, 1500); 
 });
 
 // دالة الزر الذكي الجديد
@@ -1974,7 +1982,11 @@ function handleMsgKey(e) { if (e.key === 'Enter' && !e.shiftKey) { return; } }
 
 async function sendTextMsg() {
   if (isRecording) { stopRecording(); return; }
-  if (currentChat) { db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove(); clearTimeout(typingTimeout); }
+  if (currentChat) { 
+    db.ref('chats/' + currentChat.chatId + '/typing/' + currentUser.uid).remove(); 
+    clearTimeout(typingTimeout); 
+    _isTypingNow = false; // 🚀 تصفير حالة الكتابة فوراً بعد الإرسال ليلتقط الرسالة التالية
+  }
   
   const inp = document.getElementById('msg-input');
   const text = inp.value.trim();
@@ -4494,7 +4506,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=49');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=50');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
