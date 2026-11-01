@@ -137,8 +137,8 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // 2. تكييش الصوتيات والصور من كلاوديناري مباشرة للعمل بدون نت
-  if (event.request.url.includes('cloudinary.com')) {
+  // 2. تكييش الصوتيات والصور من كلاوديناري وسوبابيز مباشرة للعمل بدون نت
+  if (event.request.url.includes('cloudinary.com') || event.request.url.includes('supabase.co')) {
     event.respondWith(
       caches.match(event.request).then(cached => {
         if (cached) return cached;

@@ -621,7 +621,7 @@
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=50')
+        navigator.serviceWorker.register('sw.js?v=51')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });

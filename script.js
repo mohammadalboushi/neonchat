@@ -415,7 +415,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=50');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=51');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1265,13 +1265,38 @@ async function openChat(chatId, friendUid, friendProfile = null) {
               ticksEl.innerHTML = '<polyline points="22 6 12 16 8 12"></polyline><polyline points="15 6 5 16 1 12"></polyline>';
             }
           }
-          // تحديث الكاش المحلي إذا في اختلاف بالحالة
+          // تحديث الكاش المحلي إذا في اختلاف بالحالة أو التفاعل
           const cacheIdx = liveMsgsCache.findIndex(cached => cached.key === child.key);
-          if (cacheIdx !== -1 && (liveMsgsCache[cacheIdx].read !== m.read || liveMsgsCache[cacheIdx].listened !== m.listened || liveMsgsCache[cacheIdx].delivered !== m.delivered)) {
-             liveMsgsCache[cacheIdx].read = m.read;
-             liveMsgsCache[cacheIdx].listened = m.listened;
-             liveMsgsCache[cacheIdx].delivered = m.delivered;
-             chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
+          if (cacheIdx !== -1) {
+            let hasChanges = false;
+            
+            // 1. فحص الصحين الزرق والاستلام
+            if (liveMsgsCache[cacheIdx].read !== m.read || liveMsgsCache[cacheIdx].listened !== m.listened || liveMsgsCache[cacheIdx].delivered !== m.delivered) {
+               liveMsgsCache[cacheIdx].read = m.read;
+               liveMsgsCache[cacheIdx].listened = m.listened;
+               liveMsgsCache[cacheIdx].delivered = m.delivered;
+               hasChanges = true;
+            }
+            
+            // 2. 🚀 فحص التفاعلات الجديدة (القلوب) وعرضها فوراً حتى لو كان الطرف الآخر غايب
+            if (liveMsgsCache[cacheIdx].reaction !== m.reaction) {
+               liveMsgsCache[cacheIdx].reaction = m.reaction;
+               hasChanges = true;
+               
+               const reactEl = document.getElementById('react-' + child.key);
+               if (reactEl) {
+                 if (m.reaction) {
+                   reactEl.style.display = 'flex';
+                   reactEl.innerHTML = m.reaction;
+                 } else {
+                   reactEl.style.display = 'none';
+                 }
+               }
+            }
+            
+            if (hasChanges) {
+               chatCacheDB.save(chatId, liveMsgsCache); // 🚀 حفظ في IndexedDB
+            }
           }
         });
       }
@@ -1835,10 +1860,19 @@ function buildMsgEl(msg, isBackground = false) {
     let currentSpd = typeof globalVoiceSpeed !== 'undefined' ? globalVoiceSpeed : 1;
     let speedBtn = `<button id="speed-${msg.key}" onclick="toggleVoiceSpeed(this, '${msg.key}')" style="${btnStyle} border:1px solid var(--neon-cyan); border-radius:6px; padding:0 4px; font-size:10px; font-family:var(--font-en); cursor:pointer; margin-right:8px; font-weight:bold; height:18px; line-height:1;">${currentSpd}x</button>`;
     
-    bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
-  }
-  
-  if (msg.isPending) {
+        bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
+      }
+      
+      // 🚀 التحميل المسبق الذكي: يحمل المقاطع (غير المسموعة) فقط لتوفير النت ومنع التراكم
+      if ((msg.type === 'voice' || msg.type === 'audio') && msg.url && !msg.isPending && !isOut) {
+        if (!msg.listened) {
+          setTimeout(() => {
+            if(window.preloadVoiceSilent) window.preloadVoiceSilent(msg.url);
+          }, 500 + Math.random() * 2000); // تأخير عشوائي عشان ما يخنق الشبكة
+        }
+      }
+      
+      if (msg.isPending) {
     const overlay = document.createElement('div'); overlay.className = 'pending-overlay';
     overlay.style.cssText = 'position:absolute; inset:0; background:rgba(0,0,0,0.6); border-radius:inherit; display:flex; align-items:center; justify-content:center; z-index:10; flex-direction:column; gap:8px;';
     overlay.innerHTML = `<div style="width:24px; height:24px; border:3px solid rgba(0, 240, 255, 0.3); border-top-color:var(--neon-cyan); border-radius:50%; animation:spin .8s linear infinite;"></div>`;
@@ -2200,17 +2234,15 @@ function toggleReaction(msgKey) {
   if (!currentChat) return;
   const reactEl = document.getElementById('react-' + msgKey);
   let newEmoji = '❤️';
-  if (reactEl && reactEl.style.display !== 'none' && reactEl.textContent.trim() === '❤️') {
-    newEmoji = null;
-  }
+  
   // تحديث الشاشة فوراً بدون انتظار السيرفر
   if (reactEl) {
-    reactEl.style.display = newEmoji ? 'flex' : 'none';
-    reactEl.textContent = newEmoji || '';
+    reactEl.style.display = 'flex';
+    reactEl.textContent = newEmoji;
     // 🚀 تشغيل الحركة فقط لحظة التفاعل لمنع الرفة عند فتح المحادثة
     reactEl.classList.remove('animate-pop');
     void reactEl.offsetWidth; 
-    if (newEmoji) reactEl.classList.add('animate-pop');
+    reactEl.classList.add('animate-pop');
   }
   db.ref('chats/' + currentChat.chatId + '/messages/' + msgKey).update({ reaction: newEmoji });
 }
@@ -3017,9 +3049,27 @@ function pauseResumeRecording() {
   }
 }
 
-/* ═══════════════════════════════════
-   VOICE PLAYBACK & PROGRESS
-═══════════════════════════════════ */
+// 🚀 محرك التحميل المسبق الذكي لدعم التقديم في الأندرويد (Blob Engine)
+window.preloadVoiceSilent = function(url) {
+  if (!url) return;
+  let optimizedUrl = url.includes('cloudinary.com') ? url.replace(/upload\/.*?v\d+\//, 'upload/') : url;
+  if (window.voiceBlobCache && window.voiceBlobCache[optimizedUrl]) return; 
+
+  // سحب الملف وتحويله لـ Blob بالخلفية لضمان عمل التقديم والتأخير فوراً
+  fetch(optimizedUrl, { mode: 'cors' })
+    .then(res => res.blob())
+    .then(blob => {
+      const blobUrl = URL.createObjectURL(blob);
+      window.voiceBlobCache[optimizedUrl] = blobUrl;
+      // تنظيف الذاكرة لمنع امتلاء الرام
+      const memKeys = Object.keys(window.voiceBlobCache);
+      if (memKeys.length > 30) {
+          URL.revokeObjectURL(window.voiceBlobCache[memKeys[0]]);
+          delete window.voiceBlobCache[memKeys[0]];
+      }
+    }).catch(() => {});
+};
+
 // 🚀 استبدال currentAudioUrl بـ currentAudioMsgKey لضمان عدم تداخل الملفات المكررة
 var currentAudio = null, currentAudioMsgKey = null, audioUpdateInterval = null;
 var globalVoiceSpeed = 1;
@@ -3272,38 +3322,17 @@ function playVoice(btn, url, msgKey, isOut) {
       };
   };
 
-  // 🚀 تشغيل ذكي وغير خانق (Non-Blocking Promise)
-  if (window.voiceBlobCache[optimizedUrl]) {
+  // 🚀 المحرك الذكي المزدوج (التشغيل الفوري + التقديم للأندرويد)
+  if (window.voiceBlobCache && window.voiceBlobCache[optimizedUrl]) {
+      // إذا المحرك الصامت جهّزه بالخلفية كـ Blob، بيشتغل بصفر ثانية وبيدعم التقديم!
       executePlay(window.voiceBlobCache[optimizedUrl]);
   } else {
-      if ('caches' in window) {
-          caches.open('media-cache').then(cache => {
-              cache.match(optimizedUrl).then(res => {
-                  if (res) return res.blob();
-                  return fetch(optimizedUrl, { mode: 'cors' }).then(networkRes => {
-                      if (networkRes.ok) {
-                          cache.put(optimizedUrl, networkRes.clone()).then(() => {
-                              cache.keys().then(keys => {
-                                  if (keys.length > 20) cache.delete(keys[0]);
-                              }).catch(()=>{});
-                          }).catch(()=>{});
-                      }
-                      return networkRes.blob();
-                  });
-              }).then(blob => {
-                  const blobUrl = URL.createObjectURL(blob);
-                  window.voiceBlobCache[optimizedUrl] = blobUrl;
-                  const memKeys = Object.keys(window.voiceBlobCache);
-                  if (memKeys.length > 15) {
-                      URL.revokeObjectURL(window.voiceBlobCache[memKeys[0]]);
-                      delete window.voiceBlobCache[memKeys[0]];
-                  }
-                  executePlay(blobUrl);
-              }).catch(() => executePlay(optimizedUrl));
-          }).catch(() => executePlay(optimizedUrl));
-      } else {
-          executePlay(optimizedUrl);
-      }
+      // إذا ضغطت تشغيل بسرعة قبل ما يلحق يجهزه بالخلفية، منسحبه كـ Blob لضمان التقديم
+      fetch(optimizedUrl, { mode: 'cors' }).then(res => res.blob()).then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          window.voiceBlobCache[optimizedUrl] = blobUrl;
+          executePlay(blobUrl);
+      }).catch(() => executePlay(optimizedUrl));
   }
 }
 
@@ -4506,7 +4535,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=50');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=51');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
