@@ -415,7 +415,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=51');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=52');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -2087,8 +2087,8 @@ async function syncPendingMessages() {
         try {
             const res = await fetch(p.msg.url);
             const blob = await res.blob();
-            const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-            const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+            const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
+            const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
             const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
             
             const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, {
@@ -2390,8 +2390,8 @@ function confirmDeleteMsg(msgKey) {
           if (msg.url.includes('supabase.co')) {
             // حذف من Supabase
             const fileName = msg.url.split('/').pop();
-            const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-            const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+            const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
+            const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
             fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
               method: 'DELETE',
               headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY }
@@ -2659,8 +2659,8 @@ async function uploadMediaWithUI(file, type, extraData = null) {
         }
 
         const xhr = new XMLHttpRequest();
-        const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-        const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+        const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
+        const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
         
         if (type === 'image') {
           const cleanName = `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin`; 
@@ -2905,8 +2905,8 @@ async function toggleRecording(isSinging = false) {
       await new Promise(r => setTimeout(r, 50));
       
       const tryUploadVoice = () => {
-          const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-          const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+          const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
+          const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
           const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
 
           const xhr = new XMLHttpRequest();
@@ -3905,8 +3905,8 @@ async function deleteExpiredMedia(chatId, msg) {
   // 2. الهجوم على السيرفر الفيزيائي أولاً (Supabase) وتدمير الملف
   if (fileUrl && fileUrl.includes('supabase.co')) {
       const fileName = fileUrl.split('/').pop();
-      const SUPA_URL = 'https://boksjjglizmzmqoxzmhy.supabase.co';
-      const SUPA_KEY = 'sb_publishable_Vil5AiRd1aZ6GwiHZUaNmg_N8I47i1y';
+      const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
+      const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
       
       try {
           await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
@@ -4535,7 +4535,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=51');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=52');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
