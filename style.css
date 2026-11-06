@@ -2,33 +2,33 @@
    CSS VARIABLES & RESET
 ═══════════════════════════════════════════════ */
 :root {
-  --bg-void: #020408;
-  --bg-deep: #050b12;
-  --bg-surface: #0a1628;
-  --bg-glass: rgba(10, 22, 40, 0.6);
-  --bg-glass2: rgba(0, 240, 255, 0.04);
+  --bg-void: #020307;
+  --bg-deep: #04070e;
+  --bg-surface: #050811;
+  --bg-glass: rgba(5, 9, 18, 0.94);
+  --bg-glass2: rgba(0, 240, 255, 0.05);
   --neon-cyan: #00f0ff;
-  --neon-blue: #0080ff;
+  --neon-blue: #0088ff;
   --neon-purple: #a020f0;
-  --neon-pink: #ff0090;
+  --neon-pink: #ff007f;
   --neon-green: #00ff88;
-  --text-primary: #e8f4ff;
-  --text-secondary: #7aa3c8;
-  --text-muted: #3d6080;
-  --border-glow: rgba(0, 240, 255, 0.25);
-  --border-subtle: rgba(0, 240, 255, 0.08);
-  --shadow-neon: 0 0 20px rgba(0, 240, 255, 0.3), 0 0 60px rgba(0, 240, 255, 0.1);
-  --shadow-purple: 0 0 20px rgba(160, 32, 240, 0.4);
-  --shadow-pink: 0 0 20px rgba(255, 0, 144, 0.4);
+  --text-primary: #f0f6fc;
+  --text-secondary: #8fa8c0;
+  --text-muted: #5e768e;
+  --border-glow: rgba(0, 240, 255, 0.27);
+  --border-subtle: rgba(0, 240, 255, 0.14);
+  --shadow-neon: 0 0 20px rgba(0, 240, 255, 0.28), 0 0 50px rgba(0, 240, 255, 0.08);
+  --shadow-purple: 0 0 20px rgba(160, 32, 240, 0.35);
+  --shadow-pink: 0 0 20px rgba(255, 0, 127, 0.35);
   --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-  --radius-xl: 32px;
+  --radius-md: 15px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
   --font-ar: 'Cairo', sans-serif;
   --font-en: 'Orbitron', monospace;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --header-h: 64px;
-  --input-h: 68px;
+  --header-h: 60px;
+  --input-h: 64px;
 }
 
 *,
@@ -1676,44 +1676,51 @@ body {
    PREMIUM DARK CHAT UI - وضع ليلي احترافي وفخم
 ═══════════════════════════════════ */
 
-/* 1. خلفية المحادثة: لون ليلي عميق جداً أهدأ من الكحلي وأفخم (بدون نجوم) */
+/* 1. خلفية المحادثة: أسود ملكي متدرج بلمسات نيون خفيفة ونقاط دقيقة */
 #screen-chat {
-  background-color: rgba(7, 13, 20, 0.85) !important;
-  background-image: radial-gradient(rgba(0, 240, 255, 0.06) 2.5px, transparent 2.5px) !important;
-  background-size: 24px 24px !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
+  background-color: #020307 !important;
+  background-image:
+    radial-gradient(circle at 88% 15%, rgba(0, 240, 255, 0.06) 0%, transparent 45%),
+    radial-gradient(circle at 12% 85%, rgba(160, 32, 240, 0.06) 0%, transparent 45%),
+    radial-gradient(rgba(0, 240, 255, 0.06) 1.2px, transparent 1.2px) !important;
+  background-size: 100% 100%, 100% 100%, 24px 24px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
-/* 2. رسائلك (اليمين): لون تركواز/أزرق مخضر داكن (مثل تيليجرام وتساب الدارك) */
+/* 2. رسائلك (اليمين): تدرج سيان ملكي داكن مطابق لتطبيق الأندرويد */
 .msg-row.out .msg-bubble {
-  background: #0d3b44 !important; 
-  border: 1px solid #155865 !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+  background: linear-gradient(135deg, #103e4a 0%, #0b2d38 50%, #071e26 100%) !important;
+  border: 1px solid rgba(0, 240, 255, 0.27) !important;
+  border-radius: 15px !important;
+  border-bottom-right-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
   text-shadow: none !important;
-  color: #eaf6f8 !important;
+  color: #f0f8ff !important;
 }
 
-/* 3. رسائل الصديق (اليسار): رمادي مزرق ليلي أنيق */
+/* 3. رسائل الصديق (اليسار): تدرج أوبسيديان داكن فخم */
 .msg-row.in .msg-bubble {
-  background: #1a222c !important; 
-  border: 1px solid #283443 !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important;
+  background: linear-gradient(135deg, #161e29 0%, #10161f 50%, #0b0f16 100%) !important;
+  border: 1px solid rgba(52, 70, 90, 0.45) !important;
+  border-radius: 15px !important;
+  border-bottom-left-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
   text-shadow: none !important;
-  color: #e2e8f0 !important;
+  color: #edf4fc !important;
 }
 
 /* 4. تجميل صندوق الرد (Reply) ليتناسب مع الألوان الداكنة */
 .msg-bubble .reply-badge + div {
-  background: rgba(0, 0, 0, 0.25) !important;
+  background: rgba(2, 3, 7, 0.45) !important;
   border-right: 3px solid #00f0ff !important;
   text-shadow: none !important;
-  color: #a0aec0 !important;
+  color: #d0e2f2 !important;
 }
 
 /* 5. تبهيت لون الوقت أسفل الرسالة ليكون هادئاً ومقروءاً */
 .msg-bubble .msg-time {
-  color: rgba(255, 255, 255, 0.5) !important;
+  color: #8ca8c0 !important;
   text-shadow: none !important;
 }
 

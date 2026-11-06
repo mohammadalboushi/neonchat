@@ -6,7 +6,7 @@
   <title>نيون شات — NeonChat</title>
   
   <meta name="description" content="تطبيق دردشة عصري">
-  <meta name="theme-color" content="#020408">
+  <meta name="theme-color" content="#020307">
   <script>
     const manifestLink = document.createElement('link');
     manifestLink.rel = 'manifest';
@@ -30,7 +30,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
 
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=53">
 </head>
 
 <body>
@@ -382,20 +382,20 @@
                         <div class="input-bar" id="main-input-bar">
             <!-- واجهة التسجيل المخفية (تظهر وقت التسجيل) -->
             <div id="record-ui" style="display:none; width:100%; align-items:center; justify-content:space-between; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:24px; padding:6px 12px; margin-left: 8px;">
-              <button class="btn-icon" style="width:40px; height:40px; background:rgba(255,0,144,0.1); color:var(--neon-pink); border:none; border-radius:50%; margin-left:8px;" onclick="cancelVoiceRecord()">
+              <button class="btn-icon" style="width:40px; height:40px; background:rgba(255,0,144,0.1) !important; color:var(--neon-pink) !important; border:none !important; border-radius:50% !important; margin-left:8px;" onclick="cancelVoiceRecord()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
               </button>
               
               <div style="display:flex; align-items:center; gap:12px;">
                 <!-- زر الإيقاف المؤقت والاستئناف -->
-                <button class="btn-icon" id="btn-pause-resume" style="width:34px; height:34px; background:rgba(0, 240, 255, 0.1); color:var(--neon-cyan); border:none; border-radius:50%;" onclick="pauseResumeRecording()">
+                <button class="btn-icon" id="btn-pause-resume" style="width:34px; height:34px; background:rgba(0, 240, 255, 0.1) !important; color:var(--neon-cyan) !important; border:none !important; border-radius:50% !important;" onclick="pauseResumeRecording()">
                   <svg viewBox="0 0 24 24" fill="currentColor" style="width:16px; height:16px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
                 </button>
                 <div id="rec-pulse-dot" style="width:10px; height:10px; border-radius:50%; background:var(--neon-pink); animation:pulse-record 1s infinite;"></div>
                 <span id="rec-timer-text" style="font-family:var(--font-en); font-size:15px; font-weight:bold; color:var(--text-primary);">0:00</span>
               </div>
 
-              <button class="btn-icon" style="width:40px; height:40px; background:var(--neon-green); color:var(--bg-void); border:none; border-radius:50%; margin-right:8px;" onclick="stopRecording()">
+              <button class="btn-icon" style="width:40px; height:40px; background:var(--neon-green) !important; color:var(--bg-void) !important; border:none !important; border-radius:50% !important; margin-right:8px;" onclick="stopRecording()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
               </button>
             </div>
@@ -616,12 +616,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=52"></script>
+  </div> <script src="script.js?v=53"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=52')
+        navigator.serviceWorker.register('sw.js?v=53')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });
