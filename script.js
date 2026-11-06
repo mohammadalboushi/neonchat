@@ -76,18 +76,29 @@ perfStyle.innerHTML = `
   .msg-row.out .msg-bubble {
     background: linear-gradient(135deg, #103e4a 0%, #0b2d38 50%, #071e26 100%) !important;
     border: 1px solid rgba(0, 240, 255, 0.27) !important;
-    border-radius: 15px !important;
+    border-radius: 12px !important;
     border-bottom-right-radius: 4px !important;
-    color: #f0f8ff !important;
+    color: #ffffff !important;
+    font-size: 11.8px !important;
+    font-weight: 500 !important;
+    padding: 4px 9px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
   }
   .msg-row.in .msg-bubble {
     background: linear-gradient(135deg, #161e29 0%, #10161f 50%, #0b0f16 100%) !important;
     border: 1px solid rgba(52, 70, 90, 0.45) !important;
-    border-radius: 15px !important;
+    border-radius: 12px !important;
     border-bottom-left-radius: 4px !important;
-    color: #edf4fc !important;
+    color: #ffffff !important;
+    font-size: 11.8px !important;
+    font-weight: 500 !important;
+    padding: 4px 9px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
+  }
+  .msg-bubble.msg-bubble-link {
+    max-width: 232px !important;
+    width: 232px !important;
+    padding: 5px 6px !important;
   }
 `;
 document.head.appendChild(perfStyle);
@@ -587,7 +598,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=53');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=54');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1966,12 +1977,13 @@ function buildMsgEl(msg, isBackground = false) {
     
     let previewHtml = '';
     if (extractedUrl) {
+      bubble.classList.add('msg-bubble-link');
       const previewId = 'link-prev-' + msg.key;
       previewHtml = `<div id="${previewId}" class="link-preview-container"><div class="link-preview-loader">جاري جلب التفاصيل... ⏳</div></div>`;
       setTimeout(() => buildLinkPreviewUI(extractedUrl, previewId), 50);
     }
 
-    bubble.innerHTML = `${replyHtml}<div>${safeText}</div>${previewHtml}${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}${previewHtml}<div style="margin-top: ${extractedUrl ? '2px' : '0'}; padding: ${extractedUrl ? '0 3px' : '0'}; font-size: ${extractedUrl ? '11.5px' : 'inherit'};">${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
     const imgId = 'img_' + msg.key;
     const isEncrypted = msg.url.includes('enc_img_') || msg.url.endsWith('.bin');
@@ -4707,7 +4719,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=53');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=54');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
@@ -5102,7 +5114,7 @@ async function clearAppCache() {
    LINK PREVIEW ENGINE
 ═══════════════════════════════════ */
 // تحميل الكاش من الذاكرة لتسريع عرض الروابط المكررة
-window.linkPreviewCache = JSON.parse(localStorage.getItem('neon_link_previews') || '{}');
+window.linkPreviewCache = JSON.parse(localStorage.getItem('neon_link_previews_v2') || '{}');
 
 async function buildLinkPreviewUI(url, containerId) {
   const container = document.getElementById(containerId);
@@ -5143,6 +5155,7 @@ async function buildLinkPreviewUI(url, containerId) {
       const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
       
       if (ytMatch && ytMatch[1]) {
+        const ytDomain = new URL(url).hostname.replace(/^www\./, '');
         // جلب عنوان يوتيوب الحقيقي باستخدام oEmbed الرسمي المجاني
         try {
           const ytRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
@@ -5150,9 +5163,9 @@ async function buildLinkPreviewUI(url, containerId) {
             const ytJson = await ytRes.json();
             data = {
               title: ytJson.title,
-              desc: ytJson.author_name, // اسم القناة
+              desc: `${ytJson.title} - ${ytJson.author_name}`,
               image: ytJson.thumbnail_url || `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`,
-              domain: 'youtube.com'
+              domain: ytDomain
             };
           } else {
             throw new Error('yt fallback');
@@ -5162,7 +5175,7 @@ async function buildLinkPreviewUI(url, containerId) {
             title: 'فيديو يوتيوب',
             desc: url,
             image: `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`,
-            domain: 'youtube.com'
+            domain: ytDomain
           };
         }
       } else {
@@ -5227,7 +5240,7 @@ async function buildLinkPreviewUI(url, containerId) {
         if (keys.length > 50) {
           delete window.linkPreviewCache[keys[0]];
         }
-        localStorage.setItem('neon_link_previews', JSON.stringify(window.linkPreviewCache));
+        localStorage.setItem('neon_link_previews_v2', JSON.stringify(window.linkPreviewCache));
       }
     }
 
@@ -5235,9 +5248,9 @@ async function buildLinkPreviewUI(url, containerId) {
     container.innerHTML = `
       ${imgHtml}
       <div class="link-preview-info">
+        <div class="link-preview-domain">${escHtml(data.domain)}</div>
         <div class="link-preview-title">${escHtml(data.title)}</div>
         ${data.desc ? `<div class="link-preview-desc">${escHtml(data.desc)}</div>` : ''}
-        <div class="link-preview-domain">${escHtml(data.domain)}</div>
       </div>
     `;
   } catch (err) {
