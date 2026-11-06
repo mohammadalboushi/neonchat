@@ -3,23 +3,92 @@
 ═══════════════════════════════════ */
 const perfStyle = document.createElement('style');
 perfStyle.innerHTML = `
+  :root {
+    --bg-void: #020307 !important;
+    --bg-deep: #04070e !important;
+    --bg-surface: #050811 !important;
+    --bg-glass: rgba(5, 9, 18, 0.94) !important;
+    --bg-glass2: rgba(0, 240, 255, 0.05) !important;
+    --neon-cyan: #00f0ff !important;
+    --neon-blue: #0088ff !important;
+    --neon-purple: #a020f0 !important;
+    --neon-pink: #ff007f !important;
+    --neon-green: #00ff88 !important;
+    --text-primary: #f0f6fc !important;
+    --text-secondary: #8fa8c0 !important;
+    --text-muted: #5e768e !important;
+    --border-glow: rgba(0, 240, 255, 0.27) !important;
+    --border-subtle: rgba(0, 240, 255, 0.14) !important;
+  }
   * { -webkit-tap-highlight-color: transparent; outline: none; }
+  html, body, #app, #screen-home, #loader-screen { background-color: #020307 !important; }
   .msg-menu, .modal, #video-preview-overlay { transform: translateZ(0); will-change: transform, opacity; }
   .msg-bubble, .glass-card, .search-result-card { will-change: auto !important; transform: none !important; perspective: none !important; -webkit-perspective: none !important; contain: layout style; }
-  #screen-chat { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-  .messages-area { contain: content; scroll-behavior: auto !important; }
-  .input-bar { contain: layout style; }
-  .msg-input { transform: translateZ(0); will-change: contents; } /* 🚀 السر الأول: عزل حقل الكتابة بكرت الشاشة */
+  #screen-chat {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: #020307 !important;
+    background-image:
+      radial-gradient(circle at 88% 15%, rgba(0, 240, 255, 0.06) 0%, transparent 45%),
+      radial-gradient(circle at 12% 85%, rgba(160, 32, 240, 0.06) 0%, transparent 45%),
+      radial-gradient(rgba(0, 240, 255, 0.06) 1.2px, transparent 1.2px) !important;
+    background-size: 100% 100%, 100% 100%, 24px 24px !important;
+  }
+  .app-header {
+    background: linear-gradient(90deg, #03050b 0%, #070e1a 50%, #03050b 100%) !important;
+    border-bottom: 1px solid rgba(0, 240, 255, 0.18) !important;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.7) !important;
+  }
+  .btn-icon {
+    background: linear-gradient(135deg, #0a1322, #050911) !important;
+    border: 1px solid rgba(0, 240, 255, 0.18) !important;
+    border-radius: 11px !important;
+  }
+  .chat-item {
+    background: linear-gradient(135deg, #070c17, #04070e) !important;
+    border: 1px solid rgba(0, 240, 255, 0.14) !important;
+    border-radius: 14px !important;
+    margin-bottom: 8px !important;
+  }
+  .messages-area { contain: content; scroll-behavior: auto !important; gap: 5px !important; }
+  .input-bar { contain: layout style; background: #020307 !important; }
+  .msg-input-pill {
+    background: linear-gradient(90deg, #060b14, #08101e, #050912) !important;
+    border: 1px solid rgba(0, 240, 255, 0.2) !important;
+  }
+  .msg-input { transform: translateZ(0); will-change: contents; }
   .msg-row { contain: layout style; }
   .voice-waveform { -webkit-user-select: none; user-select: none; touch-action: none; -webkit-touch-callout: none; pointer-events: auto; }
   .voice-msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; pointer-events: auto; }
   .voice-progress-fill { will-change: transform; }
-  /* تخفيف الظلال المكلفة للـ GPU في الموبايل */
-  .msg-menu { box-shadow: 0 10px 30px rgba(0,0,0,0.5) !important; }
-  .glass-card { box-shadow: 0 5px 20px rgba(0,0,0,0.3) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: rgba(10, 22, 40, 0.98) !important; }
-  /* 🚀 ألوان مريحة للعين وأنيقة جداً للبطاقات وتتجاوز الكاش تماماً */
-  .msg-row.out .msg-bubble { background: #103b66 !important; border: 1px solid #1c558e !important; border-bottom-right-radius: 6px !important; color: #eaf6f8 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
-  .msg-row.in .msg-bubble { background: #1a222c !important; border: 1px solid #283443 !important; border-bottom-left-radius: 6px !important; color: #e2e8f0 !important; box-shadow: 0 1px 2px rgba(0,0,0,0.3) !important; }
+  .msg-menu, .modal {
+    background: linear-gradient(135deg, #04070e 0%, #070e1c 50%, #020307 100%) !important;
+    border: 1.2px solid rgba(0, 240, 255, 0.24) !important;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.85) !important;
+  }
+  .glass-card, .search-result-card {
+    background: linear-gradient(135deg, #060b15 0%, #091222 50%, #03050b 100%) !important;
+    border: 1.2px solid rgba(0, 240, 255, 0.25) !important;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.75) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .msg-row.out .msg-bubble {
+    background: linear-gradient(135deg, #103e4a 0%, #0b2d38 50%, #071e26 100%) !important;
+    border: 1px solid rgba(0, 240, 255, 0.27) !important;
+    border-radius: 15px !important;
+    border-bottom-right-radius: 4px !important;
+    color: #f0f8ff !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
+  }
+  .msg-row.in .msg-bubble {
+    background: linear-gradient(135deg, #161e29 0%, #10161f 50%, #0b0f16 100%) !important;
+    border: 1px solid rgba(52, 70, 90, 0.45) !important;
+    border-radius: 15px !important;
+    border-bottom-left-radius: 4px !important;
+    color: #edf4fc !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
+  }
 `;
 document.head.appendChild(perfStyle);
 
@@ -63,6 +132,109 @@ const auth = firebase.auth();
 const db = firebase.database();
 const messaging = firebase.messaging();
 
+// ═══════════════════════════════════
+// DYNAMIC REMOTE CONFIG (Supabase & Cloudinary via Firebase appConfig)
+// ═══════════════════════════════════
+const DEFAULT_SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
+const DEFAULT_SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
+const DEFAULT_SUPA_BUCKET = 'chat-media';
+const DEFAULT_CLOUD_NAME = 'sggwmi1c';
+const DEFAULT_CLOUD_PRESET = 'omarhweh1';
+
+window.SUPA_URL = localStorage.getItem('cfg_supa_url') || DEFAULT_SUPA_URL;
+window.SUPA_KEY = localStorage.getItem('cfg_supa_key') || DEFAULT_SUPA_KEY;
+window.CURRENT_BUCKET = localStorage.getItem('cfg_supa_bucket') || DEFAULT_SUPA_BUCKET;
+window.CLOUDINARY_CLOUD_NAME = localStorage.getItem('cfg_cloud_name') || DEFAULT_CLOUD_NAME;
+window.CLOUDINARY_PRESET = localStorage.getItem('cfg_cloud_preset') || DEFAULT_CLOUD_PRESET;
+
+db.ref("appConfig").on("value", (snapshot) => {
+  const config = snapshot.val();
+  if (config) {
+    if (config.supabaseUrl && config.supabaseKey) {
+      window.SUPA_URL = config.supabaseUrl.replace(/\/+$/, '');
+      window.SUPA_KEY = config.supabaseKey.trim();
+      window.CURRENT_BUCKET = (config.supabaseBucket || DEFAULT_SUPA_BUCKET).trim();
+      localStorage.setItem('cfg_supa_url', window.SUPA_URL);
+      localStorage.setItem('cfg_supa_key', window.SUPA_KEY);
+      localStorage.setItem('cfg_supa_bucket', window.CURRENT_BUCKET);
+    }
+    if (config.cloudinaryCloudName && config.cloudinaryPreset) {
+      window.CLOUDINARY_CLOUD_NAME = config.cloudinaryCloudName.trim();
+      window.CLOUDINARY_PRESET = config.cloudinaryPreset.trim();
+      localStorage.setItem('cfg_cloud_name', window.CLOUDINARY_CLOUD_NAME);
+      localStorage.setItem('cfg_cloud_preset', window.CLOUDINARY_PRESET);
+    }
+  } else {
+    db.ref("appConfig").update({
+      supabaseUrl: DEFAULT_SUPA_URL,
+      supabaseKey: DEFAULT_SUPA_KEY,
+      supabaseBucket: DEFAULT_SUPA_BUCKET,
+      cloudinaryCloudName: DEFAULT_CLOUD_NAME,
+      cloudinaryPreset: DEFAULT_CLOUD_PRESET
+    }).catch(() => {});
+  }
+});
+
+function rewriteDynamicStorageUrl(url) {
+  if (typeof url !== 'string') return url;
+  if (url.includes(DEFAULT_SUPA_URL) && url.includes('/storage/v1/object/') && !url.includes('/public/')) {
+    return url
+      .replace(DEFAULT_SUPA_URL, window.SUPA_URL)
+      .replace('/object/' + DEFAULT_SUPA_BUCKET + '/', '/object/' + window.CURRENT_BUCKET + '/');
+  }
+  if (url.includes('api.cloudinary.com/v1_1/' + DEFAULT_CLOUD_NAME + '/')) {
+    return url.replace('/v1_1/' + DEFAULT_CLOUD_NAME + '/', '/v1_1/' + window.CLOUDINARY_CLOUD_NAME + '/');
+  }
+  return url;
+}
+
+const _origXhrOpen = XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+  const newUrl = (String(method).toUpperCase() === 'POST' || String(method).toUpperCase() === 'DELETE') ? rewriteDynamicStorageUrl(url) : url;
+  return _origXhrOpen.call(this, method, newUrl, ...rest);
+};
+
+const _origXhrHeader = XMLHttpRequest.prototype.setRequestHeader;
+XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+  if (typeof value === 'string' && value.includes(DEFAULT_SUPA_KEY)) {
+    value = value.replace(DEFAULT_SUPA_KEY, window.SUPA_KEY);
+  }
+  return _origXhrHeader.call(this, name, value);
+};
+
+const _origFormDataAppend = FormData.prototype.append;
+FormData.prototype.append = function(name, value, ...rest) {
+  if (name === 'upload_preset' && value === DEFAULT_CLOUD_PRESET) {
+    value = window.CLOUDINARY_PRESET;
+  }
+  return _origFormDataAppend.call(this, name, value, ...rest);
+};
+
+const _origFetch = window.fetch;
+window.fetch = function(input, init) {
+  if (typeof input === 'string' && init && (init.method === 'POST' || init.method === 'DELETE')) {
+    input = rewriteDynamicStorageUrl(input);
+    if (init.headers) {
+      if (init.headers.Authorization && init.headers.Authorization.includes(DEFAULT_SUPA_KEY)) {
+        init.headers.Authorization = init.headers.Authorization.replace(DEFAULT_SUPA_KEY, window.SUPA_KEY);
+      }
+      if (init.headers.apikey === DEFAULT_SUPA_KEY) {
+        init.headers.apikey = window.SUPA_KEY;
+      }
+    }
+  }
+  return _origFetch.call(this, input, init);
+};
+
+const _origRefSet = firebase.database.Reference.prototype.set;
+firebase.database.Reference.prototype.set = function(val, onComplete) {
+  if (val && typeof val === 'object' && typeof val.url === 'string' && val.url.includes(DEFAULT_SUPA_URL + '/storage/v1/object/public/')) {
+    val.url = val.url
+      .replace(DEFAULT_SUPA_URL, window.SUPA_URL)
+      .replace('/public/' + DEFAULT_SUPA_BUCKET + '/', '/public/' + window.CURRENT_BUCKET + '/');
+  }
+  return _origRefSet.call(this, val, onComplete);
+};
 // 🚀 تم إزالة نظام مزامنة السيرفر الوهمي والعودة للاعتماد على توقيت الجهاز (Date.now) لضمان دقة الترتيب
 function getTrueTime() {
   return Date.now();
@@ -415,7 +587,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=52');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=53');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -4535,7 +4707,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=52');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=53');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
