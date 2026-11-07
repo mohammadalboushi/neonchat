@@ -702,13 +702,13 @@ body {
 }
 
 .msg-bubble {
-  max-width: 74%;
-  min-width: 56px;
-  padding: 4px 9px;
-  border-radius: 12px;
-  font-size: 11.8px;
+  max-width: 78%;
+  min-width: 60px;
+  padding: 7px 12px;
+  border-radius: 13px;
+  font-size: 16.2px;
   font-weight: 500;
-  line-height: 1.35;
+  line-height: 1.4;
   color: #ffffff;
   position: relative;
   overflow-wrap: anywhere;
@@ -747,9 +747,9 @@ body {
 }
 
 .msg-time {
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
   text-align: left;
   display: flex;
   align-items: center;
@@ -1510,7 +1510,7 @@ body {
   }
 
   .msg-bubble {
-    max-width: 75%;
+    max-width: 81%;
   }
 }
 
@@ -1899,9 +1899,9 @@ video::-webkit-media-controls-start-playback-button,
    LINK PREVIEWS
 ═══════════════════════════════════════════════ */
 .msg-bubble.msg-bubble-link {
-  max-width: 232px !important;
-  width: 232px !important;
-  padding: 5px 6px !important;
+  max-width: 262px !important;
+  width: 262px !important;
+  padding: 6px 7px !important;
 }
 .link-preview-container {
   width: 100%;
@@ -1909,7 +1909,7 @@ video::-webkit-media-controls-start-playback-button,
   margin-top: 0;
   background: rgba(2, 6, 12, 0.55);
   border: 1px solid rgba(0, 240, 255, 0.12);
-  border-radius: 8px;
+  border-radius: 9px;
   overflow: hidden;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1924,42 +1924,42 @@ video::-webkit-media-controls-start-playback-button,
 }
 .link-preview-image {
   width: 100%;
-  height: 100px;
+  height: 112px;
   object-fit: cover;
   display: block;
   border-bottom: 1px solid rgba(0, 240, 255, 0.1);
 }
 .link-preview-info {
-  padding: 6px 8px;
+  padding: 7px 9px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 2.5px;
 }
 .link-preview-domain {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--neon-cyan);
   font-family: var(--font-en);
   margin-bottom: 1px;
 }
 .link-preview-title {
-  font-size: 11px;
+  font-size: 11.8px;
   font-weight: 700;
   color: #ffffff;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 .link-preview-desc {
-  font-size: 10px;
-  color: #7f97ae;
+  font-size: 10.8px;
+  color: #9bb0c1;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 .link-preview-loader {
   padding: 12px;

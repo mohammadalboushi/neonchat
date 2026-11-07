@@ -76,29 +76,29 @@ perfStyle.innerHTML = `
   .msg-row.out .msg-bubble {
     background: linear-gradient(135deg, #103e4a 0%, #0b2d38 50%, #071e26 100%) !important;
     border: 1px solid rgba(0, 240, 255, 0.27) !important;
-    border-radius: 12px !important;
+    border-radius: 13px !important;
     border-bottom-right-radius: 4px !important;
     color: #ffffff !important;
-    font-size: 11.8px !important;
+    font-size: 16.2px !important;
     font-weight: 500 !important;
-    padding: 4px 9px !important;
+    padding: 7px 12px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
   }
   .msg-row.in .msg-bubble {
     background: linear-gradient(135deg, #161e29 0%, #10161f 50%, #0b0f16 100%) !important;
     border: 1px solid rgba(52, 70, 90, 0.45) !important;
-    border-radius: 12px !important;
+    border-radius: 13px !important;
     border-bottom-left-radius: 4px !important;
     color: #ffffff !important;
-    font-size: 11.8px !important;
+    font-size: 16.2px !important;
     font-weight: 500 !important;
-    padding: 4px 9px !important;
+    padding: 7px 12px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
   }
   .msg-bubble.msg-bubble-link {
-    max-width: 232px !important;
-    width: 232px !important;
-    padding: 5px 6px !important;
+    max-width: 262px !important;
+    width: 262px !important;
+    padding: 6px 7px !important;
   }
 `;
 document.head.appendChild(perfStyle);
@@ -598,7 +598,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=54');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=55');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1983,7 +1983,7 @@ function buildMsgEl(msg, isBackground = false) {
       setTimeout(() => buildLinkPreviewUI(extractedUrl, previewId), 50);
     }
 
-    bubble.innerHTML = `${replyHtml}${previewHtml}<div style="margin-top: ${extractedUrl ? '2px' : '0'}; padding: ${extractedUrl ? '0 3px' : '0'}; font-size: ${extractedUrl ? '11.5px' : 'inherit'};">${safeText}</div>${timeEl}${reactHtml}`;
+    bubble.innerHTML = `${replyHtml}${previewHtml}<div style="margin-top: ${extractedUrl ? '4px' : '0'}; padding: ${extractedUrl ? '0 4px' : '0'}; font-size: ${extractedUrl ? '12.1px' : 'inherit'};">${safeText}</div>${timeEl}${reactHtml}`;
   } else if (msg.type === 'image') {
     const imgId = 'img_' + msg.key;
     const isEncrypted = msg.url.includes('enc_img_') || msg.url.endsWith('.bin');
@@ -2236,7 +2236,7 @@ async function sendTextMsg() {
   _isSendIconShown = false;
   
   if (isKbReallyOpen) {
-    // 🚀 الحفاظ على الكيبورد مفتوحاً بعد الإرسال بدون أي رفة
+    // ?? الحفاظ على الكيبورد مفتوحاً بعد الإرسال بدون أي رفة
     inp.focus();
   }
 
@@ -4719,7 +4719,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=54');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=55');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
