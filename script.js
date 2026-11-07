@@ -79,7 +79,7 @@ perfStyle.innerHTML = `
     border-radius: 13px !important;
     border-bottom-right-radius: 4px !important;
     color: #ffffff !important;
-    font-size: 16.2px !important;
+    font-size: 18.22px !important;
     font-weight: 500 !important;
     padding: 7px 12px !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
@@ -598,7 +598,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=55');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=56');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -2236,7 +2236,7 @@ async function sendTextMsg() {
   _isSendIconShown = false;
   
   if (isKbReallyOpen) {
-    // ?? الحفاظ على الكيبورد مفتوحاً بعد الإرسال بدون أي رفة
+    // 🚀 الحفاظ على الكيبورد مفتوحاً بعد الإرسال بدون أي رفة
     inp.focus();
   }
 
@@ -4719,7 +4719,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=55');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=56');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
