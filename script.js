@@ -526,7 +526,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=58');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=60');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1429,20 +1429,20 @@ async function openChat(chatId, friendUid, friendProfile = null) {
         db.ref('chats/' + chatId + '/messages/' + msg.key).update({ delivered: true });
     }
 
-    if ((msg.type === 'video' || msg.type === 'image') && msg.timestamp) {
-                // توقيت الحذف: 24 ساعة بالتمام والكمال للصور والفيديوهات فقط (الصوتيات ستبقى للأبد)
-                const EXPIRY_TIME = 24 * 60 * 60 * 1000; 
-                // 🚀 استخدام الوقت الحقيقي لحساب العمر ومنع التدمير الفوري
-                const age = getTrueTime() - msg.timestamp;
-                
-                if (age > EXPIRY_TIME) {
-                    deleteExpiredMedia(chatId, msg);
-                    return; 
-                } else {
-                    setTimeout(() => {
-                        deleteExpiredMedia(chatId, msg);
-                    }, EXPIRY_TIME - age);
-                }
+    if ((msg.type === 'video' || msg.type === 'image' || msg.type === 'voice' || msg.type === 'audio') && msg.timestamp && !msg.isDeleted) {
+        // توقيت الحذف: 30 يوماً (يمكنك تغييرها إلى 24 ساعة بضربها بـ 1 بدل 30)
+        const EXPIRY_TIME = 30 * 24 * 60 * 60 * 1000; 
+        const age = getTrueTime() - msg.timestamp;
+        
+        if (age > EXPIRY_TIME) {
+            deleteExpiredMedia(chatId, msg);
+            return; // تجاهل عرض الرسالة لأنها منتهية الصلاحية
+        } else {
+            // جدولة الحذف إذا كان التطبيق مفتوحاً وقت انتهاء الصلاحية
+            setTimeout(() => {
+                deleteExpiredMedia(chatId, msg);
+            }, EXPIRY_TIME - age);
+        }
     }
 
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
@@ -4045,6 +4045,7 @@ function formatVideoTime(sec_num) {
 async function deleteExpiredMedia(chatId, msg) {
   const fileUrl = msg.url;
 
+  // 1. الحذف من سيرفر Storj لضمان تفريغ الـ 25 جيجا
   if (msg.deleteToken && typeof AWS !== 'undefined') {
       AWS.config.update({
           accessKeyId: window.STORJ_ACCESS,
@@ -4059,10 +4060,25 @@ async function deleteExpiredMedia(chatId, msg) {
       });
   }
 
-  await db.ref(`chats/${chatId}/messages/${msg.key}`).remove();
+  // 2. تغيير حالة الرسالة في فايربيس إلى "محذوفة" بدلاً من إزالتها كلياً لتجنب الأخطاء
+  await db.ref(`chats/${chatId}/messages/${msg.key}`).update({
+      isDeleted: true,
+      text: null,
+      url: null,
+      type: 'deleted'
+  });
   
+  // 3. مسح الكاش من المتصفح
   if ('caches' in window && fileUrl) {
       caches.open('media-cache').then(cache => cache.delete(fileUrl));
+  }
+  
+  // 4. إزالة الصورة/الصوت من الواجهة فوراً إذا كانت معروضة
+  const bubbleEl = document.getElementById('msg-' + msg.key);
+  if (bubbleEl) {
+      bubbleEl.style.background = 'transparent';
+      bubbleEl.style.border = '1px solid var(--border-subtle)';
+      bubbleEl.innerHTML = '<div style="color:var(--text-muted);font-style:italic;font-size:12px;">🚫 انتهت صلاحية الوسائط وتم حذفها</div>';
   }
 }
 /* ═══════════════════════════════════
@@ -4667,7 +4683,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=58');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=60');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
