@@ -526,7 +526,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=60');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=61');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1429,7 +1429,7 @@ async function openChat(chatId, friendUid, friendProfile = null) {
         db.ref('chats/' + chatId + '/messages/' + msg.key).update({ delivered: true });
     }
 
-    if ((msg.type === 'video' || msg.type === 'image' || msg.type === 'voice' || msg.type === 'audio') && msg.timestamp && !msg.isDeleted) {
+        if ((msg.type === 'video' || msg.type === 'image' || msg.type === 'voice' || msg.type === 'audio') && msg.timestamp && !msg.isDeleted) {
         // توقيت الحذف: 30 يوماً (يمكنك تغييرها إلى 24 ساعة بضربها بـ 1 بدل 30)
         const EXPIRY_TIME = 30 * 24 * 60 * 60 * 1000; 
         const age = getTrueTime() - msg.timestamp;
@@ -1438,13 +1438,15 @@ async function openChat(chatId, friendUid, friendProfile = null) {
             deleteExpiredMedia(chatId, msg);
             return; // تجاهل عرض الرسالة لأنها منتهية الصلاحية
         } else {
-            // جدولة الحذف إذا كان التطبيق مفتوحاً وقت انتهاء الصلاحية
-            setTimeout(() => {
-                deleteExpiredMedia(chatId, msg);
-            }, EXPIRY_TIME - age);
+            // حماية setTimeout من الطفح الرقمي (أقصى حد في الجافاسكريبت هو 2147483647 أي 24.8 يوم)
+            const remainingTime = EXPIRY_TIME - age;
+            if (remainingTime <= 2147483647) {
+                setTimeout(() => {
+                    deleteExpiredMedia(chatId, msg);
+                }, remainingTime);
+            }
         }
     }
-
     const existsInCache = liveMsgsCache.some(m => m.key === msg.key);
     if (!existsInCache) {
       liveMsgsCache.push(msg);
@@ -4683,7 +4685,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=60');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=61');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
