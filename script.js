@@ -146,106 +146,34 @@ const messaging = firebase.messaging();
 // ═══════════════════════════════════
 // DYNAMIC REMOTE CONFIG (Supabase & Cloudinary via Firebase appConfig)
 // ═══════════════════════════════════
-const DEFAULT_SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
-const DEFAULT_SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
-const DEFAULT_SUPA_BUCKET = 'chat-media';
-const DEFAULT_CLOUD_NAME = 'sggwmi1c';
-const DEFAULT_CLOUD_PRESET = 'omarhweh1';
+// إعدادات Storj الافتراضية والديناميكية فقط
+const DEFAULT_STORJ_ACCESS = 'Jxm6gejf4emtc3eemfk37z7c4xcq';
+const DEFAULT_STORJ_SECRET = 'j2lkt2dz4yq73txid733gonae5tzvxsajd3zt24lbsdseiyxk5oxy';
+const DEFAULT_STORJ_BUCKET = 'neonchat';
 
-window.SUPA_URL = localStorage.getItem('cfg_supa_url') || DEFAULT_SUPA_URL;
-window.SUPA_KEY = localStorage.getItem('cfg_supa_key') || DEFAULT_SUPA_KEY;
-window.CURRENT_BUCKET = localStorage.getItem('cfg_supa_bucket') || DEFAULT_SUPA_BUCKET;
-window.CLOUDINARY_CLOUD_NAME = localStorage.getItem('cfg_cloud_name') || DEFAULT_CLOUD_NAME;
-window.CLOUDINARY_PRESET = localStorage.getItem('cfg_cloud_preset') || DEFAULT_CLOUD_PRESET;
+window.STORJ_ACCESS = localStorage.getItem('cfg_storj_access') || DEFAULT_STORJ_ACCESS;
+window.STORJ_SECRET = localStorage.getItem('cfg_storj_secret') || DEFAULT_STORJ_SECRET;
+window.STORJ_BUCKET = localStorage.getItem('cfg_storj_bucket') || DEFAULT_STORJ_BUCKET;
 
 db.ref("appConfig").on("value", (snapshot) => {
   const config = snapshot.val();
   if (config) {
-    if (config.supabaseUrl && config.supabaseKey) {
-      window.SUPA_URL = config.supabaseUrl.replace(/\/+$/, '');
-      window.SUPA_KEY = config.supabaseKey.trim();
-      window.CURRENT_BUCKET = (config.supabaseBucket || DEFAULT_SUPA_BUCKET).trim();
-      localStorage.setItem('cfg_supa_url', window.SUPA_URL);
-      localStorage.setItem('cfg_supa_key', window.SUPA_KEY);
-      localStorage.setItem('cfg_supa_bucket', window.CURRENT_BUCKET);
-    }
-    if (config.cloudinaryCloudName && config.cloudinaryPreset) {
-      window.CLOUDINARY_CLOUD_NAME = config.cloudinaryCloudName.trim();
-      window.CLOUDINARY_PRESET = config.cloudinaryPreset.trim();
-      localStorage.setItem('cfg_cloud_name', window.CLOUDINARY_CLOUD_NAME);
-      localStorage.setItem('cfg_cloud_preset', window.CLOUDINARY_PRESET);
+    if (config.storjAccessKey && config.storjSecretKey) {
+      window.STORJ_ACCESS = config.storjAccessKey.trim();
+      window.STORJ_SECRET = config.storjSecretKey.trim();
+      window.STORJ_BUCKET = (config.storjBucket || DEFAULT_STORJ_BUCKET).trim();
+      localStorage.setItem('cfg_storj_access', window.STORJ_ACCESS);
+      localStorage.setItem('cfg_storj_secret', window.STORJ_SECRET);
+      localStorage.setItem('cfg_storj_bucket', window.STORJ_BUCKET);
     }
   } else {
     db.ref("appConfig").update({
-      supabaseUrl: DEFAULT_SUPA_URL,
-      supabaseKey: DEFAULT_SUPA_KEY,
-      supabaseBucket: DEFAULT_SUPA_BUCKET,
-      cloudinaryCloudName: DEFAULT_CLOUD_NAME,
-      cloudinaryPreset: DEFAULT_CLOUD_PRESET
+      storjAccessKey: DEFAULT_STORJ_ACCESS,
+      storjSecretKey: DEFAULT_STORJ_SECRET,
+      storjBucket: DEFAULT_STORJ_BUCKET
     }).catch(() => {});
   }
 });
-
-function rewriteDynamicStorageUrl(url) {
-  if (typeof url !== 'string') return url;
-  if (url.includes(DEFAULT_SUPA_URL) && url.includes('/storage/v1/object/') && !url.includes('/public/')) {
-    return url
-      .replace(DEFAULT_SUPA_URL, window.SUPA_URL)
-      .replace('/object/' + DEFAULT_SUPA_BUCKET + '/', '/object/' + window.CURRENT_BUCKET + '/');
-  }
-  if (url.includes('api.cloudinary.com/v1_1/' + DEFAULT_CLOUD_NAME + '/')) {
-    return url.replace('/v1_1/' + DEFAULT_CLOUD_NAME + '/', '/v1_1/' + window.CLOUDINARY_CLOUD_NAME + '/');
-  }
-  return url;
-}
-
-const _origXhrOpen = XMLHttpRequest.prototype.open;
-XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-  const newUrl = (String(method).toUpperCase() === 'POST' || String(method).toUpperCase() === 'DELETE') ? rewriteDynamicStorageUrl(url) : url;
-  return _origXhrOpen.call(this, method, newUrl, ...rest);
-};
-
-const _origXhrHeader = XMLHttpRequest.prototype.setRequestHeader;
-XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
-  if (typeof value === 'string' && value.includes(DEFAULT_SUPA_KEY)) {
-    value = value.replace(DEFAULT_SUPA_KEY, window.SUPA_KEY);
-  }
-  return _origXhrHeader.call(this, name, value);
-};
-
-const _origFormDataAppend = FormData.prototype.append;
-FormData.prototype.append = function(name, value, ...rest) {
-  if (name === 'upload_preset' && value === DEFAULT_CLOUD_PRESET) {
-    value = window.CLOUDINARY_PRESET;
-  }
-  return _origFormDataAppend.call(this, name, value, ...rest);
-};
-
-const _origFetch = window.fetch;
-window.fetch = function(input, init) {
-  if (typeof input === 'string' && init && (init.method === 'POST' || init.method === 'DELETE')) {
-    input = rewriteDynamicStorageUrl(input);
-    if (init.headers) {
-      if (init.headers.Authorization && init.headers.Authorization.includes(DEFAULT_SUPA_KEY)) {
-        init.headers.Authorization = init.headers.Authorization.replace(DEFAULT_SUPA_KEY, window.SUPA_KEY);
-      }
-      if (init.headers.apikey === DEFAULT_SUPA_KEY) {
-        init.headers.apikey = window.SUPA_KEY;
-      }
-    }
-  }
-  return _origFetch.call(this, input, init);
-};
-
-const _origRefSet = firebase.database.Reference.prototype.set;
-firebase.database.Reference.prototype.set = function(val, onComplete) {
-  if (val && typeof val === 'object' && typeof val.url === 'string' && val.url.includes(DEFAULT_SUPA_URL + '/storage/v1/object/public/')) {
-    val.url = val.url
-      .replace(DEFAULT_SUPA_URL, window.SUPA_URL)
-      .replace('/public/' + DEFAULT_SUPA_BUCKET + '/', '/public/' + window.CURRENT_BUCKET + '/');
-  }
-  return _origRefSet.call(this, val, onComplete);
-};
 // 🚀 تم إزالة نظام مزامنة السيرفر الوهمي والعودة للاعتماد على توقيت الجهاز (Date.now) لضمان دقة الترتيب
 function getTrueTime() {
   return Date.now();
@@ -598,7 +526,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=57');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=58');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -852,25 +780,33 @@ document.getElementById('file-avatar-input').addEventListener('change', async e 
   if (!file || !myProfile) return;
   e.target.value = ''; showToast('جاري رفع الصورة...');
   try {
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('upload_preset', 'omarhweh1');
-    
-    const res = await fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', {
-        method: 'POST',
-        body: fd
+    if (typeof AWS === 'undefined') throw new Error('مكتبة الرفع غير متوفرة');
+    AWS.config.update({
+        accessKeyId: window.STORJ_ACCESS,
+        secretAccessKey: window.STORJ_SECRET,
+        endpoint: 'https://gateway.storjshare.io',
+        s3ForcePathStyle: true,
+        signatureVersion: 'v4'
     });
-    
-    if (res.ok) {
-      const data = await res.json();
-      // 🚀 سحر كلاوديناري: قص الصورة لمربع 150x150 وضغطها لأقصى حد لتسريع التطبيق
-      const finalUrl = data.secure_url.replace('/upload/', '/upload/w_150,h_150,c_fill,q_auto,f_auto/');
-      
-      await db.ref('users/' + myProfile.uid).update({ photo: finalUrl });
-      myProfile.photo = finalUrl; localStorage.setItem('myProfile', JSON.stringify(myProfile));
-      updateHomeHeader(); populateProfile(); showToast('تم تحديث الصورة', 'success');
-    } else throw new Error('تعذر الرفع');
-  } catch (e) { showToast('فشل رفع الصورة', 'error'); }
+    const storj = new AWS.S3();
+    const cleanName = `avatar_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
+
+    storj.upload({
+        Bucket: window.STORJ_BUCKET,
+        Key: cleanName,
+        Body: file,
+        ContentType: file.type || 'image/jpeg'
+    }).send(async function(err, data) {
+        if (err) {
+            showToast('فشل رفع الصورة', 'error');
+        } else {
+            const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET, Key: cleanName, Expires: 604800 });
+            await db.ref('users/' + myProfile.uid).update({ photo: finalUrl });
+            myProfile.photo = finalUrl; localStorage.setItem('myProfile', JSON.stringify(myProfile));
+            updateHomeHeader(); populateProfile(); showToast('تم تحديث الصورة', 'success');
+        }
+    });
+  } catch (e) { showToast('فشل التجهيز للرفع', 'error'); }
 });
 
 /* ═══════════════════════════════════
@@ -1163,18 +1099,9 @@ function detachMessages() {
   if (iAmBlockedRef && iAmBlockedListener) { iAmBlockedRef.off('value', iAmBlockedListener); iAmBlockedRef = null; iAmBlockedListener = null; }
 }
 
-// 🚀 نظام النبضة الخفية: لإبقاء كلاوديناري مستيقظاً ومنع تعليق أول تسجيل صوتي
-let lastCloudinaryWake = 0;
+// تم إزالة نظام إيقاظ Cloudinary لأن Storj سريع ومستقر ولا يحتاج لإيقاظ
 function wakeUpCloudinary() {
-  const now = Date.now();
-  // نبعت النبضة مرة وحدة كل 5 دقايق عشان ما نعمل ضغط عالفاضي
-  if (now - lastCloudinaryWake < 300000) return; 
-  lastCloudinaryWake = now;
-  
-  const fd = new FormData();
-  fd.append('upload_preset', 'omarhweh1');
-  // نبعت طلب ناقص (بدون ملف) عن قصد.. السيرفر بيصحى، بيهيئ الاتصال، وبضل جاهز للتسجيل الحقيقي!
-  fetch('https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', { method: 'POST', body: fd }).catch(()=>{});
+    // تركت الدالة فارغة حتى لا تتسبب بأخطاء في الاستدعاءات القديمة
 }
 
 window.isChatOpening = false;
@@ -2271,18 +2198,32 @@ async function syncPendingMessages() {
         try {
             const res = await fetch(p.msg.url);
             const blob = await res.blob();
-            const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
-            const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
-            const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
             
-            const uploadRes = await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY, 'Content-Type': blob.type || 'audio/webm' },
-                body: blob
-            });
-            
-            if (uploadRes.ok) {
-                p.msg.url = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
+            if (typeof AWS !== 'undefined') {
+                AWS.config.update({
+                    accessKeyId: window.STORJ_ACCESS,
+                    secretAccessKey: window.STORJ_SECRET,
+                    endpoint: 'https://gateway.storjshare.io',
+                    s3ForcePathStyle: true,
+                    signatureVersion: 'v4'
+                });
+                const storj = new AWS.S3();
+                const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
+                
+                await new Promise((resolve, reject) => {
+                    storj.upload({
+                        Bucket: window.STORJ_BUCKET
+, Key: cleanName, Body: blob, ContentType: blob.type || 'audio/webm'
+                    }, { partSize: 50 * 1024 * 1024, queueSize: 1 }).send((err, data) => {
+                        if(err) reject(err);
+                        else {
+                            p.msg.url = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET
+, Key: cleanName, Expires: 604800 });
+                            p.msg.deleteToken = cleanName;
+                            resolve();
+                        }
+                    });
+                });
             } else {
                 continue;
             }
@@ -2582,12 +2523,29 @@ function confirmDeleteMsg(msgKey) {
             }).catch(e => console.log('تعذر الحذف من Supabase'));
             
           } else if (msg.deleteToken) {
-            // حذف من كلاوديناري (للملفات القديمة أو الصوتيات)
-            const fd = new FormData(); 
-            fd.append('token', msg.deleteToken);
-            fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', { 
-              method: 'POST', body: fd 
-            }).catch(e => console.log('تعذر الحذف'));
+            // حذف من كلاوديناري أو Storj
+            if (msg.url && msg.url.includes('storjshare.io')) {
+               if (typeof AWS !== 'undefined') {
+                   AWS.config.update({
+                       accessKeyId: window.STORJ_ACCESS,
+                       secretAccessKey: window.STORJ_SECRET,
+                       endpoint: 'https://gateway.storjshare.io',
+                       s3ForcePathStyle: true,
+                       signatureVersion: 'v4'
+                   });
+                   const storjDel = new AWS.S3();
+                   storjDel.deleteObject({ Bucket: window.STORJ_BUCKET
+, Key: msg.deleteToken }, function(err, data) {
+                     if (err) console.log('تعذر الحذف من Storj');
+                   });
+               }
+            } else {
+               const fd = new FormData(); 
+               fd.append('token', msg.deleteToken);
+               fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', { 
+                 method: 'POST', body: fd 
+               }).catch(e => console.log('تعذر الحذف'));
+            }
           }
         }
       } catch (e) {
@@ -2842,33 +2800,30 @@ async function uploadMediaWithUI(file, type, extraData = null) {
           finalFileToUpload = await encryptImageBlob(file); 
         }
 
-        const xhr = new XMLHttpRequest();
-        const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
-        const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
-        
-        if (type === 'image') {
-          const cleanName = `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin`; 
-          xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
-          xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
-          xhr.setRequestHeader('apikey', SUPA_KEY);
-          xhr.setRequestHeader('Content-Type', 'application/octet-stream'); 
-        } else {
-          xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
+        if (typeof AWS === 'undefined') {
+          handleFail('مكتبة الرفع غير متوفرة');
+          return;
         }
-        
-        xhr.timeout = 180000; // 🚀 زدنا الوقت لـ 3 دقائق لأن الصور الخام بتأخذ وقت أطول بالرفع
-        
-        xhr.upload.onprogress = e => {
-          if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            const bar = document.getElementById('bar_' + tempId);
-            const pctTxt = document.getElementById('pct_' + tempId);
-            if (bar) bar.style.width = percent + '%';
-            if (pctTxt && pctTxt.textContent !== '🔒') pctTxt.textContent = percent + '%';
-            if (percent === 100 && pctTxt) pctTxt.textContent = '⏳';
-          }
+        AWS.config.update({
+          accessKeyId: window.STORJ_ACCESS,
+          secretAccessKey: window.STORJ_SECRET,
+          endpoint: 'https://gateway.storjshare.io',
+          s3ForcePathStyle: true,
+          signatureVersion: 'v4'
+        });
+        const storj = new AWS.S3();
+        const cleanName = type === 'image' 
+          ? `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin` 
+          : `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+        const params = {
+            Bucket: window.STORJ_BUCKET
+,
+            Key: cleanName,
+            Body: finalFileToUpload,
+            ContentType: type === 'image' ? 'application/octet-stream' : finalFileToUpload.type
         };
-        
+
         const handleFail = (msg) => {
             if (row) { 
               const ov = row.querySelector('.pending-overlay'); 
@@ -2876,40 +2831,30 @@ async function uploadMediaWithUI(file, type, extraData = null) {
             }
         };
 
-        xhr.onload = async () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            let finalUrl = '';
-            if (type === 'image') {
-              const cleanName = xhr.responseURL.split('/').pop();
-              finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
-            } else {
-              let data = {}; try { data = JSON.parse(xhr.responseText); } catch(e) {}
-              finalUrl = data.secure_url;
+        storj.upload(params, { partSize: 50 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
+            if (e.loaded && e.total) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                const bar = document.getElementById('bar_' + tempId);
+                const pctTxt = document.getElementById('pct_' + tempId);
+                if (bar) bar.style.width = percent + '%';
+                if (pctTxt && pctTxt.textContent !== '🔒') {
+                    if (percent < 100) pctTxt.textContent = percent + '%';
+                    else pctTxt.textContent = '⏳ بانتظار السيرفر...';
+                }
             }
-
-            if (finalUrl) {
-              window.lastUploadedUrl = finalUrl;
-              if (type === 'image' && window.localImageCache) window.localImageCache[finalUrl] = tempUrl; 
-              const currentRow = document.getElementById('row_' + tempId);
-              if (currentRow) currentRow.remove();
-              await pushMessage({ type: type, url: finalUrl, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
+        }).send(async function(err, data) {
+            if (err) {
+                handleFail('فشل الرفع لـ Storj');
             } else {
-              handleFail('فشل الرفع');
+                const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET
+, Key: cleanName, Expires: 604800 });
+                window.lastUploadedUrl = finalUrl;
+                if (type === 'image' && window.localImageCache) window.localImageCache[finalUrl] = tempUrl; 
+                const currentRow = document.getElementById('row_' + tempId);
+                if (currentRow) currentRow.remove();
+                await pushMessage({ type: type, url: finalUrl, deleteToken: cleanName, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
             }
-          } else {
-            handleFail('فشل الرفع');
-          }
-        };
-        
-        xhr.onerror = () => handleFail('خطأ اتصال');
-        xhr.ontimeout = () => handleFail('انتهى الوقت');
-        
-        if (type === 'image') {
-          xhr.send(finalFileToUpload);
-        } else {
-          const fd = new FormData(); fd.append('file', finalFileToUpload); fd.append('upload_preset', 'omarhweh1');
-          xhr.send(fd);
-        }
+        });
       };
       
       window.pendingUploads[tempId] = tryUpload;
@@ -3089,27 +3034,19 @@ async function toggleRecording(isSinging = false) {
       await new Promise(r => setTimeout(r, 50));
       
       const tryUploadVoice = () => {
-          const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
-          const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
+          if (typeof AWS === 'undefined') {
+              handleFail('مكتبة الرفع غير متوفرة');
+              return;
+          }
+          AWS.config.update({
+              accessKeyId: window.STORJ_ACCESS,
+              secretAccessKey: window.STORJ_SECRET,
+              endpoint: 'https://gateway.storjshare.io',
+              s3ForcePathStyle: true,
+              signatureVersion: 'v4'
+          });
+          const storj = new AWS.S3();
           const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
-
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', `${SUPA_URL}/storage/v1/object/chat-media/${cleanName}`, true);
-          xhr.setRequestHeader('Authorization', `Bearer ${SUPA_KEY}`);
-          xhr.setRequestHeader('apikey', SUPA_KEY);
-          xhr.setRequestHeader('Content-Type', blob.type || 'audio/webm');
-          
-          xhr.timeout = 300000;
-
-          xhr.upload.onprogress = function(e) {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              const bar = document.getElementById('voice_bar_' + tempId);
-              const pctTxt = document.getElementById('voice_pct_' + tempId);
-              if (bar) bar.style.width = percent + '%';
-              if (pctTxt) pctTxt.textContent = percent + '%';
-            }
-          };
 
           const handleFail = (msg) => {
              const row = document.getElementById(tempId);
@@ -3123,27 +3060,39 @@ async function toggleRecording(isSinging = false) {
              }
           };
 
-          xhr.onload = async function() {
-            const tempEl = document.getElementById(tempId);
-            if (tempEl) tempEl.remove();
-
-            if (xhr.status >= 200 && xhr.status < 300) {
-              const finalUrl = `${SUPA_URL}/storage/v1/object/public/chat-media/${cleanName}`;
-              let replyData = null;
-              if (replyingToMsg) {
-                replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-                cancelReply();
-              }
-              await pushMessage({ type: 'voice', url: finalUrl, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
-            } else {
-              handleFail('فشل الرفع');
-            }
+          const params = {
+              Bucket: window.STORJ_BUCKET
+,
+              Key: cleanName,
+              Body: blob,
+              ContentType: blob.type || 'audio/webm'
           };
 
-          xhr.onerror = function() { handleFail('خطأ بالاتصال، تأكد من الشبكة'); };
-          xhr.ontimeout = function() { handleFail('انتهى وقت الرفع (مقطع طويل جداً)'); };
+          storj.upload(params, { partSize: 50 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
+              if (e.loaded && e.total) {
+                  const percent = Math.round((e.loaded / e.total) * 100);
+                  const bar = document.getElementById('voice_bar_' + tempId);
+                  const pctTxt = document.getElementById('voice_pct_' + tempId);
+                  if (bar) bar.style.width = percent + '%';
+                  if (pctTxt) pctTxt.textContent = percent + '%';
+              }
+          }).send(async function(err, data) {
+              const tempEl = document.getElementById(tempId);
+              if (tempEl) tempEl.remove();
 
-          xhr.send(blob);
+              if (err) {
+                  handleFail('فشل الرفع لـ Storj');
+              } else {
+                  const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET
+, Key: cleanName, Expires: 604800 });
+                  let replyData = null;
+                  if (replyingToMsg) {
+                    replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
+                    cancelReply();
+                  }
+                  await pushMessage({ type: 'voice', url: finalUrl, deleteToken: cleanName, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+              }
+          });
       };
       
       window.pendingUploads[tempId] = () => {
@@ -3678,6 +3627,20 @@ function seekVoice(event, url, msgKey) {
    VIDEO UPLOAD & PLAYER LOGIC
 ═══════════════════════════════════ */
 function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = null) {
+  if (typeof AWS === 'undefined') {
+    showToast('جاري تهيئة خادم الرفع، حاول بعد ثوانٍ...', 'error');
+    return;
+  }
+  
+  AWS.config.update({
+    accessKeyId: window.STORJ_ACCESS,
+    secretAccessKey: window.STORJ_SECRET,
+    endpoint: 'https://gateway.storjshare.io',
+    s3ForcePathStyle: true,
+    signatureVersion: 'v4'
+  });
+  const storj = new AWS.S3();
+
   const tempId = 'temp_media_' + Date.now();
   const tempUrl = URL.createObjectURL(file);
   const area = document.getElementById('messages-area');
@@ -3706,76 +3669,73 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
           `;
       }
 
-      const xhr = new XMLHttpRequest();
-      // توجيه الفيديوهات والأغاني إلى Cloudinary للحفاظ على مساحة Supabase
-      xhr.open('POST', 'https://api.cloudinary.com/v1_1/sggwmi1c/auto/upload', true);
-      xhr.timeout = 180000; // 3 دقائق كحد أقصى للرفع
+      const fileName = 'media_' + Date.now() + '_' + Math.random().toString(36).substring(2,8) + (file.name ? file.name.substring(file.name.lastIndexOf('.')) : (mediaType === 'video' ? '.mp4' : '.mp3'));
+      
+      const params = {
+          Bucket: window.STORJ_BUCKET
+,
+          Key: fileName,
+          Body: file,
+          ContentType: file.type || (mediaType === 'video' ? 'video/mp4' : 'audio/mpeg')
+      };
 
-      xhr.upload.onprogress = function(e) {
-        if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 100);
-          const bar = document.getElementById('bar_' + tempId);
-          const pctTxt = document.getElementById('pct_' + tempId);
-          if (bar) bar.style.width = percent + '%';
-          if (pctTxt) {
-              if (percent < 100) {
-                  pctTxt.textContent = percent + '%';
-              } else {
-                  pctTxt.textContent = '⏳ بانتظار السيرفر...';
+                const handleFail = (msg, errorDetails = '') => {
+              if (row) {
+                const ov = row.querySelector('.pending-overlay');
+                // كاشف الأخطاء: سيظهر النص التفصيلي تحت زر إعادة المحاولة
+                const errorLogHtml = errorDetails ? `<div style="font-size:10px; color:var(--neon-pink); background:rgba(0,0,0,0.8); padding:6px; border-radius:4px; margin-top:8px; max-width:90%; word-break:break-all; text-align:center; font-family:var(--font-en); line-height:1.4;">${errorDetails}</div>` : '';
+                
+                if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>${errorLogHtml}`;
               }
+          };
+
+          // إجبار المكتبة على رفع الملف كقطعة واحدة (بدون تقطيع) لمنع الانهيار عند الـ 5 ميغا
+          const uploadOptions = { partSize: 50 * 1024 * 1024, queueSize: 1 };
+
+          storj.upload(params, uploadOptions).on('httpUploadProgress', function(evt) {
+              if (evt.loaded && evt.total) {
+                  const percent = Math.round((evt.loaded / evt.total) * 100);
+                  const bar = document.getElementById('bar_' + tempId);
+                  const pctTxt = document.getElementById('pct_' + tempId);
+                  if (bar) bar.style.width = percent + '%';
+                  if (pctTxt) {
+                      if (percent < 100) {
+                          pctTxt.textContent = percent + '%';
+                      } else {
+                          pctTxt.textContent = '⏳ بانتظار السيرفر...';
+                      }
+                  }
+              }
+          }).send(async function(err, data) {
+              if (err) {
+                  // التقاط الخطأ الفعلي وإرساله للواجهة لكي نقرأه
+                  console.error("Storj Error Details:", err);
+                  let errorMsg = err.message || err.code || 'Unknown Error';
+                  if (err.statusCode) errorMsg += ' (Code: ' + err.statusCode + ')';
+                  handleFail('فشل الرفع لـ Storj', errorMsg);
+              } else {
+              const finalUrl = storj.getSignedUrl('getObject', {
+                  Bucket: window.STORJ_BUCKET
+,
+                  Key: fileName,
+                  Expires: 604800
+              });
+
+              const currentRow = document.getElementById('row_' + tempId);
+              if (currentRow) currentRow.remove();
+
+              await pushMessage({
+                  type: mediaType,
+                  url: finalUrl,
+                  size: fileSizeMB,
+                  duration: extraDuration,
+                  deleteToken: fileName,
+                  senderUid: currentUser.uid,
+                  timestamp: Date.now(),
+                  replyTo: tempMsg.replyTo
+              });
           }
-        }
-      };
-
-      const handleFail = (msg) => {
-          if (row) {
-            const ov = row.querySelector('.pending-overlay');
-            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>`;
-          }
-      };
-
-                  xhr.onload = async function() {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          let finalUrl = '';
-          let deleteToken = null;
-          let data = {};
-          
-          try { data = JSON.parse(xhr.responseText); } catch(e) {}
-          
-          if (data && data.secure_url) {
-              finalUrl = data.secure_url;
-              deleteToken = data.delete_token || null;
-          }
-
-          if (finalUrl) {
-            const currentRow = document.getElementById('row_' + tempId);
-            if (currentRow) currentRow.remove();
-
-            await pushMessage({
-              type: mediaType,
-              url: finalUrl,
-              size: fileSizeMB,
-              duration: extraDuration,
-              deleteToken: deleteToken,
-              senderUid: currentUser.uid,
-              timestamp: Date.now(),
-              replyTo: tempMsg.replyTo
-            });
-          } else {
-            handleFail('استجابة فارغة من السيرفر');
-          }
-        } else {
-          handleFail('خطأ ' + xhr.status);
-        }
-      };
-
-      xhr.onerror = function() { handleFail('مشكلة شبكة أو CORS'); };
-      xhr.ontimeout = function() { handleFail('انتهى وقت الانتظار'); };
-
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('upload_preset', 'omarhweh1');
-      xhr.send(fd);
+      });
   };
 
   window.pendingUploads[tempId] = tryUpload;
@@ -4083,40 +4043,28 @@ function formatVideoTime(sec_num) {
 }
 
 async function deleteExpiredMedia(chatId, msg) {
-  // 1. نحتفظ بالرابط واسم الملف قبل ما نلمس الفايربيز عشان ما يضيع
   const fileUrl = msg.url;
 
-  // 2. الهجوم على السيرفر الفيزيائي أولاً (Supabase) وتدمير الملف
-  if (fileUrl && fileUrl.includes('supabase.co')) {
-      const fileName = fileUrl.split('/').pop();
-      const SUPA_URL = 'https://wbxbsoomfdojhwcuxmky.supabase.co';
-      const SUPA_KEY = 'sb_publishable_Z1QJu41bd_p-h9VcwI1aNg_rXKFBWG7';
-      
-      try {
-          await fetch(`${SUPA_URL}/storage/v1/object/chat-media/${fileName}`, {
-              method: 'DELETE',
-              headers: { 'Authorization': `Bearer ${SUPA_KEY}`, 'apikey': SUPA_KEY }
-          });
-      } catch(e) { console.log('خطأ بالحذف من سوبابيز'); }
-      
-  } else if (msg.deleteToken) {
-      const fd = new FormData();
-      fd.append('token', msg.deleteToken);
-      fetch('https://api.cloudinary.com/v1_1/sggwmi1c/delete_by_token', {
-         method: 'POST', body: fd
-      }).catch(e => console.log('تعذر الحذف'));
+  if (msg.deleteToken && typeof AWS !== 'undefined') {
+      AWS.config.update({
+          accessKeyId: window.STORJ_ACCESS,
+          secretAccessKey: window.STORJ_SECRET,
+          endpoint: 'https://gateway.storjshare.io',
+          s3ForcePathStyle: true,
+          signatureVersion: 'v4'
+      });
+      const storjDel = new AWS.S3();
+      storjDel.deleteObject({ Bucket: window.STORJ_BUCKET, Key: msg.deleteToken }, function(err, data) {
+        if (err) console.log('تعذر الحذف من Storj');
+      });
   }
 
-  // 3. بعد ما طيّرنا الملف من السيرفر، منمسحه من الدردشة (Firebase) للطرفين
-            // 3. بعد ما طيّرنا الملف من السيرفر، منمسحه نهائياً من قاعدة بيانات الدردشة (Firebase) بدون ترك أي أثر
-          await db.ref(`chats/${chatId}/messages/${msg.key}`).remove();
-          
-          // 4. مسح الفيديو والصور من كاش المتصفح لعدم استهلاك المساحة الداخلية
-          if ('caches' in window && fileUrl) {
-              caches.open('media-cache').then(cache => cache.delete(fileUrl));
-          }
-        }
-
+  await db.ref(`chats/${chatId}/messages/${msg.key}`).remove();
+  
+  if ('caches' in window && fileUrl) {
+      caches.open('media-cache').then(cache => cache.delete(fileUrl));
+  }
+}
 /* ═══════════════════════════════════
    SCROLL & CHAT UTILS
 ═══════════════════════════════════ */
@@ -4719,7 +4667,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=57');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=58');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {

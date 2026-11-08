@@ -29,6 +29,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
   <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1390.0/aws-sdk.min.js"></script>
 
   <link rel="stylesheet" href="style.css?v=57">
 </head>
@@ -616,12 +617,12 @@
       </div>
     </div>
 
-  </div> <script src="script.js?v=57"></script>
+  </div> <script src="script.js?v=58"></script>
 
   <script>
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('sw.js?v=57')
+        navigator.serviceWorker.register('sw.js?v=58')
           .then(r=>console.log('SW registered:',r.scope))
           .catch(e=>console.error('SW registration failed:',e));
       });
