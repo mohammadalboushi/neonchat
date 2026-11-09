@@ -526,7 +526,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=61');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=62');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1845,12 +1845,13 @@ function buildMsgEl(msg, isBackground = false) {
 
     if (isSwiping && Math.abs(e.changedTouches[0].clientX - touchStartX) > 45) { 
       prepareReply(msg); if (navigator.vibrate) navigator.vibrate(40); 
+    } else if (!isSwiping && !isVertical && e.target.closest('.video-thumb-container')) {
+      clearTimeout(singleTapTimer);
+      lastTap = 0;
+      openVideoPlayer(msg.url);
     } else if (!isSwiping && !isVertical && lastTap > 0 && (Date.now() - lastTap < 400)) {
       singleTapTimer = setTimeout(() => {
-        const vidContainer = e.target.closest('.video-thumb-container');
-        if (vidContainer) {
-           openVideoPlayer(msg.url);
-        } else if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
+        if (e.target.tagName === 'IMG' && !e.target.closest('.link-preview-container')) {
           window.previewImg(e.target.src);
         }
       }, 250);
@@ -1976,13 +1977,10 @@ function buildMsgEl(msg, isBackground = false) {
         bubble.innerHTML = `${replyHtml}<div class="voice-msg">${unplayedDot}<button class="voice-play-btn" onclick="playVoice(this,'${msg.url}', '${msg.key}', ${isOut})"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></button><div class="voice-waveform" style="position:relative; cursor:pointer; touch-action:none;" onpointerdown="startVoiceSeek(event, '${msg.key}')" onpointermove="moveVoiceSeek(event, '${msg.key}')" onpointerup="endVoiceSeek(event, '${msg.key}')" onpointercancel="endVoiceSeek(event, '${msg.key}')">${bars}<div id="progress-${msg.key}" class="voice-progress-fill" style="position:absolute; right:0; top:0; bottom:0; width:100%; transform:scaleX(0); transform-origin:right; background:rgba(0,240,255,0.4); pointer-events:none; z-index:1; border-radius:2px; transition: transform 0.1s linear;"></div></div><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">${speedBtn}<span id="dur-${msg.key}" class="voice-duration" data-orig="${msg.duration||'0:00'}">${msg.duration||'0:00'}</span></div></div>${timeEl}${reactHtml}`;
       }
       
-      // 🚀 التحميل المسبق الذكي: يحمل المقاطع (غير المسموعة) فقط لتوفير النت ومنع التراكم
-      if ((msg.type === 'voice' || msg.type === 'audio') && msg.url && !msg.isPending && !isOut) {
-        if (!msg.listened) {
-          setTimeout(() => {
-            if(window.preloadVoiceSilent) window.preloadVoiceSilent(msg.url);
-          }, 500 + Math.random() * 2000); // تأخير عشوائي عشان ما يخنق الشبكة
-        }
+      if ((msg.type === 'voice' || msg.type === 'audio') && msg.url && !msg.isPending) {
+        setTimeout(() => {
+          if (window.preloadVoiceSilent) window.preloadVoiceSilent(msg.url);
+        }, 80);
       }
       
       if (msg.isPending) {
@@ -2313,14 +2311,18 @@ async function pushMessage(msg) {
   }
 
   try {
-      await ref.set(msg);
+      db.goOnline();
+      await Promise.race([
+          ref.set(msg),
+          new Promise(resolve => setTimeout(resolve, 2500))
+      ]);
   } catch(e) {
       msg.isPending = true;
       await pendingDB.save({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
   }
 
   const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
-  await db.ref().update({
+  db.ref().update({
     [`userChats/${currentUser.uid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${currentUser.uid}/${chatId}/updatedAt`]: msg.timestamp,
     [`userChats/${friendUid}/${chatId}/lastMsg`]: lastMsg, [`userChats/${friendUid}/${chatId}/updatedAt`]: msg.timestamp
   });
@@ -2727,6 +2729,16 @@ async function decryptImageUrl(encryptedUrl) {
         return window.localImageCache[encryptedUrl];
     }
     try {
+        if ('caches' in window) {
+            const cache = await caches.open('media-cache');
+            const cachedRes = await cache.match(encryptedUrl);
+            if (cachedRes) {
+                const cachedBlob = await cachedRes.blob();
+                const cachedObjUrl = URL.createObjectURL(cachedBlob);
+                if (window.localImageCache) window.localImageCache[encryptedUrl] = cachedObjUrl;
+                return cachedObjUrl;
+            }
+        }
         const response = await fetch(encryptedUrl);
         const encryptedBlob = await response.blob();
         const arrayBuffer = await encryptedBlob.arrayBuffer();
@@ -2739,13 +2751,15 @@ async function decryptImageUrl(encryptedUrl) {
             data
         );
         const decryptedBlob = new Blob([decryptedContent], { type: 'image/jpeg' });
+        if ('caches' in window) {
+            caches.open('media-cache').then(cache => cache.put(encryptedUrl, new Response(decryptedBlob))).catch(() => {});
+        }
         const objectUrl = URL.createObjectURL(decryptedBlob);
         if (window.localImageCache) {
             window.localImageCache[encryptedUrl] = objectUrl;
-            // 🚀 تفريغ الذاكرة: منع تكديس أكثر من 30 صورة لتجنب امتلاء الرام
             const keys = Object.keys(window.localImageCache);
             if (keys.length > 30) {
-                URL.revokeObjectURL(window.localImageCache[keys[0]]); // مسح نهائي من الذاكرة
+                URL.revokeObjectURL(window.localImageCache[keys[0]]);
                 delete window.localImageCache[keys[0]];
             }
         }
@@ -2756,9 +2770,6 @@ async function decryptImageUrl(encryptedUrl) {
     }
 }
 
-/* ═══════════════════════════════════
-   UNIVERSAL UPLOAD ENGINE
-═══════════════════════════════════ */
 window.pendingUploads = {};
 window.lastUploadedUrl = null;
 
@@ -2779,7 +2790,6 @@ async function uploadMediaWithUI(file, type, extraData = null) {
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
   }
 
-  // 🚀 إعطاء المتصفح استراحة 100 ميلي ثانية ليرسم فقاعة الدردشة قبل ما ينعصر بالعمليات الثقيلة
   setTimeout(async () => {
       const tryUpload = async () => {
         const row = document.getElementById('row_' + tempId);
@@ -2792,13 +2802,16 @@ async function uploadMediaWithUI(file, type, extraData = null) {
             </div>
           `; 
         }
+
+        const handleFail = (msg) => {
+            if (row) { 
+              const ov = row.querySelector('.pending-overlay'); 
+              if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
+            }
+        };
         
         let finalFileToUpload = file;
         if (type === 'image') {
-          const pctTxt = document.getElementById('pct_' + tempId);
-          if(pctTxt) pctTxt.textContent = '🔒';
-          
-          // 🚀 تم إزالة ضغط الصورة للمحافظة على الدقة 100% كما طلبت، التشفير يتم على الملف الخام مباشرة
           finalFileToUpload = await encryptImageBlob(file); 
         }
 
@@ -2813,33 +2826,29 @@ async function uploadMediaWithUI(file, type, extraData = null) {
           s3ForcePathStyle: true,
           signatureVersion: 'v4'
         });
-        const storj = new AWS.S3();
+        const storj = new AWS.S3({
+          s3DisableBodySigning: true,
+          computeChecksums: false,
+          httpOptions: { timeout: 120000 }
+        });
         const cleanName = type === 'image' 
           ? `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin` 
           : `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
         const params = {
-            Bucket: window.STORJ_BUCKET
-,
+            Bucket: window.STORJ_BUCKET,
             Key: cleanName,
             Body: finalFileToUpload,
             ContentType: type === 'image' ? 'application/octet-stream' : finalFileToUpload.type
         };
 
-        const handleFail = (msg) => {
-            if (row) { 
-              const ov = row.querySelector('.pending-overlay'); 
-              if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 16px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink);">${msg} 🔄</button>`; 
-            }
-        };
-
-        storj.upload(params, { partSize: 50 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
+        storj.upload(params, { partSize: 105 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
             if (e.loaded && e.total) {
                 const percent = Math.round((e.loaded / e.total) * 100);
                 const bar = document.getElementById('bar_' + tempId);
                 const pctTxt = document.getElementById('pct_' + tempId);
                 if (bar) bar.style.width = percent + '%';
-                if (pctTxt && pctTxt.textContent !== '🔒') {
+                if (pctTxt) {
                     if (percent < 100) pctTxt.textContent = percent + '%';
                     else pctTxt.textContent = '⏳ بانتظار السيرفر...';
                 }
@@ -2848,10 +2857,14 @@ async function uploadMediaWithUI(file, type, extraData = null) {
             if (err) {
                 handleFail('فشل الرفع لـ Storj');
             } else {
-                const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET
-, Key: cleanName, Expires: 604800 });
+                const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET, Key: cleanName, Expires: 604800 });
                 window.lastUploadedUrl = finalUrl;
-                if (type === 'image' && window.localImageCache) window.localImageCache[finalUrl] = tempUrl; 
+                if (type === 'image') {
+                    if (window.localImageCache) window.localImageCache[finalUrl] = tempUrl;
+                    if ('caches' in window) {
+                        caches.open('media-cache').then(cache => cache.put(finalUrl, new Response(file))).catch(() => {});
+                    }
+                }
                 const currentRow = document.getElementById('row_' + tempId);
                 if (currentRow) currentRow.remove();
                 await pushMessage({ type: type, url: finalUrl, deleteToken: cleanName, duration: extraData?.duration || null, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: tempMsg.replyTo });
@@ -2997,7 +3010,7 @@ async function toggleRecording(isSinging = false) {
     checkRecGate();
 
     audioChunks = []; isRecordingCanceled = false;
-    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 256000 });
+    mediaRecorder = new MediaRecorder(dest.stream, { audioBitsPerSecond: 96000 });
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
     mediaRecorder.onstop = async () => {
       rawStream.getTracks().forEach(t => t.stop()); if(audioCtx.state !== 'closed') audioCtx.close();
@@ -3036,20 +3049,6 @@ async function toggleRecording(isSinging = false) {
       await new Promise(r => setTimeout(r, 50));
       
       const tryUploadVoice = () => {
-          if (typeof AWS === 'undefined') {
-              handleFail('مكتبة الرفع غير متوفرة');
-              return;
-          }
-          AWS.config.update({
-              accessKeyId: window.STORJ_ACCESS,
-              secretAccessKey: window.STORJ_SECRET,
-              endpoint: 'https://gateway.storjshare.io',
-              s3ForcePathStyle: true,
-              signatureVersion: 'v4'
-          });
-          const storj = new AWS.S3();
-          const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
-
           const handleFail = (msg) => {
              const row = document.getElementById(tempId);
              if (row) {
@@ -3062,15 +3061,33 @@ async function toggleRecording(isSinging = false) {
              }
           };
 
+          if (typeof AWS === 'undefined') {
+              handleFail('مكتبة الرفع غير متوفرة');
+              return;
+          }
+          AWS.config.update({
+              accessKeyId: window.STORJ_ACCESS,
+              secretAccessKey: window.STORJ_SECRET,
+              endpoint: 'https://gateway.storjshare.io',
+              s3ForcePathStyle: true,
+              signatureVersion: 'v4'
+          });
+          const storj = new AWS.S3({
+              s3DisableBodySigning: true,
+              computeChecksums: false,
+              httpOptions: { timeout: 120000 }
+          });
+          const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
+          const voiceContentType = blob.type || 'audio/webm';
+
           const params = {
-              Bucket: window.STORJ_BUCKET
-,
+              Bucket: window.STORJ_BUCKET,
               Key: cleanName,
               Body: blob,
-              ContentType: blob.type || 'audio/webm'
+              ContentType: voiceContentType
           };
 
-          storj.upload(params, { partSize: 50 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
+          storj.upload(params, { partSize: 105 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
               if (e.loaded && e.total) {
                   const percent = Math.round((e.loaded / e.total) * 100);
                   const bar = document.getElementById('voice_bar_' + tempId);
@@ -3079,14 +3096,24 @@ async function toggleRecording(isSinging = false) {
                   if (pctTxt) pctTxt.textContent = percent + '%';
               }
           }).send(async function(err, data) {
-              const tempEl = document.getElementById(tempId);
-              if (tempEl) tempEl.remove();
-
               if (err) {
                   handleFail('فشل الرفع لـ Storj');
               } else {
-                  const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET
-, Key: cleanName, Expires: 604800 });
+                  const tempEl = document.getElementById(tempId);
+                  if (tempEl) tempEl.remove();
+
+                  const finalUrl = storj.getSignedUrl('getObject', {
+                      Bucket: window.STORJ_BUCKET,
+                      Key: cleanName,
+                      Expires: 604800,
+                      ResponseContentType: voiceContentType
+                  });
+                  if (window.voiceBlobCache) {
+                      window.voiceBlobCache[finalUrl] = URL.createObjectURL(blob);
+                  }
+                  if ('caches' in window) {
+                      caches.open('media-cache').then(cache => cache.put(finalUrl, new Response(blob))).catch(() => {});
+                  }
                   let replyData = null;
                   if (replyingToMsg) {
                     replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
@@ -3184,25 +3211,53 @@ function pauseResumeRecording() {
   }
 }
 
-// 🚀 محرك التحميل المسبق الذكي لدعم التقديم في الأندرويد (Blob Engine)
+window.voicePreloadPromises = window.voicePreloadPromises || {};
 window.preloadVoiceSilent = function(url) {
-  if (!url) return;
+  if (!url) return Promise.resolve(null);
   let optimizedUrl = url.includes('cloudinary.com') ? url.replace(/upload\/.*?v\d+\//, 'upload/') : url;
-  if (window.voiceBlobCache && window.voiceBlobCache[optimizedUrl]) return; 
+  if (window.voiceBlobCache && window.voiceBlobCache[optimizedUrl]) {
+    return Promise.resolve(window.voiceBlobCache[optimizedUrl]);
+  }
+  if (window.voicePreloadPromises[optimizedUrl]) {
+    return window.voicePreloadPromises[optimizedUrl];
+  }
 
-  // سحب الملف وتحويله لـ Blob بالخلفية لضمان عمل التقديم والتأخير فوراً
-  fetch(optimizedUrl, { mode: 'cors' })
-    .then(res => res.blob())
-    .then(blob => {
-      const blobUrl = URL.createObjectURL(blob);
-      window.voiceBlobCache[optimizedUrl] = blobUrl;
-      // تنظيف الذاكرة لمنع امتلاء الرام
-      const memKeys = Object.keys(window.voiceBlobCache);
-      if (memKeys.length > 30) {
-          URL.revokeObjectURL(window.voiceBlobCache[memKeys[0]]);
-          delete window.voiceBlobCache[memKeys[0]];
+  const storeInRam = (blob) => {
+    const blobUrl = URL.createObjectURL(blob);
+    window.voiceBlobCache[optimizedUrl] = blobUrl;
+    const memKeys = Object.keys(window.voiceBlobCache);
+    if (memKeys.length > 40) {
+      URL.revokeObjectURL(window.voiceBlobCache[memKeys[0]]);
+      delete window.voiceBlobCache[memKeys[0]];
+    }
+    return blobUrl;
+  };
+
+  window.voicePreloadPromises[optimizedUrl] = (async () => {
+    try {
+      if ('caches' in window) {
+        const cache = await caches.open('media-cache');
+        const cachedRes = await cache.match(optimizedUrl);
+        if (cachedRes) {
+          const blob = await cachedRes.blob();
+          if (blob && blob.size > 0) return storeInRam(blob);
+        }
       }
-    }).catch(() => {});
+      const res = await fetch(optimizedUrl, { mode: 'cors' });
+      if (!res.ok) throw new Error('Fetch failed');
+      const blob = await res.blob();
+      if ('caches' in window) {
+        caches.open('media-cache').then(cache => cache.put(optimizedUrl, new Response(blob))).catch(() => {});
+      }
+      return storeInRam(blob);
+    } catch (e) {
+      return null;
+    } finally {
+      delete window.voicePreloadPromises[optimizedUrl];
+    }
+  })();
+
+  return window.voicePreloadPromises[optimizedUrl];
 };
 
 // 🚀 استبدال currentAudioUrl بـ currentAudioMsgKey لضمان عدم تداخل الملفات المكررة
@@ -3457,17 +3512,12 @@ function playVoice(btn, url, msgKey, isOut) {
       };
   };
 
-  // 🚀 المحرك الذكي المزدوج (التشغيل الفوري + التقديم للأندرويد)
   if (window.voiceBlobCache && window.voiceBlobCache[optimizedUrl]) {
-      // إذا المحرك الصامت جهّزه بالخلفية كـ Blob، بيشتغل بصفر ثانية وبيدعم التقديم!
       executePlay(window.voiceBlobCache[optimizedUrl]);
   } else {
-      // إذا ضغطت تشغيل بسرعة قبل ما يلحق يجهزه بالخلفية، منسحبه كـ Blob لضمان التقديم
-      fetch(optimizedUrl, { mode: 'cors' }).then(res => res.blob()).then(blob => {
-          const blobUrl = URL.createObjectURL(blob);
-          window.voiceBlobCache[optimizedUrl] = blobUrl;
-          executePlay(blobUrl);
-      }).catch(() => executePlay(optimizedUrl));
+      window.preloadVoiceSilent(optimizedUrl).then(blobUrl => {
+          executePlay(blobUrl || optimizedUrl);
+      });
   }
 }
 
@@ -3641,7 +3691,11 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
     s3ForcePathStyle: true,
     signatureVersion: 'v4'
   });
-  const storj = new AWS.S3();
+  const storj = new AWS.S3({
+    s3DisableBodySigning: true,
+    computeChecksums: false,
+    httpOptions: { timeout: 180000 }
+  });
 
   const tempId = 'temp_media_' + Date.now();
   const tempUrl = URL.createObjectURL(file);
@@ -3671,28 +3725,27 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
           `;
       }
 
-      const fileName = 'media_' + Date.now() + '_' + Math.random().toString(36).substring(2,8) + (file.name ? file.name.substring(file.name.lastIndexOf('.')) : (mediaType === 'video' ? '.mp4' : '.mp3'));
+      const ext = (file.name && file.name.includes('.')) ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : (mediaType === 'video' ? '.mp4' : '.mp3');
+      const fileName = 'media_' + Date.now() + '_' + Math.random().toString(36).substring(2,8) + ext;
+      const cleanMime = file.type || (mediaType === 'video' ? 'video/mp4' : 'audio/mpeg');
       
       const params = {
-          Bucket: window.STORJ_BUCKET
-,
+          Bucket: window.STORJ_BUCKET,
           Key: fileName,
           Body: file,
-          ContentType: file.type || (mediaType === 'video' ? 'video/mp4' : 'audio/mpeg')
+          ContentType: cleanMime
       };
 
-                const handleFail = (msg, errorDetails = '') => {
+          const handleFail = (msg, errorDetails = '') => {
               if (row) {
                 const ov = row.querySelector('.pending-overlay');
-                // كاشف الأخطاء: سيظهر النص التفصيلي تحت زر إعادة المحاولة
                 const errorLogHtml = errorDetails ? `<div style="font-size:10px; color:var(--neon-pink); background:rgba(0,0,0,0.8); padding:6px; border-radius:4px; margin-top:8px; max-width:90%; word-break:break-all; text-align:center; font-family:var(--font-en); line-height:1.4;">${errorDetails}</div>` : '';
                 
                 if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>${errorLogHtml}`;
               }
           };
 
-          // إجبار المكتبة على رفع الملف كقطعة واحدة (بدون تقطيع) لمنع الانهيار عند الـ 5 ميغا
-          const uploadOptions = { partSize: 50 * 1024 * 1024, queueSize: 1 };
+          const uploadOptions = { partSize: 105 * 1024 * 1024, queueSize: 1 };
 
           storj.upload(params, uploadOptions).on('httpUploadProgress', function(evt) {
               if (evt.loaded && evt.total) {
@@ -3710,17 +3763,16 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
               }
           }).send(async function(err, data) {
               if (err) {
-                  // التقاط الخطأ الفعلي وإرساله للواجهة لكي نقرأه
                   console.error("Storj Error Details:", err);
                   let errorMsg = err.message || err.code || 'Unknown Error';
                   if (err.statusCode) errorMsg += ' (Code: ' + err.statusCode + ')';
                   handleFail('فشل الرفع لـ Storj', errorMsg);
               } else {
               const finalUrl = storj.getSignedUrl('getObject', {
-                  Bucket: window.STORJ_BUCKET
-,
+                  Bucket: window.STORJ_BUCKET,
                   Key: fileName,
-                  Expires: 604800
+                  Expires: 604800,
+                  ResponseContentType: cleanMime
               });
 
               const currentRow = document.getElementById('row_' + tempId);
@@ -3747,9 +3799,17 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
 let videoEl = document.getElementById('custom-video-el');
 let videoUpdateInt = null;
 
-videoEl.addEventListener('waiting', () => { document.getElementById('video-center-loader').style.display = 'flex'; });
+videoEl.addEventListener('waiting', () => {
+  if (videoEl.readyState < 3) document.getElementById('video-center-loader').style.display = 'flex';
+});
 videoEl.addEventListener('playing', () => { document.getElementById('video-center-loader').style.display = 'none'; });
 videoEl.addEventListener('canplay', () => { document.getElementById('video-center-loader').style.display = 'none'; });
+videoEl.addEventListener('loadeddata', () => { document.getElementById('video-center-loader').style.display = 'none'; });
+videoEl.addEventListener('timeupdate', () => {
+  if (videoEl.currentTime > 0 && !videoEl.paused) {
+    document.getElementById('video-center-loader').style.display = 'none';
+  }
+});
 
 window.activeVidDownloads = {};
 function downloadVideoLocally(msg, containerEl) {
@@ -3823,35 +3883,22 @@ function openVideoPlayer(url) {
   overlay.classList.remove('floating');
   overlay.style.removeProperty('transform');
   
-  // 1. تفريغ المشغل القديم بالكامل
   videoEl.pause();
-  videoEl.removeAttribute('src');
-  
-  // 🚀 إزالة خاصة (Controls) بالكامل لمنع ظهور زر الأندرويد الأسود
   videoEl.controls = false; 
   videoEl.removeAttribute('controls');
-  
-  videoEl.load(); 
+  videoEl.preload = 'auto';
   
   overlay.classList.add('open');
   document.getElementById('video-center-loader').style.display = 'flex';
-  document.getElementById('video-buffer-percent').textContent = '0%';
+  document.getElementById('video-buffer-percent').textContent = '...';
   
-      // 2. إعطاء المتصفح استراحة 50 جزء من الثانية لفك ارتباط المعالج بالفيديو القديم!
-      // (هذا هو السر اللي بيمنع تعليق 0% في الأندرويد)
-      setTimeout(() => {
-        videoEl.src = url;
-        videoEl.load(); // 🚀 إجبار المتصفح على بدء التحميل فوراً لفك التعليق عند 0%
-        let playPromise = videoEl.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {
-            videoEl.addEventListener('canplay', function onCanPlay() {
-              videoEl.play();
-              videoEl.removeEventListener('canplay', onCanPlay);
-            }, { once: true });
-          });
-        }
-      }, 50);
+  videoEl.src = url;
+  const playPromise = videoEl.play();
+  if (playPromise !== undefined) {
+    playPromise.catch(() => {
+      document.getElementById('video-center-loader').style.display = 'none';
+    });
+  }
   
   updateVideoControls(); 
   clearInterval(videoUpdateInt);
@@ -4685,7 +4732,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=61');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=62');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
