@@ -526,7 +526,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(err => console.l
           }
           
           if (currentPermission === 'granted') {
-            const swReg = await navigator.serviceWorker.register('./sw.js?v=62');
+            const swReg = await navigator.serviceWorker.register('./sw.js?v=63');
             const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
               await db.ref('users/' + user.uid + '/fcmToken').set(token);
@@ -1950,7 +1950,9 @@ function buildMsgEl(msg, isBackground = false) {
     }
   } else if (msg.type === 'video') {
     const fileSize = msg.size ? `<div class="video-meta-badge">${msg.size}</div>` : '';
-    bubble.innerHTML = `${replyHtml}<div id="vid-container-${msg.key}" class="video-thumb-container" style="background:#050b12; border:1px solid var(--border-subtle);">
+    const cachedVidThumb = (window.videoBlobCache && window.videoBlobCache[msg.url]) ? window.videoBlobCache[msg.url] : '';
+    bubble.innerHTML = `${replyHtml}<div id="vid-container-${msg.key}" class="video-thumb-container" onclick="openVideoPlayer('${msg.url}')" style="background:#050b12; border:1px solid var(--border-subtle);">
+        <video id="vid-thumb-${msg.key}" class="msg-img" src="${cachedVidThumb ? cachedVidThumb + '#t=0.1' : ''}" muted playsinline preload="metadata" style="pointer-events:none; display:${cachedVidThumb ? 'block' : 'none'};"></video>
         <div id="vid-ui-${msg.key}" class="video-play-icon" style="pointer-events:none; background:rgba(0,0,0,0.7); z-index:2;">
            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         </div>
@@ -1981,6 +1983,10 @@ function buildMsgEl(msg, isBackground = false) {
         setTimeout(() => {
           if (window.preloadVoiceSilent) window.preloadVoiceSilent(msg.url);
         }, 80);
+      } else if (msg.type === 'video' && msg.url && !msg.isPending) {
+        setTimeout(() => {
+          if (window.preloadVideoSilent) window.preloadVideoSilent(msg.url, msg.key);
+        }, 120);
       }
       
       if (msg.isPending) {
@@ -2039,7 +2045,7 @@ if (window.visualViewport) {
       if (backBtn && backBtn.getAttribute('onclick') === "showScreen('home')") return;
       
       if (evt === 'touchend') {
-        const btn = e.target.closest('button') || e.target.closest('.msg-menu-btn') || e.target.closest('.msg-reaction');
+        const btn = e.target.closest('button') || e.target.closest('.msg-menu-btn') || e.target.closest('.msg-reaction') || e.target.closest('.video-thumb-container') || e.target.closest('.btn-video-close');
         const link = e.target.closest('a');
         
         if (btn) {
@@ -2301,7 +2307,7 @@ async function pushMessage(msg) {
       await pendingDB.save({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
       
       const area = document.getElementById('messages-area');
-      if (area && !document.getElementById('row_' + ref.key)) {
+      if (area && !document.getElementById('row_' + ref.key) && !document.getElementById('msg-' + ref.key)) {
          const el = buildMsgEl(msg, false);
          el.id = 'row_' + ref.key;
          area.appendChild(el);
@@ -2310,15 +2316,30 @@ async function pushMessage(msg) {
       return; 
   }
 
+  if (currentChat && currentChat.chatId === chatId) {
+      const area = document.getElementById('messages-area');
+      if (area && !document.getElementById('msg-' + msg.key)) {
+          const dateStr = formatDate(msg.timestamp);
+          if (dateStr !== lastMsgDate) {
+              const sep = document.createElement('div');
+              sep.className = 'date-sep';
+              sep.innerHTML = `<span>${dateStr}</span>`;
+              area.appendChild(sep);
+              lastMsgDate = dateStr;
+          }
+          area.appendChild(buildMsgEl(msg, false));
+          setTimeout(() => { area.scrollTop = area.scrollHeight; }, 30);
+      }
+  }
+
   try {
       db.goOnline();
       await Promise.race([
           ref.set(msg),
-          new Promise(resolve => setTimeout(resolve, 2500))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
       ]);
   } catch(e) {
-      msg.isPending = true;
-      await pendingDB.save({ chatId, friendUid, msg, key: ref.key, time: Date.now() });
+      await pendingDB.save({ chatId, friendUid, msg: { ...msg, isPending: true }, key: ref.key, time: Date.now() });
   }
 
   const lastMsg = msg.type === 'text' ? msg.text : msg.type === 'image' ? '📷 صورة' : msg.type === 'video' ? '🎥 فيديو' : msg.type === 'audio' ? '🎵 أغنية' : '🎙️ رسالة صوتية';
@@ -2814,6 +2835,7 @@ async function uploadMediaWithUI(file, type, extraData = null) {
         if (type === 'image') {
           finalFileToUpload = await encryptImageBlob(file); 
         }
+        const uploadBytes = new Uint8Array(await finalFileToUpload.arrayBuffer());
 
         if (typeof AWS === 'undefined') {
           handleFail('مكتبة الرفع غير متوفرة');
@@ -2829,7 +2851,7 @@ async function uploadMediaWithUI(file, type, extraData = null) {
         const storj = new AWS.S3({
           s3DisableBodySigning: true,
           computeChecksums: false,
-          httpOptions: { timeout: 120000 }
+          httpOptions: { timeout: 90000 }
         });
         const cleanName = type === 'image' 
           ? `enc_img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.bin` 
@@ -2838,24 +2860,59 @@ async function uploadMediaWithUI(file, type, extraData = null) {
         const params = {
             Bucket: window.STORJ_BUCKET,
             Key: cleanName,
-            Body: finalFileToUpload,
-            ContentType: type === 'image' ? 'application/octet-stream' : finalFileToUpload.type
+            Body: uploadBytes,
+            ContentType: type === 'image' ? 'application/octet-stream' : ((finalFileToUpload.type || '').split(';')[0].trim() || 'application/octet-stream')
         };
 
-        storj.upload(params, { partSize: 105 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
+        let stallTimer = null;
+        let isFinished = false;
+        const resetWatchdog = (ms) => {
+            clearTimeout(stallTimer);
+            stallTimer = setTimeout(() => {
+                if (!isFinished) {
+                    isFinished = true;
+                    try { uploadReq.abort(); } catch (e) {}
+                    if ((tryUpload._retries || 0) < 2) {
+                        tryUpload._retries = (tryUpload._retries || 0) + 1;
+                        tryUpload();
+                    } else {
+                        handleFail('انتهت مهلة الاتصال، أعد المحاولة');
+                    }
+                }
+            }, ms);
+        };
+
+        const uploadReq = storj.upload(params, { partSize: 105 * 1024 * 1024, queueSize: 1 });
+        resetWatchdog(20000);
+
+        uploadReq.on('httpUploadProgress', function(e) {
+            if (isFinished) return;
             if (e.loaded && e.total) {
                 const percent = Math.round((e.loaded / e.total) * 100);
                 const bar = document.getElementById('bar_' + tempId);
                 const pctTxt = document.getElementById('pct_' + tempId);
                 if (bar) bar.style.width = percent + '%';
                 if (pctTxt) {
-                    if (percent < 100) pctTxt.textContent = percent + '%';
-                    else pctTxt.textContent = '⏳ بانتظار السيرفر...';
+                    if (percent < 100) {
+                        pctTxt.textContent = percent + '%';
+                        resetWatchdog(20000);
+                    } else {
+                        pctTxt.textContent = '⏳ بانتظار السيرفر...';
+                        resetWatchdog(10000);
+                    }
                 }
             }
         }).send(async function(err, data) {
+            if (isFinished) return;
+            isFinished = true;
+            clearTimeout(stallTimer);
             if (err) {
-                handleFail('فشل الرفع لـ Storj');
+                if ((tryUpload._retries || 0) < 1) {
+                    tryUpload._retries = (tryUpload._retries || 0) + 1;
+                    tryUpload();
+                } else {
+                    handleFail('فشل الرفع لـ Storj');
+                }
             } else {
                 const finalUrl = storj.getSignedUrl('getObject', { Bucket: window.STORJ_BUCKET, Key: cleanName, Expires: 604800 });
                 window.lastUploadedUrl = finalUrl;
@@ -2872,22 +2929,35 @@ async function uploadMediaWithUI(file, type, extraData = null) {
         });
       };
       
-      window.pendingUploads[tempId] = tryUpload;
+      window.pendingUploads[tempId] = () => { tryUpload._retries = 0; tryUpload(); };
       tryUpload();
   }, 100);
 }
 
 document.getElementById('file-img-input').addEventListener('change', async e => {
-  const files = e.target.files;
-  if (!files.length || !currentChat) return;
+  const selectedFiles = Array.from(e.target.files || []);
+  if (!selectedFiles.length || !currentChat) return;
+
+  const memoryFiles = [];
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const rawFile = selectedFiles[i];
+    try {
+      const buf = await rawFile.arrayBuffer();
+      const clonedBlob = new Blob([buf], { type: rawFile.type || '' });
+      clonedBlob.name = rawFile.name || ('file_' + Date.now());
+      memoryFiles.push(clonedBlob);
+    } catch (err) {
+      memoryFiles.push(rawFile);
+    }
+  }
+  e.target.value = '';
   
-        for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const fileName = file.name.toLowerCase();
-        // 🚀 تحصين إضافي للتعرف على الملفات من امتدادها في حال كان المتصفح غبي وما تعرف عليها
-        const isImage = file.type.startsWith('image/') || fileName.endsWith('.jpg') || fileName.endsWith('.png') || fileName.endsWith('.jpeg') || fileName.endsWith('.webp');
-        const isVideo = file.type.startsWith('video/') || fileName.endsWith('.mp4') || fileName.endsWith('.mkv') || fileName.endsWith('.webm') || fileName.endsWith('.mov') || fileName.endsWith('.avi');
-        const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
+  for (let i = 0; i < memoryFiles.length; i++) {
+    const file = memoryFiles[i];
+    const fileName = (file.name || '').toLowerCase();
+    const isImage = file.type.startsWith('image/') || fileName.endsWith('.jpg') || fileName.endsWith('.png') || fileName.endsWith('.jpeg') || fileName.endsWith('.webp');
+    const isVideo = file.type.startsWith('video/') || fileName.endsWith('.mp4') || fileName.endsWith('.mkv') || fileName.endsWith('.webm') || fileName.endsWith('.mov') || fileName.endsWith('.avi') || fileName.endsWith('.3gp') || fileName.endsWith('.3gpp') || fileName.endsWith('.m4v');
+    const isAudio = file.type.startsWith('audio/') || file.type.includes('ogg') || fileName.endsWith('.mp3') || fileName.endsWith('.m4a') || fileName.endsWith('.wav') || fileName.endsWith('.ogg') || fileName.endsWith('.aac') || fileName.endsWith('.amr');
 
     if (isImage) {
       uploadMediaWithUI(file, 'image');
@@ -2904,25 +2974,29 @@ document.getElementById('file-img-input').addEventListener('change', async e => 
         showToast('الملف الصوتي كبير جداً! الحد الأقصى 50 ميغابايت', 'error'); 
         continue; 
       }
-      const tempAudio = new Audio(URL.createObjectURL(file));
+      const tempAudioUrl = URL.createObjectURL(file);
+      const tempAudio = new Audio(tempAudioUrl);
       tempAudio.onloadedmetadata = () => {
-        const m = Math.floor(tempAudio.duration / 60);
-        const s = Math.floor(tempAudio.duration % 60);
-        const durStr = `${m}:${s < 10 ? '0' : ''}${s}`;
-        uploadLargeMediaWithXHR(file, fileSizeMB, 'audio', durStr);
+        URL.revokeObjectURL(tempAudioUrl);
+        if (isFinite(tempAudio.duration) && tempAudio.duration > 0) {
+          const m = Math.floor(tempAudio.duration / 60);
+          const s = Math.floor(tempAudio.duration % 60);
+          const durStr = `${m}:${s < 10 ? '0' : ''}${s}`;
+          uploadLargeMediaWithXHR(file, fileSizeMB, 'audio', durStr);
+        } else {
+          uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
+        }
       };
       tempAudio.onerror = () => {
+        URL.revokeObjectURL(tempAudioUrl);
         uploadLargeMediaWithXHR(file, fileSizeMB, 'audio');
       };
     } else {
       showToast('نوع الملف غير مدعوم!', 'error');
     }
     
-    // تأخير 300 ميلي ثانية بين كل ملف كرمال يخف الضغط عالسيرفر وتنجح كلها
     await new Promise(r => setTimeout(r, 300));
   }
-  
-  e.target.value = '';
 });
 
 async function toggleRecording(isSinging = false) {
@@ -3017,13 +3091,28 @@ async function toggleRecording(isSinging = false) {
       if (isRecordingCanceled) { showToast('تم رمي التسجيل 🗑️'); return; }
       
       const localChunks = [...audioChunks];
-      const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
-      const blob = new Blob(localChunks, { type: actualMimeType });
-      const finalDuration = recordDurationStr;
+      const voiceContentType = ((mediaRecorder.mimeType || 'audio/webm').split(';')[0].trim()) || 'audio/webm';
+      const rawBlob = new Blob(localChunks, { type: voiceContentType });
+      let finalDuration = recordDurationStr;
+      if (finalDuration === '0:00') {
+         const elapsedSec = Math.max(1, Math.round((Date.now() - recordStart - totalPausedTime) / 1000));
+         const m = Math.floor(elapsedSec / 60), s = elapsedSec % 60;
+         finalDuration = m + ':' + (s < 10 ? '0' : '') + s;
+      }
       
-      if (blob.size < 3000 || finalDuration === '0:00') {
+      if (rawBlob.size < 500) {
          showToast('لم يتم التقاط الصوت بشكل كافٍ، أعد المحاولة', 'error');
          return;
+      }
+
+      const voiceBuffer = await rawBlob.arrayBuffer();
+      const voiceBytes = new Uint8Array(voiceBuffer);
+      const blob = new Blob([voiceBuffer], { type: voiceContentType });
+
+      let capturedReplyData = null;
+      if (replyingToMsg) {
+        capturedReplyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : replyingToMsg.type === 'video' ? '🎥 فيديو' : '🎙️ صوت' };
+        cancelReply();
       }
       
       const tempId = 'temp-audio-' + Date.now();
@@ -3075,63 +3164,96 @@ async function toggleRecording(isSinging = false) {
           const storj = new AWS.S3({
               s3DisableBodySigning: true,
               computeChecksums: false,
-              httpOptions: { timeout: 120000 }
+              httpOptions: { timeout: 60000 }
           });
           const cleanName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webm`;
-          const voiceContentType = blob.type || 'audio/webm';
 
           const params = {
               Bucket: window.STORJ_BUCKET,
               Key: cleanName,
-              Body: blob,
+              Body: voiceBytes,
               ContentType: voiceContentType
           };
 
-          storj.upload(params, { partSize: 105 * 1024 * 1024, queueSize: 1 }).on('httpUploadProgress', function(e) {
+          let stallTimer = null;
+          let isFinished = false;
+          const resetWatchdog = (ms) => {
+              clearTimeout(stallTimer);
+              stallTimer = setTimeout(() => {
+                  if (!isFinished) {
+                      isFinished = true;
+                      try { uploadReq.abort(); } catch (e) {}
+                      if ((tryUploadVoice._retries || 0) < 2) {
+                          tryUploadVoice._retries = (tryUploadVoice._retries || 0) + 1;
+                          tryUploadVoice();
+                      } else {
+                          handleFail('تأخر الاتصال، اضغط لإعادة الإرسال');
+                      }
+                  }
+              }, ms);
+          };
+
+          const uploadReq = storj.upload(params, { partSize: 105 * 1024 * 1024, queueSize: 1 });
+          resetWatchdog(15000);
+
+          uploadReq.on('httpUploadProgress', function(e) {
+              if (isFinished) return;
               if (e.loaded && e.total) {
                   const percent = Math.round((e.loaded / e.total) * 100);
                   const bar = document.getElementById('voice_bar_' + tempId);
                   const pctTxt = document.getElementById('voice_pct_' + tempId);
                   if (bar) bar.style.width = percent + '%';
-                  if (pctTxt) pctTxt.textContent = percent + '%';
+                  if (pctTxt) {
+                      if (percent < 100) {
+                          pctTxt.textContent = percent + '%';
+                          resetWatchdog(15000);
+                      } else {
+                          pctTxt.textContent = '100% ⏳';
+                          resetWatchdog(8000);
+                      }
+                  }
               }
           }).send(async function(err, data) {
+              if (isFinished) return;
+              isFinished = true;
+              clearTimeout(stallTimer);
               if (err) {
-                  handleFail('فشل الرفع لـ Storj');
+                  if ((tryUploadVoice._retries || 0) < 2) {
+                      tryUploadVoice._retries = (tryUploadVoice._retries || 0) + 1;
+                      tryUploadVoice();
+                  } else {
+                      handleFail('فشل الرفع لـ Storj');
+                  }
               } else {
-                  const tempEl = document.getElementById(tempId);
-                  if (tempEl) tempEl.remove();
-
                   const finalUrl = storj.getSignedUrl('getObject', {
                       Bucket: window.STORJ_BUCKET,
                       Key: cleanName,
-                      Expires: 604800,
-                      ResponseContentType: voiceContentType
+                      Expires: 604800
                   });
+                  window.lastUploadedUrl = finalUrl;
                   if (window.voiceBlobCache) {
                       window.voiceBlobCache[finalUrl] = URL.createObjectURL(blob);
                   }
                   if ('caches' in window) {
-                      caches.open('media-cache').then(cache => cache.put(finalUrl, new Response(blob))).catch(() => {});
+                      caches.open('media-cache').then(cache => cache.put(finalUrl, new Response(blob, { headers: { 'Content-Type': voiceContentType } }))).catch(() => {});
                   }
-                  let replyData = null;
-                  if (replyingToMsg) {
-                    replyData = { key: replyingToMsg.key, text: replyingToMsg.type === 'text' ? replyingToMsg.text : replyingToMsg.type === 'image' ? '📷 صورة' : '🎙️ صوت' };
-                    cancelReply();
-                  }
-                  await pushMessage({ type: 'voice', url: finalUrl, deleteToken: cleanName, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: replyData });
+                  const tempEl = document.getElementById(tempId);
+                  if (tempEl) tempEl.remove();
+
+                  await pushMessage({ type: 'voice', url: finalUrl, deleteToken: cleanName, duration: finalDuration, senderUid: currentUser.uid, timestamp: Date.now(), replyTo: capturedReplyData });
               }
           });
       };
       
       window.pendingUploads[tempId] = () => {
+         tryUploadVoice._retries = 0;
          const row = document.getElementById(tempId);
          if (row) {
             const bubble = row.querySelector('.msg-bubble');
             if (bubble) {
                bubble.innerHTML = `
                 <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-bottom:8px;">
-                  <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... ??️'}</span>
+                  <span id="voice_lbl_${tempId}">${isSingingMode ? 'إرسال المقطع... 🎤' : 'إرسال المقطع... 🎙️'}</span>
                   <span id="voice_pct_${tempId}" style="color:var(--neon-cyan); font-family:var(--font-en);">0%</span>
                 </div>
                 <div style="width:100%; height:6px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden;">
@@ -3678,27 +3800,132 @@ function seekVoice(event, url, msgKey) {
 /* ═══════════════════════════════════
    VIDEO UPLOAD & PLAYER LOGIC
 ═══════════════════════════════════ */
-function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = null) {
+window.videoBlobCache = window.videoBlobCache || {};
+window.videoPreloadPromises = window.videoPreloadPromises || {};
+window.videoProgressListeners = window.videoProgressListeners || {};
+
+window.preloadVideoSilent = function(url, msgKey = null, onProgress = null) {
+  if (!url) return Promise.resolve(null);
+  if (url.startsWith('blob:')) return Promise.resolve(url);
+  if (window.videoBlobCache && window.videoBlobCache[url]) {
+    if (msgKey) {
+      const thumbEl = document.getElementById('vid-thumb-' + msgKey);
+      if (thumbEl && !thumbEl.src) {
+        thumbEl.src = window.videoBlobCache[url] + '#t=0.1';
+        thumbEl.style.display = 'block';
+      }
+    }
+    return Promise.resolve(window.videoBlobCache[url]);
+  }
+
+  if (onProgress) {
+    window.videoProgressListeners[url] = window.videoProgressListeners[url] || [];
+    window.videoProgressListeners[url].push(onProgress);
+  }
+
+  if (window.videoPreloadPromises[url]) {
+    return window.videoPreloadPromises[url];
+  }
+
+  const storeVideoInRam = (blob) => {
+    const fixedBlob = blob.type && blob.type.startsWith('video/') ? blob : new Blob([blob], { type: 'video/mp4' });
+    const blobUrl = URL.createObjectURL(fixedBlob);
+    window.videoBlobCache[url] = blobUrl;
+    const keys = Object.keys(window.videoBlobCache);
+    if (keys.length > 15) {
+      const oldestKey = keys[0];
+      const oldBlobUrl = window.videoBlobCache[oldestKey];
+      if (!videoEl || videoEl.src !== oldBlobUrl) {
+        URL.revokeObjectURL(oldBlobUrl);
+      }
+      delete window.videoBlobCache[oldestKey];
+    }
+    if (msgKey) {
+      const thumbEl = document.getElementById('vid-thumb-' + msgKey);
+      if (thumbEl) {
+        thumbEl.src = blobUrl + '#t=0.1';
+        thumbEl.style.display = 'block';
+      }
+      const progEl = document.getElementById('vid-progress-' + msgKey);
+      if (progEl) {
+        progEl.style.width = '100%';
+        setTimeout(() => { if (progEl) progEl.style.opacity = '0'; }, 400);
+      }
+    }
+    return blobUrl;
+  };
+
+  window.videoPreloadPromises[url] = (async () => {
+    try {
+      if ('caches' in window) {
+        const cache = await caches.open('media-cache');
+        const cachedRes = await cache.match(url);
+        if (cachedRes) {
+          const cachedBlob = await cachedRes.blob();
+          if (cachedBlob && cachedBlob.size > 0) {
+            return storeVideoInRam(cachedBlob);
+          }
+        }
+      }
+
+      const downloadedBlob = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'blob';
+        xhr.timeout = 120000;
+        xhr.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            if (msgKey) {
+              const progEl = document.getElementById('vid-progress-' + msgKey);
+              if (progEl) progEl.style.width = pct + '%';
+            }
+            const listeners = window.videoProgressListeners[url] || [];
+            listeners.forEach(fn => { try { fn(pct); } catch (err) {} });
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300 && xhr.response && xhr.response.size > 0) {
+            resolve(xhr.response);
+          } else {
+            reject(new Error('HTTP ' + xhr.status));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Network error'));
+        xhr.ontimeout = () => reject(new Error('Timeout'));
+        xhr.send();
+      });
+
+      const videoBlob = new Blob([await downloadedBlob.arrayBuffer()], { type: 'video/mp4' });
+      if ('caches' in window) {
+        caches.open('media-cache').then(cache => cache.put(url, new Response(videoBlob, { headers: { 'Content-Type': 'video/mp4' } }))).catch(() => {});
+      }
+      return storeVideoInRam(videoBlob);
+    } catch (e) {
+      return null;
+    } finally {
+      delete window.videoPreloadPromises[url];
+      delete window.videoProgressListeners[url];
+    }
+  })();
+
+  return window.videoPreloadPromises[url];
+};
+
+async function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = null) {
   if (typeof AWS === 'undefined') {
     showToast('جاري تهيئة خادم الرفع، حاول بعد ثوانٍ...', 'error');
     return;
   }
-  
-  AWS.config.update({
-    accessKeyId: window.STORJ_ACCESS,
-    secretAccessKey: window.STORJ_SECRET,
-    endpoint: 'https://gateway.storjshare.io',
-    s3ForcePathStyle: true,
-    signatureVersion: 'v4'
-  });
-  const storj = new AWS.S3({
-    s3DisableBodySigning: true,
-    computeChecksums: false,
-    httpOptions: { timeout: 180000 }
-  });
+
+  const rawMime = (file.type || '').split(';')[0].trim();
+  const cleanMime = rawMime || (mediaType === 'video' ? 'video/mp4' : 'audio/mpeg');
+  const fileBuffer = await file.arrayBuffer();
+  const uploadBytes = new Uint8Array(fileBuffer);
+  const localBlob = new Blob([fileBuffer], { type: cleanMime });
 
   const tempId = 'temp_media_' + Date.now();
-  const tempUrl = URL.createObjectURL(file);
+  const tempUrl = URL.createObjectURL(localBlob);
   const area = document.getElementById('messages-area');
 
   const tempMsg = {
@@ -3713,7 +3940,24 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
     area.appendChild(el); setTimeout(() => { area.scrollTop = area.scrollHeight; }, 50);
   }
 
+  const fileNameProp = file.name || '';
+  const ext = (fileNameProp && fileNameProp.includes('.')) ? fileNameProp.substring(fileNameProp.lastIndexOf('.')).toLowerCase() : (mediaType === 'video' ? '.mp4' : '.mp3');
+  const fileName = 'media_' + Date.now() + '_' + Math.random().toString(36).substring(2,8) + ext;
+
   const tryUpload = () => {
+      AWS.config.update({
+        accessKeyId: window.STORJ_ACCESS,
+        secretAccessKey: window.STORJ_SECRET,
+        endpoint: 'https://gateway.storjshare.io',
+        s3ForcePathStyle: true,
+        signatureVersion: 'v4'
+      });
+      const storj = new AWS.S3({
+        s3DisableBodySigning: true,
+        computeChecksums: false,
+        httpOptions: { timeout: 120000 }
+      });
+
       const row = document.getElementById('row_' + tempId);
       if (row) {
           const ov = row.querySelector('.pending-overlay');
@@ -3724,56 +3968,92 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
               </div>
           `;
       }
-
-      const ext = (file.name && file.name.includes('.')) ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : (mediaType === 'video' ? '.mp4' : '.mp3');
-      const fileName = 'media_' + Date.now() + '_' + Math.random().toString(36).substring(2,8) + ext;
-      const cleanMime = file.type || (mediaType === 'video' ? 'video/mp4' : 'audio/mpeg');
       
       const params = {
           Bucket: window.STORJ_BUCKET,
           Key: fileName,
-          Body: file,
+          Body: uploadBytes,
           ContentType: cleanMime
       };
 
-          const handleFail = (msg, errorDetails = '') => {
-              if (row) {
-                const ov = row.querySelector('.pending-overlay');
-                const errorLogHtml = errorDetails ? `<div style="font-size:10px; color:var(--neon-pink); background:rgba(0,0,0,0.8); padding:6px; border-radius:4px; margin-top:8px; max-width:90%; word-break:break-all; text-align:center; font-family:var(--font-en); line-height:1.4;">${errorDetails}</div>` : '';
-                
-                if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>${errorLogHtml}`;
-              }
-          };
+      const handleFail = (msg, errorDetails = '') => {
+          if (row) {
+            const ov = row.querySelector('.pending-overlay');
+            const errorLogHtml = errorDetails ? `<div style="font-size:10px; color:var(--neon-pink); background:rgba(0,0,0,0.8); padding:6px; border-radius:4px; margin-top:8px; max-width:90%; word-break:break-all; text-align:center; font-family:var(--font-en); line-height:1.4;">${errorDetails}</div>` : '';
+            
+            if (ov) ov.innerHTML = `<button onclick="window.pendingUploads['${tempId}']()" style="background:var(--bg-surface); border:1px solid var(--neon-pink); color:var(--neon-pink); padding:8px 12px; border-radius:12px; cursor:pointer; font-family:var(--font-ar); font-size:12px; font-weight:bold; box-shadow:var(--shadow-pink); max-width:90%; white-space:normal; line-height:1.5;">${msg} 🔄</button>${errorLogHtml}`;
+          }
+      };
 
-          const uploadOptions = { partSize: 105 * 1024 * 1024, queueSize: 1 };
-
-          storj.upload(params, uploadOptions).on('httpUploadProgress', function(evt) {
-              if (evt.loaded && evt.total) {
-                  const percent = Math.round((evt.loaded / evt.total) * 100);
-                  const bar = document.getElementById('bar_' + tempId);
-                  const pctTxt = document.getElementById('pct_' + tempId);
-                  if (bar) bar.style.width = percent + '%';
-                  if (pctTxt) {
-                      if (percent < 100) {
-                          pctTxt.textContent = percent + '%';
-                      } else {
-                          pctTxt.textContent = '⏳ بانتظار السيرفر...';
-                      }
+      let stallTimer = null;
+      let isFinished = false;
+      const resetWatchdog = (ms) => {
+          clearTimeout(stallTimer);
+          stallTimer = setTimeout(() => {
+              if (!isFinished) {
+                  isFinished = true;
+                  try { uploadReq.abort(); } catch (e) {}
+                  if ((tryUpload._retries || 0) < 2) {
+                      tryUpload._retries = (tryUpload._retries || 0) + 1;
+                      tryUpload();
+                  } else {
+                      handleFail('تأخر الاتصال، اضغط لإعادة المحاولة');
                   }
               }
-          }).send(async function(err, data) {
-              if (err) {
-                  console.error("Storj Error Details:", err);
-                  let errorMsg = err.message || err.code || 'Unknown Error';
-                  if (err.statusCode) errorMsg += ' (Code: ' + err.statusCode + ')';
-                  handleFail('فشل الرفع لـ Storj', errorMsg);
-              } else {
+          }, ms);
+      };
+
+      const uploadOptions = { partSize: 105 * 1024 * 1024, queueSize: 1 };
+      const uploadReq = storj.upload(params, uploadOptions);
+      resetWatchdog(25000);
+
+      uploadReq.on('httpUploadProgress', function(evt) {
+          if (isFinished) return;
+          if (evt.loaded && evt.total) {
+              const percent = Math.round((evt.loaded / evt.total) * 100);
+              const bar = document.getElementById('bar_' + tempId);
+              const pctTxt = document.getElementById('pct_' + tempId);
+              if (bar) bar.style.width = percent + '%';
+              if (pctTxt) {
+                  if (percent < 100) {
+                      pctTxt.textContent = percent + '%';
+                      resetWatchdog(25000);
+                  } else {
+                      pctTxt.textContent = '⏳ بانتظار السيرفر...';
+                      resetWatchdog(12000);
+                  }
+              }
+          }
+      }).send(async function(err, data) {
+          if (isFinished) return;
+          isFinished = true;
+          clearTimeout(stallTimer);
+          if (err) {
+              if ((tryUpload._retries || 0) < 1) {
+                  tryUpload._retries = (tryUpload._retries || 0) + 1;
+                  tryUpload();
+                  return;
+              }
+              console.error("Storj Error Details:", err);
+              let errorMsg = err.message || err.code || 'Unknown Error';
+              if (err.statusCode) errorMsg += ' (Code: ' + err.statusCode + ')';
+              handleFail('فشل الرفع لـ Storj', errorMsg);
+          } else {
               const finalUrl = storj.getSignedUrl('getObject', {
                   Bucket: window.STORJ_BUCKET,
                   Key: fileName,
-                  Expires: 604800,
-                  ResponseContentType: cleanMime
+                  Expires: 604800
               });
+              window.lastUploadedUrl = finalUrl;
+
+              if (mediaType === 'video') {
+                  window.videoBlobCache[finalUrl] = tempUrl;
+              } else if (mediaType === 'audio') {
+                  window.voiceBlobCache[finalUrl] = tempUrl;
+              }
+              if ('caches' in window) {
+                  caches.open('media-cache').then(cache => cache.put(finalUrl, new Response(localBlob, { headers: { 'Content-Type': cleanMime } }))).catch(() => {});
+              }
 
               const currentRow = document.getElementById('row_' + tempId);
               if (currentRow) currentRow.remove();
@@ -3792,12 +4072,13 @@ function uploadLargeMediaWithXHR(file, fileSizeMB, mediaType, extraDuration = nu
       });
   };
 
-  window.pendingUploads[tempId] = tryUpload;
+  window.pendingUploads[tempId] = () => { tryUpload._retries = 0; tryUpload(); };
   tryUpload();
 }
 
 let videoEl = document.getElementById('custom-video-el');
 let videoUpdateInt = null;
+let activeVideoTargetUrl = null;
 
 videoEl.addEventListener('waiting', () => {
   if (videoEl.readyState < 3) document.getElementById('video-center-loader').style.display = 'flex';
@@ -3813,53 +4094,7 @@ videoEl.addEventListener('timeupdate', () => {
 
 window.activeVidDownloads = {};
 function downloadVideoLocally(msg, containerEl) {
-  const url = msg.url;
-  const msgKey = msg.key;
-
-  if (window.activeVidDownloads[msgKey]) {
-    window.activeVidDownloads[msgKey].abort(); delete window.activeVidDownloads[msgKey];
-    const uiEl = document.getElementById(`vid-ui-${msgKey}`), progEl = document.getElementById(`vid-progress-${msgKey}`);
-    if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-    if (progEl) progEl.style.width = '0%'; return;
-  }
-
-  const uiEl = document.getElementById(`vid-ui-${msgKey}`), progEl = document.getElementById(`vid-progress-${msgKey}`);
-  if (uiEl) uiEl.innerHTML = `<div style="font-size:10px; font-weight:bold; font-family:var(--font-ar); color:white; text-align:center;" id="vid-pct-${msgKey}">معالجة..</div>`;
-
-  const xhr = new XMLHttpRequest();
-  let secureUrl = url;
-  if (secureUrl.includes('cloudinary.com') && !secureUrl.includes('fl_attachment')) secureUrl = secureUrl.replace('/upload/', '/upload/fl_attachment/');
-  xhr.open('GET', secureUrl, true); xhr.responseType = 'blob';
-  
-  let estimatedTotal = 0; if (msg.size) estimatedTotal = parseFloat(msg.size) * 1024 * 1024;
-
-  xhr.onprogress = function(e) {
-    let percent = 0;
-    if (e.lengthComputable) percent = Math.round((e.loaded / e.total) * 100);
-    else if (estimatedTotal > 0) { percent = Math.round((e.loaded / estimatedTotal) * 100); if (percent > 100) percent = 100; }
-
-    if (percent > 0) {
-      if (progEl) progEl.style.width = percent + '%';
-      const pctEl = document.getElementById(`vid-pct-${msgKey}`); if (pctEl) { pctEl.style.fontFamily = 'var(--font-en)'; pctEl.textContent = percent + '%'; }
-    } else if (e.loaded > 0) {
-      const pctEl = document.getElementById(`vid-pct-${msgKey}`); if (pctEl) { pctEl.style.fontFamily = 'var(--font-en)'; pctEl.textContent = (e.loaded / (1024 * 1024)).toFixed(1) + 'M'; }
-    }
-  };
-
-  xhr.onload = function() {
-    delete window.activeVidDownloads[msgKey];
-    if (xhr.status >= 200 && xhr.status < 300) {
-      caches.open('media-cache').then(cache => {
-        cache.put(url, new Response(xhr.response)).then(() => {
-          if (containerEl) containerEl.setAttribute('data-cached', 'true');
-          if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-          if (progEl) progEl.style.width = '100%'; setTimeout(() => { if (progEl) progEl.style.opacity = '0'; }, 500);
-        }).catch(err => { showToast('لا مساحة كافية بالهاتف', 'error'); if (uiEl) uiEl.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`; if (progEl) progEl.style.width = '0%'; });
-      });
-    } else { showToast('خطأ بالتحميل (' + xhr.status + ')', 'error'); }
-  };
-  xhr.onerror = function() { delete window.activeVidDownloads[msgKey]; showToast('مشكلة بالإنترنت', 'error'); };
-  window.activeVidDownloads[msgKey] = xhr; xhr.send();
+  window.preloadVideoSilent(msg.url, msg.key);
 }
 
 function minimizeVideoPlayer() {
@@ -3877,48 +4112,101 @@ function restoreVideoPlayer() {
 }
 
 function openVideoPlayer(url) {
-  if (window.isChatOpening) return;
+  if (window.isChatOpening || !url) return;
+  if (window._lastVidOpenTime && Date.now() - window._lastVidOpenTime < 350) return;
+  window._lastVidOpenTime = Date.now();
+
+  if (window.pauseCurrentVoiceNote) window.pauseCurrentVoiceNote();
+
   const overlay = document.getElementById('video-preview-overlay');
+  const loaderEl = document.getElementById('video-center-loader');
+  const pctEl = document.getElementById('video-buffer-percent');
   
   overlay.classList.remove('floating');
   overlay.style.removeProperty('transform');
   
+  activeVideoTargetUrl = url;
   videoEl.pause();
   videoEl.controls = false; 
   videoEl.removeAttribute('controls');
   videoEl.preload = 'auto';
+
+  document.getElementById('video-progress-fill').style.width = '0%';
+  document.getElementById('video-buffer-bar').style.width = '0%';
+  document.getElementById('video-time-current').textContent = '0:00';
+  document.getElementById('video-time-total').textContent = '0:00';
   
+  const wasAlreadyOpen = overlay.classList.contains('open');
   overlay.classList.add('open');
-  document.getElementById('video-center-loader').style.display = 'flex';
-  document.getElementById('video-buffer-percent').textContent = '...';
-  
-  videoEl.src = url;
-  const playPromise = videoEl.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(() => {
-      document.getElementById('video-center-loader').style.display = 'none';
+  loaderEl.style.display = 'flex';
+  pctEl.textContent = '0%';
+
+  const startPlayback = (playSrc) => {
+    if (activeVideoTargetUrl !== url) return;
+    videoEl.src = playSrc;
+    videoEl.load();
+    const attemptPlay = () => {
+      const p = videoEl.play();
+      if (p !== undefined) {
+        p.then(() => {
+          loaderEl.style.display = 'none';
+          updateVideoControls();
+        }).catch(() => {
+          loaderEl.style.display = 'none';
+          updateVideoControls();
+        });
+      }
+    };
+    if (videoEl.readyState >= 2) {
+      attemptPlay();
+    } else {
+      videoEl.oncanplay = () => {
+        videoEl.oncanplay = null;
+        attemptPlay();
+      };
+      attemptPlay();
+    }
+  };
+
+  if (url.startsWith('blob:') || (window.videoBlobCache && window.videoBlobCache[url])) {
+    startPlayback(window.videoBlobCache[url] || url);
+  } else {
+    try { videoEl.load(); } catch (e) {}
+    window.preloadVideoSilent(url, null, (pct) => {
+      if (activeVideoTargetUrl === url && pctEl) {
+        pctEl.textContent = pct + '%';
+        document.getElementById('video-buffer-bar').style.width = pct + '%';
+      }
+    }).then(blobUrl => {
+      if (activeVideoTargetUrl !== url) return;
+      startPlayback(blobUrl || url);
     });
   }
   
   updateVideoControls(); 
   clearInterval(videoUpdateInt);
   videoUpdateInt = setInterval(updateVideoControls, 250);
-  try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
+  if (!wasAlreadyOpen) {
+    try { history.pushState({ overlay: 'video' }, '', ''); } catch(e){}
+  }
 }
 
 function closeVideoPlayer() {
+  activeVideoTargetUrl = null;
   const overlay = document.getElementById('video-preview-overlay');
   overlay.classList.remove('open');
   overlay.classList.remove('floating');
   overlay.style.removeProperty('transform');
   overlay.style.removeProperty('touch-action');
   
+  videoEl.oncanplay = null;
   videoEl.pause();
-  if (videoEl.src && videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
+  const cachedValues = window.videoBlobCache ? Object.values(window.videoBlobCache) : [];
+  if (videoEl.src && videoEl.src.startsWith('blob:') && !cachedValues.includes(videoEl.src)) {
+    URL.revokeObjectURL(videoEl.src);
+  }
   
-  // 🚀 تحرير المعالج والمشغل بشكل نظيف
   videoEl.removeAttribute('src');
-  videoEl.src = ''; // تأكيد تفريغ المسار للأندرويد
   videoEl.load();
   
   clearInterval(videoUpdateInt);
@@ -4732,7 +5020,7 @@ async function testNotificationsManually() {
     if (permission === 'granted') {
       showToast('تمت الموافقة! جاري جلب التوكن...', 'info');
       
-      const swReg = await navigator.serviceWorker.register('./sw.js?v=62');
+      const swReg = await navigator.serviceWorker.register('./sw.js?v=63');
       const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
       
       if (token) {
